@@ -31,13 +31,16 @@ test.describe('regresión visual', () => {
 
   test('calendario', async ({ page }) => {
     await page.goto('./');
-    await page.getByRole('button', { name: 'Ver el calendario de fuego' }).click();
+    await page.getByRole('button', { name: 'Empezar' }).click();
+    const toggle = page.getByRole('button', { name: /^(Plegar|Desplegar)$/ });
+    if ((await toggle.getAttribute('aria-expanded')) === 'false') await toggle.click();
     await expect(page.getByRole('img', { name: /Detecciones de/ })).toBeVisible();
     await page.evaluate(() => document.fonts.ready);
     await expect(page).toHaveScreenshot('calendario.png', {
       animations: 'disabled',
       caret: 'hide',
-      mask: [page.locator('[data-dinamico]')],
+      // El mapa (teselas de red) cambia entre ejecuciones: se enmascara
+      mask: [page.locator('[data-dinamico]'), page.getByRole('region', { name: 'Mapa' })],
       maxDiffPixelRatio: 0.01,
     });
   });

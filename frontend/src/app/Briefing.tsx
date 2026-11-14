@@ -1,16 +1,16 @@
 import { ArrowRight } from 'lucide-react';
 import { useUi } from '../store/ui.ts';
 import { Button } from '../ui/Button.tsx';
-import { Dialog } from '../ui/Dialog.tsx';
+import { ModalDialog } from '../ui/ModalDialog.tsx';
 import { Tag } from '../ui/Tag.tsx';
 
 /** Briefing inicial: qué es, para quién y por dónde empezar. Se puede volver a abrir con "?". */
-export default function Briefing() {
+export function Briefing() {
   const open = useUi((s) => s.briefingOpen);
   const close = useUi((s) => s.closeBriefing);
 
   return (
-    <Dialog
+    <ModalDialog
       open={open}
       onOpenChange={(next) => !next && close()}
       title="CATACLISMO"
@@ -45,6 +45,6 @@ export default function Briefing() {
           Empezar
         </Button>
       </div>
-    </Dialog>
+    </ModalDialog>
   );
 }

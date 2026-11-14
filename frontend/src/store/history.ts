@@ -27,6 +27,13 @@ interface HistoryState {
   yearRange: [number, number];
   metric: Metric;
   load: () => Promise<void>;
+  /**
+   * Pide la rejilla por celdas (áreas, CSV y FRP). Se aplaza hasta cerrar el briefing para no
+   * competir con la primera pintura; se puede llamar varias veces.
+   */
+  ensureGrid: () => Promise<void>;
+  gridRequested: boolean;
+  gridLoading: boolean;
   setArea: (area: Area) => void;
   select: (mi: number) => void;
   setYearRange: (range: [number, number]) => void;
@@ -44,6 +51,8 @@ function compute(area: Area, manifest: Manifest, grid: GridData) {
 export const useHistory = create<HistoryState>((set, get) => ({
   status: 'cargando',
   gridStatus: 'cargando',
+  gridRequested: false,
+  gridLoading: false,
   area: SPAIN,
   selected: 0,
   yearRange: [0, 0],
@@ -67,18 +76,32 @@ export const useHistory = create<HistoryState>((set, get) => ({
       selected: lastMonthWithData(manifest),
       yearRange: [anioInicial, anioInicial + meses / 12 - 1],
     });
+    // La rejilla por celdas (~1,4 MB) no se pide aquí: ver ensureGrid
+    if (get().gridRequested) void get().ensureGrid();
+  },
+
+  ensureGrid: async () => {
+    const { manifest, grid, gridStatus } = get();
+    set({ gridRequested: true });
+    if (!manifest || grid || (gridStatus === 'cargando' && get().gridLoading)) return;
+    set({ gridStatus: 'cargando', gridLoading: true });
     try {
-      const grid = await dataSource.grid(manifest);
-      set({ gridStatus: 'listo', grid, ...compute(get().area, manifest, grid) });
+      const loaded = await dataSource.grid(manifest);
+      set({ gridStatus: 'listo', grid: loaded, ...compute(get().area, manifest, loaded) });
     } catch (error) {
       set({ gridStatus: 'error', error: message(error) });
+    } finally {
+      set({ gridLoading: false });
     }
   },
 
   setArea: (area) => {
     const { manifest, grid } = get();
     if (manifest && grid) set({ area, ...compute(area, manifest, grid) });
-    else set({ area, cells: undefined, series: undefined });
+    else {
+      set({ area, cells: undefined, series: undefined });
+      void get().ensureGrid();
+    }
   },
   select: (selected) => set({ selected }),
   setYearRange: (yearRange) => {

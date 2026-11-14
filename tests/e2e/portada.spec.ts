@@ -90,10 +90,15 @@ test('los incendios detectados se filtran por comunidad y se abren en el mapa', 
 }) => {
   await page.goto('./');
   await page.getByRole('button', { name: 'Empezar' }).click();
-  let panel = page.getByRole('complementary', { name: 'Incendios' });
-  if (!(await panel.isVisible())) {
-    await page.getByRole('button', { name: 'Incendios', exact: true }).first().click();
-    panel = page.getByRole('complementary', { name: 'Incendios' });
+  // El panel vive dentro del mapa, que carga al cerrar el briefing: se espera a que esté
+  await expect(page.getByTestId('mapa')).toBeVisible();
+  const panel = page.getByRole('complementary', { name: 'Incendios' });
+  const rail = page.getByRole('navigation', { name: 'Módulos' });
+  if (await rail.isVisible()) {
+    const button = rail.getByRole('button', { name: 'Incendios' });
+    if ((await button.getAttribute('aria-pressed')) !== 'true') await button.click();
+  } else {
+    await page.getByRole('button', { name: 'Incendios', exact: true }).click();
   }
   await expect(panel.getByText('Real · FIRMS')).toBeVisible();
   await panel.getByLabel('Comunidad autónoma').selectOption('Andalucía');
