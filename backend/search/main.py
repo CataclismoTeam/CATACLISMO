@@ -7,9 +7,7 @@ viento, cortafuegos y georreferenciación WGS84).
 from __future__ import annotations
 
 import heapq
-import json
 import math
-from collections import deque
 from dataclasses import dataclass
 from typing import Any
 
@@ -218,7 +216,8 @@ def encontrar_via_escape(
     - focos_incendio: Focos iniciales de fuego. Si es None, busca todas las 'F'.
     - permitir_diagonales: Permite movimiento realista en 8 direcciones (distancia euclídea).
     - margen_seguridad: Margen de tiempo mínimo entre la persona y el fuego al cruzar una celda.
-    - peso_riesgo: Factor de penalización por aproximarse al frente de fuego (0.0 = camino más rápido).
+    - peso_riesgo: Factor de penalización por aproximarse al frente de fuego
+      (0.0 = camino más rápido).
     - tiempo_fuego_previo: Matriz de tiempos de fuego ya calculada (si se desea reutilizar).
     - viento: Vector de viento (v_fila, v_col) para la propagación del fuego.
     - velocidad_persona: Velocidad media de desplazamiento de los evacuados.
