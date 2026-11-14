@@ -1,9 +1,9 @@
 #!/usr/bin/env python3
 """
-Fase 1 ÔÇö Proyecci├│n EPSG:3035 + Asignaci├│n a celdas L0ÔÇôL3 (GEN├ëRICO)
+Fase 1 — Proyección EPSG:3035 + Asignación a celdas L0–L3 (GENÉRICO)
 
 Lee archivos JSON de FIRMS (MODIS/VIIRS, SP/NRT), aplica tipos, proyecta a EPSG:3035,
-calcula celdas anidadas 2├ù2, a├▒ade control de calidad y trazabilidad,
+calcula celdas anidadas 2×2, añade control de calidad y trazabilidad,
 y escribe observations.parquet + observations.jsonl.
 
 Uso:
@@ -32,13 +32,13 @@ import pandas as pd
 from pyproj import Transformer
 
 # ---------------------------------------------------------------------------
-# Constantes y umbrales (configurables v├¡a CLI)
+# Constantes y umbrales (configurables vía CLI)
 # ---------------------------------------------------------------------------
 
-# Proyecci├│n EPSG:4326 (WGS84) -> EPSG:3035 (ETRS89-LAEA Europe, metros)
+# Proyección EPSG:4326 (WGS84) -> EPSG:3035 (ETRS89-LAEA Europe, metros)
 TRANSFORMER = Transformer.from_crs("EPSG:4326", "EPSG:3035", always_xy=True)
 
-# Umbrales de saturaci├│n por sensor
+# Umbrales de saturación por sensor
 SATURATION_THRESHOLDS = {
     "VIIRS": {"brightness_max": 367.0, "brightness_min": 208.0},
     "MODIS": {"brightness_max": 500.0},
@@ -61,7 +61,7 @@ def compute_file_hash(path: Path) -> str:
 
 
 def parse_acq_time(acq_time: str | int | float) -> int | None:
-    """Convierte 'HHMM' o 1340 -> minutos del d├¡a (0-1439)."""
+    """Convierte 'HHMM' o 1340 -> minutos del día (0-1439)."""
     if acq_time is None or (isinstance(acq_time, float) and np.isnan(acq_time)):
         return None
     s = str(int(acq_time)).zfill(4)
@@ -78,7 +78,7 @@ def parse_acq_time(acq_time: str | int | float) -> int | None:
 def confidence_to_rank(sensor: str, confidence_raw: Any) -> int | None:
     """
     Convierte confidence crudo a rank 0/1/2.
-    MODIS: string num├®rica "0"-"100" -> <30=0, 30-79=1, >=80=2
+    MODIS: string numérica "0"-"100" -> <30=0, 30-79=1, >=80=2
     VIIRS: "l"/"n"/"h" -> l=0, n=1, h=2
     """
     if confidence_raw is None or (isinstance(confidence_raw, float) and np.isnan(confidence_raw)):
@@ -122,7 +122,7 @@ def infer_product_from_filename(fname: str) -> str:
 
 
 def compute_flags(row: pd.Series, cell_size: float, partial_period_start: str) -> list[str]:
-    """Genera lista de flags seg├║n cat├ílogo cerrado."""
+    """Genera lista de flags según catálogo cerrado."""
     flags = []
     sensor = row.get("sensor", "").upper()
 
@@ -199,12 +199,12 @@ def compute_flags(row: pd.Series, cell_size: float, partial_period_start: str) -
 
 
 def format_cell_id(iy: int, ix: int, level: int, grid_prefix: str) -> str:
-    """Formatea cell_id: {grid_prefix}:L{level}:Y{iy}:X{ix} con zero-padding 5 d├¡gitos con signo."""
+    """Formatea cell_id: {grid_prefix}:L{level}:Y{iy}:X{ix} con zero-padding 5 dígitos con signo."""
     return f"{grid_prefix}:L{level}:Y{iy:05d}:X{ix:05d}"
 
 
 def compute_parent_ids(iy: int, ix: int, grid_prefix: str) -> dict[str, str]:
-    """Calcula parent_ids para L1, L2, L3 (anidamiento 2├ù2)."""
+    """Calcula parent_ids para L1, L2, L3 (anidamiento 2×2)."""
     parents = {}
     for level in (1, 2, 3):
         p_iy = iy // (2 ** level)
@@ -228,7 +228,7 @@ def collect_input_files(input_paths: list[Path]) -> list[Path]:
 
 
 def load_json_files(file_paths: list[Path]) -> pd.DataFrame:
-    """Carga m├║ltiples JSON y devuelve DataFrame combinado con columnas src_*."""
+    """Carga múltiples JSON y devuelve DataFrame combinado con columnas src_*."""
     all_records = []
     file_hashes = {}
 
@@ -254,7 +254,7 @@ def load_json_files(file_paths: list[Path]) -> pd.DataFrame:
             all_records.append(rec)
 
     if not all_records:
-        raise RuntimeError("No se cargaron registros de ning├║n archivo JSON")
+        raise RuntimeError("No se cargaron registros de ningún archivo JSON")
 
     df = pd.DataFrame(all_records)
     print(f"Cargados {len(df)} registros de {len(file_hashes)} archivos")
@@ -264,8 +264,8 @@ def load_json_files(file_paths: list[Path]) -> pd.DataFrame:
 
 
 def normalize_and_enrich(df: pd.DataFrame, cell_size: float, grid_prefix: str, partial_period_start: str) -> pd.DataFrame:
-    """Aplica tipos, proyecci├│n, celdas, ranks, flags, IDs."""
-    # --- Tipos b├ísicos ---
+    """Aplica tipos, proyección, celdas, ranks, flags, IDs."""
+    # --- Tipos básicos ---
     df["latitude"] = pd.to_numeric(df.get("src_latitude"), errors="coerce")
     df["longitude"] = pd.to_numeric(df.get("src_longitude"), errors="coerce")
 
@@ -294,7 +294,7 @@ def normalize_and_enrich(df: pd.DataFrame, cell_size: float, grid_prefix: str, p
     df["type_code"] = pd.to_numeric(df.get("src_type"), errors="coerce").astype("Int8")
     df["version"] = df.get("src_version").astype(str)
 
-    # --- Proyecci├│n EPSG:3035 ---
+    # --- Proyección EPSG:3035 ---
     valid_coords = df["latitude"].notna() & df["longitude"].notna()
     x_arr = np.full(len(df), np.nan, dtype=np.float64)
     y_arr = np.full(len(df), np.nan, dtype=np.float64)
@@ -307,7 +307,7 @@ def normalize_and_enrich(df: pd.DataFrame, cell_size: float, grid_prefix: str, p
     df["x_3035"] = x_arr
     df["y_3035"] = y_arr
 
-    # --- Celdas L0-L3 (anidamiento 2├ù2) ---
+    # --- Celdas L0-L3 (anidamiento 2×2) ---
     # L0 = cell_size, L1 = 2*cell_size, L2 = 4*cell_size, L3 = 8*cell_size
     for level in range(4):
         level_cell_size = cell_size * (2 ** level)
@@ -414,10 +414,10 @@ def validate_output(df: pd.DataFrame) -> None:
     print(f"Rango fechas: {dates.min()} -> {dates.max()}")
 
     valid_coords = df["latitude"].notna() & df["longitude"].notna()
-    print(f"Coordenadas v├ílidas: {valid_coords.sum()} / {len(df)}")
+    print(f"Coordenadas válidas: {valid_coords.sum()} / {len(df)}")
 
     valid_proj = df["x_3035"].notna() & df["y_3035"].notna()
-    print(f"Proyecci├│n v├ílida: {valid_proj.sum()} / {len(df)}")
+    print(f"Proyección válida: {valid_proj.sum()} / {len(df)}")
 
     has_cell = df["cell_id_L0"].notna().sum()
     print(f"Con cell_id_L0: {has_cell} / {len(df)}")
@@ -445,14 +445,12 @@ def validate_output(df: pd.DataFrame) -> None:
     print("=== FIN VALIDACIONES ===\n")
 
 
-def write_outputs(df: pd.DataFrame, parquet_path: Path, json_path: Path) -> None:
-    """Escribe Parquet y JSON (array único)."""
+def write_outputs(df: pd.DataFrame, parquet_path: Path, jsonl_path: Path) -> None:
+    """Escribe Parquet y JSONL."""
     df.to_parquet(parquet_path, compression="zstd", index=False)
     print(f"Escrito Parquet: {parquet_path} ({parquet_path.stat().st_size / 1024:.1f} KB)")
 
-    from json_output import JSONArrayWriter
-
-    with JSONArrayWriter(json_path, indent=2) as w:
+    with jsonl_path.open("w", encoding="utf-8") as f:
         for _, row in df.iterrows():
             rec = row.to_dict()
             for k, v in rec.items():
@@ -466,18 +464,18 @@ def write_outputs(df: pd.DataFrame, parquet_path: Path, json_path: Path) -> None
                     rec[k] = None
                 elif hasattr(v, 'isoformat'):
                     rec[k] = v.isoformat()
-            w.write(rec)
-    print(f"Escrito JSON: {json_path} ({json_path.stat().st_size / 1024:.1f} KB)")
+            f.write(json.dumps(rec, ensure_ascii=False) + "\n")
+    print(f"Escrito JSONL: {jsonl_path} ({jsonl_path.stat().st_size / 1024:.1f} KB)")
 
 
 def build_arg_parser() -> argparse.ArgumentParser:
-    p = argparse.ArgumentParser(description="Fase 1: Proyecci├│n + Celdas (gen├®rico)")
+    p = argparse.ArgumentParser(description="Fase 1: Proyección + Celdas (genérico)")
     p.add_argument("--input", nargs="+", type=Path, required=True,
                    help="Archivos JSON o directorios (recursivo)")
     p.add_argument("--output", type=Path, required=True,
                    help="Directorio de salida")
     p.add_argument("--cell-size", type=int, default=1000,
-                   help="Tama├▒o de celda L0 en metros (default: 1000)")
+                   help="Tamaño de celda L0 en metros (default: 1000)")
     p.add_argument("--grid-prefix", type=str, default=None,
                    help="Prefijo grid ID (default: ES{size}K, ej. ES5K para 5000, ES1K para 1000)")
     p.add_argument("--partial-period-start", type=str, default=DEFAULT_PARTIAL_PERIOD_START,
@@ -493,17 +491,17 @@ def main(argv: list[str] | None = None) -> int:
         size_km = args.cell_size // 1000
         args.grid_prefix = f"ES{size_km}K"
 
-    # Calcular tama├▒os de celda por nivel
+    # Calcular tamaños de celda por nivel
     cell_sizes = {level: args.cell_size * (2 ** level) for level in range(4)}
 
     output_dir = args.output.resolve()
     output_dir.mkdir(parents=True, exist_ok=True)
 
     parquet_path = output_dir / "observations.parquet"
-    json_path = output_dir / "observations.json"
+    jsonl_path = output_dir / "observations.jsonl"
 
     try:
-        print("=== FASE 1: Proyecci├│n + Celdas ===")
+        print("=== FASE 1: Proyección + Celdas ===")
         print(f"Cell size L0: {args.cell_size} m")
         print(f"Grid prefix: {args.grid_prefix}")
         print(f"Entradas: {[str(p) for p in args.input]}")
@@ -512,7 +510,7 @@ def main(argv: list[str] | None = None) -> int:
         # 1. Recopilar archivos
         file_paths = collect_input_files(args.input)
         if not file_paths:
-            raise RuntimeError("No se encontraron archivos JSON v├ílidos")
+            raise RuntimeError("No se encontraron archivos JSON válidos")
 
         # 2. Cargar JSONs
         df = load_json_files(file_paths)
@@ -527,7 +525,7 @@ def main(argv: list[str] | None = None) -> int:
         validate_output(df)
 
         # 6. Escribir
-        write_outputs(df, parquet_path, json_path)
+        write_outputs(df, parquet_path, jsonl_path)
 
         print("OK - FASE 1 completada correctamente")
         return 0

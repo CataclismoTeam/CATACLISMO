@@ -1,12 +1,12 @@
 # CATA (`fire_model`) — Algoritmo de predicción de propagación de fuego (`11_ML_DATA_CONTRACT.md`)
 
 Algoritmo **CATA** (ConvLSTM) ubicado en `backend/app/fire_model/`, alineado con el contrato de datos
-`11_ML_DATA_CONTRACT.md` (grilla `ES-LAEA-5K-v1`, EPSG:3035, celdas `ES5K:L0:Y{iy}:X{ix}` de 5 km).
+`11_ML_DATA_CONTRACT.md` (grilla `ES-LAEA-1K-v1`, EPSG:3035, celdas `ES1K:L0:Y{iy}:X{ix}` de 1 km).
 Predice exclusivamente con las variables existentes en `cell_day` (MODIS + VIIRS),
 sin depender de viento, pendiente ni variables externas, manteniendo arquitectura
 100% modular y expandible en canales.
 
-- **Entrada:** `(B, T, H, W, C)` → últimos `T` pasos temporales de la grilla.
+- **Entrada:** `(B, T, H, W, C)` → últimos `T` pasos temporales de la grilla (T=5, H=W=320).
 - **Salida:** `(B, H, W, 1)` → probabilidad `[0, 1]` de celda activa en `t+1`.
 
 | Archivo | Contenido |
