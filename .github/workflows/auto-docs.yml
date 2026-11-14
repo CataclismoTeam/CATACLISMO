@@ -13,6 +13,11 @@ on:
       - '**.md'
       - '.github/**'
 
+# Un solo run a la vez; si entra otro push, el anterior se cancela (evita PRs que se pisan)
+concurrency:
+  group: auto-docs
+  cancel-in-progress: true
+
 # Por defecto sin permisos; el job pide solo lo que necesita
 permissions: {}
 
@@ -22,9 +27,10 @@ jobs:
     permissions:
       contents: write # rama con la documentación
       pull-requests: write # PR de documentación
-    timeout-minutes: 10
-    # Evita que se dispare si el commit viene del propio bot de documentación
-    if: "!contains(github.event.head_commit.message, '[skip ci]')"
+    # Los reintentos con espera pueden tardar; con 10 min un 503 largo cortaría el job
+    timeout-minutes: 20
+    # Evita que se dispare si el commit viene del propio bot de documentación o de release-please
+    if: "!contains(github.event.head_commit.message, '[skip ci]') && !startsWith(github.event.head_commit.message, 'chore(main): release')"
 
     steps:
       - name: Checkout repository
@@ -44,13 +50,19 @@ jobs:
       - name: Extract modified files and generate documentation
         env:
           GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
-          # Opcional: variable del repo GEMINI_MODEL para cambiar de modelo sin tocar el código
+          # Opcionales (variables del repo): cambiar de modelo o definir reservas sin tocar el código
           GEMINI_MODEL: ${{ vars.GEMINI_MODEL }}
-          # Ni documentación, ni CI, ni lockfiles ni binarios (solo código fuente)
-          EXCLUDE: '(\.md$|^docs/|^scripts/generate_docs\.py$|\.github/|pnpm-lock\.yaml$|uv\.lock$|\.(png|jpe?g|webp|svg|ico|gif)$)'
+          GEMINI_FALLBACK_MODELS: ${{ vars.GEMINI_FALLBACK_MODELS }}
+          BEFORE: ${{ github.event.before }}
+          # Solo código fuente: ni documentación, CI, lockfiles, binarios, datos generados, tests
+          # ni capturas de regresión visual
+          EXCLUDE: '(\.md$|^docs/|^scripts/generate_docs\.py$|\.github/|pnpm-lock\.yaml$|uv\.lock$|\.(png|jpe?g|webp|svg|ico|gif|json|geojson|csv|parquet|pmtiles)$|/public/data/|^tests/|^dist/)'
         run: |
-          # Si es el primer commit del repo, toma todos los archivos; si no, compara con el commit anterior
-          if git rev-parse HEAD~1 >/dev/null 2>&1; then
+          # Compara con lo que había antes del push entero (no solo el último commit: un push con
+          # varios commits perdería ficheros). Primer push o rama nueva: solo el último commit.
+          if [ -n "$BEFORE" ] && ! echo "$BEFORE" | grep -qE '^0+$' && git cat-file -e "$BEFORE^{commit}" 2>/dev/null; then
+            CHANGED_FILES=$(git diff --name-only --diff-filter=ACMRT "$BEFORE" HEAD | grep -vE "$EXCLUDE" || true)
+          elif git rev-parse HEAD~1 >/dev/null 2>&1; then
             CHANGED_FILES=$(git diff --name-only --diff-filter=ACMRT HEAD~1 HEAD | grep -vE "$EXCLUDE" || true)
           else
             CHANGED_FILES=$(git ls-files | grep -vE "$EXCLUDE" || true)

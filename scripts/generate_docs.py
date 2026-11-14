@@ -1,8 +1,10 @@
 import os
 import re
 import sys
+import time
 from pathlib import Path
 from google import genai
+from google.genai import errors
 
 # Archivo especializado donde se va a guardar la documentación
 DOCS_FILE_PATH = Path("docs/TECHNICAL_DOCS.md")
@@ -10,6 +12,44 @@ DOCS_FILE_PATH = Path("docs/TECHNICAL_DOCS.md")
 # Modelo de Gemini (gemini-2.5-flash ya no está disponible para claves nuevas).
 # Se puede cambiar sin tocar el código con la variable GEMINI_MODEL.
 MODEL = os.environ.get("GEMINI_MODEL") or "gemini-3.8-flash"
+# Modelos de reserva, separados por comas (variable del repo GEMINI_FALLBACK_MODELS), por si el
+# principal está saturado o se retira.
+_raw = os.environ.get("GEMINI_FALLBACK_MODELS", "")
+FALLBACKS = [m.strip() for m in _raw.split(",") if m.strip()]
+
+# Con el repo creciendo, el prompt no puede crecer sin límite: tope por fichero y en total.
+MAX_FILE_CHARS = 30_000
+MAX_TOTAL_CHARS = 400_000
+# Reintentos por modelo ante errores transitorios (503 saturado, 429 cuota, 500, 504)
+ATTEMPTS = 5
+TRANSIENT = {429, 500, 502, 503, 504}
+
+
+def soft_fail(message: str) -> None:
+    """La documentación es accesoria: un fallo externo avisa pero no pone main en rojo."""
+    print(f"::warning title=Documentación con IA omitida::{message}")
+    sys.exit(0)
+
+
+def generate(client: genai.Client, prompt: str) -> str:
+    """Llama a Gemini con espera exponencial y, si el modelo sigue caído, prueba el siguiente."""
+    last = "sin respuesta"
+    for model in [MODEL, *[m for m in FALLBACKS if m != MODEL]]:
+        for attempt in range(1, ATTEMPTS + 1):
+            try:
+                print(f"Calling Gemini API ({model}), intento {attempt}/{ATTEMPTS}...")
+                response = client.models.generate_content(model=model, contents=prompt)
+                if response.text:
+                    return response.text
+                last = f"{model}: respuesta vacía"
+            except errors.APIError as e:
+                last = f"{model}: {e.code} {e.status}"
+                if e.code not in TRANSIENT:
+                    break  # clave inválida, modelo inexistente...: reintentar no sirve
+            if attempt < ATTEMPTS:
+                time.sleep(min(60, 5 * 2 ** (attempt - 1)))  # 5, 10, 20, 40 s
+    soft_fail(f"Gemini no respondió ({last}). Se reintentará en el próximo push a main.")
+    return ""
 
 
 def clean_markdown_output(text: str) -> str:
@@ -32,11 +72,22 @@ def main():
         sys.exit(0)
 
     code_context = ""
+    skipped = []
     for file_path in files_to_document:
         path = Path(file_path)
-        if path.exists() and path.is_file():
-            content = path.read_text(encoding="utf-8", errors="ignore")
-            code_context += f"\n--- File: {file_path} ---\n```\n{content}\n```\n"
+        if not (path.exists() and path.is_file()):
+            continue
+        content = path.read_text(encoding="utf-8", errors="ignore")
+        if len(content) > MAX_FILE_CHARS:
+            content = content[:MAX_FILE_CHARS] + "\n... [truncado por tamaño]"
+        block = f"\n--- File: {file_path} ---\n```\n{content}\n```\n"
+        if len(code_context) + len(block) > MAX_TOTAL_CHARS:
+            skipped.append(file_path)
+            continue
+        code_context += block
+    if skipped:
+        names = ", ".join(skipped[:10])
+        print(f"::warning::{len(skipped)} fichero(s) fuera del prompt por tamaño: {names}")
 
     if not code_context.strip():
         print("No valid text content extracted from modified files.")
@@ -86,18 +137,10 @@ The goal of this document is twofold:
 {code_context}
 """
 
-    print(f"Calling Gemini API ({MODEL}) to generate technical documentation...")
     client = genai.Client(api_key=api_key)
-    response = client.models.generate_content(
-        model=MODEL,
-        contents=prompt,
-    )
+    text = generate(client, prompt)
 
-    if not response.text:
-        print("Error: Received empty response from Gemini.")
-        sys.exit(1)
-
-    cleaned_markdown = clean_markdown_output(response.text)
+    cleaned_markdown = clean_markdown_output(text)
 
     # Asegurar que la carpeta docs/ exista y guardar el archivo
     DOCS_FILE_PATH.parent.mkdir(parents=True, exist_ok=True)
