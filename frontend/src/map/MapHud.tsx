@@ -1,61 +1,16 @@
-import { ArrowUp, Crosshair, X } from 'lucide-react';
+import { Crosshair, X } from 'lucide-react';
 import type { Map as MapLibre } from 'maplibre-gl';
 import { useEffect, useState, type RefObject } from 'react';
-import { useUi, type ScenarioId } from '../store/ui.ts';
+import { cn } from '../lib/cn.ts';
+import { useUi } from '../store/ui.ts';
 import { Button } from '../ui/Button.tsx';
 import { Tag } from '../ui/Tag.tsx';
 import { KIND, STATUS } from './markers.ts';
-import { SCENARIOS, type Scenario, type Unit } from './scenario.ts';
+import type { Incident } from './incidents.ts';
+import type { Unit } from './scenario.ts';
 
 const panel = 'rounded-md border border-line-strong bg-surface shadow-panel';
-const COMPASS = ['N', 'NE', 'E', 'SE', 'S', 'SO', 'O', 'NO'];
 
-/** Escenario activo, viento y rótulo de simulación (arriba a la izquierda). */
-export function ScenarioBar({ scenario }: { scenario: Scenario }) {
-  const setScenario = useUi((s) => s.setScenario);
-  const from = COMPASS[Math.round(scenario.windFrom / 45) % 8];
-  return (
-    <div
-      className={`${panel} absolute top-3 left-3 flex max-w-[calc(100%-5rem)] flex-col gap-2 p-3`}
-    >
-      <div className="flex flex-wrap items-center gap-2">
-        <Tag tone="simulado">Escenario simulado</Tag>
-        <label className="sr-only" htmlFor="escenario">
-          Escenario
-        </label>
-        <select
-          id="escenario"
-          value={scenario.id}
-          onChange={(e) => setScenario(e.target.value as ScenarioId)}
-          className="h-9 min-w-0 rounded-md border border-line-strong bg-canvas px-2 text-sm font-semibold text-ink pointer-coarse:h-11"
-        >
-          {Object.values(SCENARIOS).map((s) => (
-            <option key={s.id} value={s.id}>
-              {s.name}
-            </option>
-          ))}
-        </select>
-      </div>
-      <p className="m-0 hidden max-w-sm text-sm text-ink-muted sm:block">{scenario.description}</p>
-      <p className="m-0 hidden items-center gap-2 text-sm sm:flex">
-        <span
-          className="grid size-7 place-items-center rounded-full border border-line-strong"
-          title={`El viento sopla hacia ${COMPASS[Math.round(((scenario.windFrom + 180) % 360) / 45) % 8]}`}
-        >
-          <ArrowUp
-            size={16}
-            strokeWidth={2}
-            aria-hidden
-            style={{ transform: `rotate(${(scenario.windFrom + 180) % 360}deg)` }}
-          />
-        </span>
-        Viento del {from}, {scenario.windKmh} km/h
-      </p>
-    </div>
-  );
-}
-
-// Decimales con signo (WGS84): sin letras O/W que se confundan con un cero
 const lat = (v: number) => `${v.toFixed(5)}`;
 const lon = (v: number) => `${v.toFixed(5)}`;
 
@@ -149,6 +104,121 @@ export function UnitCard({ unit, onClose }: { unit: Unit; onClose: () => void })
       </dl>
       <Tag tone="simulado" className="mt-3">
         Unidad simulada
+      </Tag>
+    </section>
+  );
+}
+
+export interface FireObservation {
+  lon: number;
+  lat: number;
+  intensity: number;
+  flameHeight: number;
+  arrivalHours: number;
+}
+
+export function FireCard({
+  observation,
+  onClose,
+}: {
+  observation: FireObservation;
+  onClose: () => void;
+}) {
+  return (
+    <section
+      aria-label="Detalle del fuego"
+      className={`${panel} absolute bottom-24 left-3 w-[min(22rem,calc(100%-1.5rem))] p-4`}
+    >
+      <header className="mb-2 flex items-start justify-between gap-2">
+        <div>
+          <p className="m-0 text-xs font-semibold tracking-wide text-fire uppercase">
+            Foco térmico · simulado
+          </p>
+          <h3 className="m-0 text-base font-semibold">Detalle de intensidad</h3>
+        </div>
+        <Button variant="ghost" size="icon" aria-label="Cerrar detalle del fuego" onClick={onClose}>
+          <X size={20} strokeWidth={1.5} aria-hidden />
+        </Button>
+      </header>
+      <dl className="m-0 grid grid-cols-[auto_1fr] gap-x-4 gap-y-1 text-sm">
+        <dt className="text-ink-muted">Intensidad</dt>
+        <dd className="m-0 font-semibold text-fire">
+          {Math.round(observation.intensity).toLocaleString('es-ES')} MW
+        </dd>
+        <dt className="text-ink-muted">Altura de llama</dt>
+        <dd className="m-0">{observation.flameHeight} m</dd>
+        <dt className="text-ink-muted">Llegada estimada</dt>
+        <dd className="m-0">{observation.arrivalHours.toFixed(1)} h</dd>
+        <dt className="text-ink-muted">Coordenadas</dt>
+        <dd className="m-0 font-mono">
+          {observation.lat.toFixed(5)} / {observation.lon.toFixed(5)}
+        </dd>
+      </dl>
+      <Tag tone="simulado" className="mt-3">
+        Modelo de demostración
+      </Tag>
+    </section>
+  );
+}
+
+/** Ficha de un incendio detectado por satélite (REAL). */
+export function IncidentCard({ incident, onClose }: { incident: Incident; onClose: () => void }) {
+  // Ficha en el lateral, como el resto de fichas; nunca en medio del mapa
+  const layersOpen = useUi((s) => s.layersOpen);
+  const area =
+    incident.areaKm2 < 1
+      ? `${Math.round(incident.areaKm2 * 100)} ha`
+      : `${incident.areaKm2.toLocaleString('es-ES', { maximumFractionDigits: 1 })} km²`;
+  return (
+    <section
+      aria-label={`Incendio ${incident.id}`}
+      className={cn(
+        panel,
+        'absolute top-3 right-14 w-[min(22rem,calc(100%-4.5rem))] p-4',
+        layersOpen && 'md:right-[24.5rem]',
+      )}
+    >
+      <header className="mb-2 flex items-start justify-between gap-2">
+        <div className="min-w-0">
+          <p className="m-0 text-xs font-semibold tracking-wide text-ink-muted uppercase">
+            {incident.comunidad} · {incident.id}
+          </p>
+          <h3 className="m-0 text-base font-semibold">{incident.provincia}</h3>
+        </div>
+        <Button
+          variant="ghost"
+          size="icon"
+          aria-label="Cerrar ficha del incendio"
+          onClick={onClose}
+        >
+          <X size={20} strokeWidth={1.5} aria-hidden />
+        </Button>
+      </header>
+      <dl className="m-0 grid grid-cols-[auto_1fr] gap-x-4 gap-y-1 text-sm">
+        <dt className="text-ink-muted">Estado</dt>
+        <dd className="m-0 font-semibold">
+          {incident.activo ? 'Con actividad reciente' : 'Sin detecciones recientes'}
+        </dd>
+        <dt className="text-ink-muted">Detectado</dt>
+        <dd className="m-0 font-mono">
+          {incident.desde === incident.hasta
+            ? incident.desde
+            : `${incident.desde} → ${incident.hasta}`}
+        </dd>
+        <dt className="text-ink-muted">Detecciones</dt>
+        <dd className="m-0">
+          {incident.detecciones.toLocaleString('es-ES')} ({incident.sensores.join(' y ')})
+        </dd>
+        <dt className="text-ink-muted">Área afectada</dt>
+        <dd className="m-0">≈ {area}</dd>
+        <dt className="text-ink-muted">Potencia máx.</dt>
+        <dd className="m-0">{incident.frpMax.toLocaleString('es-ES')} MW</dd>
+      </dl>
+      <p className="m-0 mt-2 text-xs text-ink-muted">
+        Área estimada con la huella de los píxeles del satélite; no es un perímetro oficial.
+      </p>
+      <Tag tone="real" className="mt-3">
+        Real · NASA FIRMS
       </Tag>
     </section>
   );

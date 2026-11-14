@@ -11,8 +11,9 @@ test.beforeEach(async ({ page }) => {
 
 /** En pantallas estrechas el calendario empieza plegado: se despliega si hace falta. */
 async function openCalendar(page: Page) {
-  const toggle = page.getByRole('button', { name: 'Desplegar' });
-  if (await toggle.isVisible()) await toggle.click();
+  const toggle = page.getByRole('button', { name: /^(Plegar|Desplegar)$/ });
+  await expect(toggle).toBeVisible();
+  if ((await toggle.getAttribute('aria-expanded')) === 'false') await toggle.click();
   await expect(page.getByRole('table')).toBeVisible();
 }
 
@@ -44,6 +45,8 @@ test('el briefing no vuelve a salir y se puede reabrir', async ({ page }) => {
 });
 
 test('el mapa se carga sin pedirlo y cambia entre 2D y 3D', async ({ page }) => {
+  // El relieve 3D se pinta por software en el CI: con varios tests a la vez va lento
+  test.slow();
   const errors: string[] = [];
   page.on('pageerror', (e) => errors.push(e.message));
   await page.goto('./');
@@ -51,10 +54,15 @@ test('el mapa se carga sin pedirlo y cambia entre 2D y 3D', async ({ page }) => 
   await expect(page.getByTestId('mapa').locator('canvas').first()).toBeVisible({ timeout: 30_000 });
   const mode = page.getByRole('radiogroup', { name: 'Modo del mapa' });
   await expect(mode.getByRole('radio', { name: '2D' })).toHaveAttribute('aria-checked', 'true');
-  await page.keyboard.press('2');
-  await expect(mode.getByRole('radio', { name: '3D' })).toHaveAttribute('aria-checked', 'true');
-  await mode.getByRole('radio', { name: '2D' }).click();
-  await expect(mode.getByRole('radio', { name: '2D' })).toHaveAttribute('aria-checked', 'true');
+  // dispatchEvent: sin GPU el 3D satura la página y un clic normal esperaría a que se estabilice
+  await mode.getByRole('radio', { name: '3D' }).dispatchEvent('click');
+  await expect(mode.getByRole('radio', { name: '3D' })).toHaveAttribute('aria-checked', 'true', {
+    timeout: 30_000,
+  });
+  await mode.getByRole('radio', { name: '2D' }).dispatchEvent('click');
+  await expect(mode.getByRole('radio', { name: '2D' })).toHaveAttribute('aria-checked', 'true', {
+    timeout: 30_000,
+  });
   expect(errors).toEqual([]);
 });
 
@@ -75,4 +83,43 @@ test('una ruta inexistente muestra la 404 propia', async ({ page }) => {
   const response = await page.goto('no-existe');
   expect(response?.status()).toBe(404);
   await expect(page.locator('#no-encontrada')).toBeVisible();
+});
+
+test('los incendios detectados se filtran por comunidad y se abren en el mapa', async ({
+  page,
+}) => {
+  await page.goto('./');
+  await page.getByRole('button', { name: 'Empezar' }).click();
+  let panel = page.getByRole('complementary', { name: 'Incendios' });
+  if (!(await panel.isVisible())) {
+    await page.getByRole('button', { name: 'Incendios', exact: true }).first().click();
+    panel = page.getByRole('complementary', { name: 'Incendios' });
+  }
+  await expect(panel.getByText('Real · FIRMS')).toBeVisible();
+  await panel.getByLabel('Comunidad autónoma').selectOption('Andalucía');
+  const first = panel.getByRole('button', { name: /detecciones/ }).first();
+  await first.click();
+  const card = page.getByRole('region', { name: /Incendio INC-/ });
+  await expect(card).toContainText('Andalucía');
+  await expect(card).toContainText('Real · NASA FIRMS');
+  await expect(card.getByRole('button', { name: 'Cerrar ficha del incendio' })).toBeVisible();
+  await page.keyboard.press('Escape');
+  await expect(card).toBeHidden();
+});
+
+test('el botón Incendios del rail abre y cierra su panel', async ({ page }) => {
+  await page.goto('./');
+  await page.getByRole('button', { name: 'Empezar' }).click();
+  const rail = page.getByRole('navigation', { name: 'Módulos' });
+  test.skip(!(await rail.isVisible()), 'el rail solo se muestra en pantallas anchas');
+  const button = rail.getByRole('button', { name: 'Incendios' });
+  const panel = page.getByRole('complementary', { name: 'Incendios' });
+  await expect(button).toHaveAttribute('aria-pressed', 'true');
+  await expect(panel).toBeVisible();
+  await button.click();
+  await expect(panel).toBeHidden();
+  await expect(button).toHaveAttribute('aria-pressed', 'false');
+  await button.click();
+  await expect(panel).toBeVisible();
+  await expect(rail.getByRole('button', { name: 'Histórico' })).toHaveCount(0);
 });

@@ -4,7 +4,7 @@ import { cn } from '../lib/cn.ts';
 import { useUi, type Basemap, type LayerId } from '../store/ui.ts';
 import { Button } from '../ui/Button.tsx';
 import type { Detections } from './detections.ts';
-import { ACTIVE_COLOR, FRP_RAMP, PREDICTION_BANDS, ROUTE_COLOR } from './overlays.ts';
+import { ACTIVE_COLOR, FIRE_INTENSITY_RAMP, PREDICTION_BANDS, ROUTE_COLOR } from './overlays.ts';
 import { provider } from './providers.ts';
 
 const BASEMAPS: [Basemap, string][] = [
@@ -175,20 +175,47 @@ export function LayersPanel({ detections }: { detections?: Detections }) {
       <Group title="Fuego">
         <Toggle
           id="detecciones"
-          label="Detecciones de satélite"
+          label="Incendios detectados"
           origin="real"
           legend={
             <div className="flex flex-col gap-1">
               <span className="text-xs text-ink-muted">
                 NASA FIRMS, {detections ? `${detections.from} a ${detections.to}` : 'cargando…'}.
-                Cuadrado = píxel del sensor (VIIRS 375 m, MODIS 1 km).
+                Calor según la potencia del fuego; línea clara = área afectada estimada.
               </span>
-              <div className="flex flex-wrap gap-x-3 gap-y-1">
-                {FRP_RAMP.map(([v, c]) => (
-                  <Swatch key={v} fill={c}>
-                    {v === 0 ? '< 10 MW' : `≥ ${v} MW`}
-                  </Swatch>
-                ))}
+              <span
+                aria-hidden
+                className="h-3 w-full rounded-sm"
+                style={{
+                  background: `linear-gradient(to right, ${FIRE_INTENSITY_RAMP.map(([, c]) => c).join(', ')})`,
+                }}
+              />
+              <span className="flex justify-between text-xs text-ink-muted">
+                <span>Menos potencia</span>
+                <span>Más potencia</span>
+              </span>
+              <div className="flex flex-wrap gap-x-3 gap-y-1 text-xs">
+                <span className="flex items-center gap-1.5">
+                  <span
+                    aria-hidden
+                    className="size-3 rounded-full border-2 border-[#fff1d6] bg-[#c2331f]"
+                  />
+                  Actividad reciente
+                </span>
+                <span className="flex items-center gap-1.5">
+                  <span
+                    aria-hidden
+                    className="size-3 rounded-full border-2 border-[#d9905a] bg-[#1d2026]"
+                  />
+                  Sin actividad reciente
+                </span>
+                <span className="flex items-center gap-1.5">
+                  <span
+                    aria-hidden
+                    className="size-3 rotate-45 border-2 border-[#e0a640] bg-[#2a2110]"
+                  />
+                  Simulación
+                </span>
               </div>
             </div>
           }
@@ -197,7 +224,30 @@ export function LayersPanel({ detections }: { detections?: Detections }) {
           id="incendio"
           label="Incendio activo"
           origin="simulado"
-          legend={<Swatch fill={ACTIVE_COLOR}>Zona ardiendo ahora (celdas de 250 m)</Swatch>}
+          legend={
+            <div className="flex flex-col gap-2">
+              <span className="text-xs text-ink-muted">
+                Intensidad térmica y altura de llama simuladas sobre el relieve.
+              </span>
+              <div className="flex flex-wrap gap-x-3 gap-y-1">
+                {FIRE_INTENSITY_RAMP.map(([value, color]) => (
+                  <Swatch key={value} fill={color}>
+                    {value === 0 ? 'baja' : value >= 8000 ? '≥ 8.000 MW' : `≥ ${value} MW`}
+                  </Swatch>
+                ))}
+              </div>
+              <div className="flex items-center gap-2 text-xs text-ink-muted">
+                <span
+                  aria-hidden
+                  className="h-3 w-8 rounded-sm"
+                  style={{
+                    background: `linear-gradient(to top, ${ACTIVE_COLOR}, #ffd166, #fff3b0)`,
+                  }}
+                />
+                Altura de llama 4–46 m
+              </div>
+            </div>
+          }
         />
         <Toggle
           id="prediccion"

@@ -258,7 +258,10 @@ export const NOW_H = 1;
  */
 export function spread(
   s: Scenario,
-): FeatureCollection<Polygon, { horas: number; fase: 'activo' | 'prediccion' }> {
+): FeatureCollection<
+  Polygon,
+  { horas: number; fase: 'activo' | 'prediccion'; intensidad: number; altura: number }
+> {
   const [lon0, lat0] = s.ignition;
   const head = 0.6 + s.windKmh * 0.045; // km/h en la cabeza
   const e = Math.min(0.85, 0.35 + s.windKmh / 60);
@@ -267,7 +270,7 @@ export function spread(
   const span = 0.09;
   const features: FeatureCollection<
     Polygon,
-    { horas: number; fase: 'activo' | 'prediccion' }
+    { horas: number; fase: 'activo' | 'prediccion'; intensidad: number; altura: number }
   >['features'] = [];
   const n = Math.round(span / CELL_DEG);
   const baseI = Math.round(lon0 / CELL_DEG);
@@ -285,6 +288,8 @@ export function spread(
       const speed = (head * (1 - e)) / (1 - e * Math.cos(theta));
       const hours = (d / speed) * (0.75 + 0.5 * noise(i, j));
       if (hours > HORIZON_H) continue;
+      const heat = Math.max(0, 1 - hours / HORIZON_H);
+      const intensity = Math.round(200 + heat ** 1.7 * 9800 * (0.78 + noise(i + 11, j + 7) * 0.22));
       const w = i * CELL_DEG;
       const so = j * CELL_DEG;
       features.push({
@@ -292,6 +297,8 @@ export function spread(
         properties: {
           horas: Math.round(hours * 10) / 10,
           fase: hours <= NOW_H ? 'activo' : 'prediccion',
+          intensidad: intensity,
+          altura: Math.round(4 + heat ** 1.5 * 42),
         },
         geometry: {
           type: 'Polygon',

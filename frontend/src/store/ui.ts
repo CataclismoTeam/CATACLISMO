@@ -17,6 +17,12 @@ export const DEFAULT_LAYERS: Record<LayerId, boolean> = {
   sombreado: false,
 };
 
+/** Encuadre pedido desde fuera del mapa (lista de incendios). `at` fuerza repetirlo. */
+export interface FlyTarget {
+  bbox: [number, number, number, number];
+  at: number;
+}
+
 interface UiState {
   briefingOpen: boolean;
   calendarOpen: boolean;
@@ -24,6 +30,9 @@ interface UiState {
   projection: boolean;
   radioOpen: boolean;
   layersOpen: boolean;
+  incidentsOpen: boolean;
+  selectedIncident?: string;
+  flyTarget?: FlyTarget;
   mapMode: MapMode;
   /** Exageración del relieve en 3D: 1 = real; con más inclinación da la vista 2.5D */
   exaggeration: number;
@@ -36,6 +45,8 @@ interface UiState {
   setMethodOpen: (open: boolean) => void;
   setRadioOpen: (open: boolean) => void;
   setLayersOpen: (open: boolean) => void;
+  setIncidentsOpen: (open: boolean) => void;
+  focusIncident: (id: string | undefined, bbox?: [number, number, number, number]) => void;
   toggleProjection: () => void;
   setMapMode: (mode: MapMode) => void;
   setExaggeration: (value: number) => void;
@@ -58,7 +69,9 @@ export const useUi = create<UiState>((set, get) => ({
   methodOpen: false,
   projection: readStored(PROJECTION_KEY, false),
   radioOpen: false,
-  layersOpen: !narrow(),
+  // Capas plegado de inicio: el mapa necesita el espacio; se abre con su botón
+  layersOpen: false,
+  incidentsOpen: !narrow(),
   mapMode: storedMap.mode === '2d' ? '2d' : '3d',
   exaggeration: 1.2,
   basemap: storedMap.basemap ?? 'satelite',
@@ -73,6 +86,14 @@ export const useUi = create<UiState>((set, get) => ({
   setMethodOpen: (methodOpen) => set({ methodOpen }),
   setRadioOpen: (radioOpen) => set({ radioOpen }),
   setLayersOpen: (layersOpen) => set({ layersOpen }),
+  setIncidentsOpen: (incidentsOpen) => set({ incidentsOpen }),
+  focusIncident: (selectedIncident, bbox) =>
+    set({
+      selectedIncident,
+      ...(bbox && { flyTarget: { bbox, at: Date.now() } }),
+      // En móvil la lista ocupa media pantalla: se pliega para ver el incendio y su ficha
+      ...(selectedIncident && narrow() && { incidentsOpen: false }),
+    }),
   toggleProjection: () => {
     const projection = !get().projection;
     writeStored(PROJECTION_KEY, projection);

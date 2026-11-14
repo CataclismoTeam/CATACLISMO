@@ -14,7 +14,7 @@ export default function Briefing() {
       open={open}
       onOpenChange={(next) => !next && close()}
       title="CATACLISMO"
-      description="Plataforma de mando para emergencias · NASA Space Apps 2026"
+      description={`Plataforma de mando para emergencias · NASA Space Apps 2026 · front v${__APP_VERSION__.split('.')[0]}`}
     >
       <ul className="m-0 flex list-none flex-col gap-3 p-0 text-base">
         <li>

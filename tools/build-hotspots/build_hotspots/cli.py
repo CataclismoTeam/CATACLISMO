@@ -1,12 +1,13 @@
 """Línea de órdenes: `build-hotspots --in data/raw --out frontend/public/data`."""
 
 import argparse
-from datetime import UTC, datetime
+from datetime import UTC, datetime, timedelta
 from pathlib import Path
 
 from .config import SPAIN_BBOX, Config, Grid
-from .export import write_outputs
+from .export import INCIDENTS, write_json, write_outputs
 from .harmonize import harmonize
+from .incidents import Regions, build_incidents
 from .ingest import DiscardLog, apply_filters, find_inputs, read_records
 
 KM_PER_DEGREE = 111.32
@@ -36,6 +37,12 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
     p.add_argument("--keep-viirs-low", action="store_true", help="no descartar VIIRS 'l'")
     p.add_argument("--recent-days", type=int, default=90)
     p.add_argument("--interim", type=Path, help="carpeta para la tabla Parquet normalizada")
+    p.add_argument(
+        "--regions",
+        type=Path,
+        help="carpeta con spain-communities.geojson y spain-provinces.geojson; "
+        "sin ella no se generan los incendios por comunidad autónoma",
+    )
     p.add_argument("--seed", type=int, default=Config().seed)
     p.add_argument("--generated", help="fecha ISO de generación (por defecto, ahora en UTC)")
     return p.parse_args(argv)
@@ -72,6 +79,18 @@ def main(argv: list[str] | None = None) -> None:
     result = harmonize(df, cfg)
     generated = args.generated or datetime.now(UTC).replace(microsecond=0).isoformat()
     manifest = write_outputs(args.out, df, result, cfg, log, read_count, generated)
+
+    if args.regions:
+        regions = Regions(
+            args.regions / "spain-communities.geojson", args.regions / "spain-provinces.geojson"
+        )
+        since = df["date"].max() - timedelta(days=cfg.recent_days - 1)
+        incidents = build_incidents(df, regions, since)
+        info = write_json(args.out, INCIDENTS, incidents)
+        print(
+            f"Incendios: {len(incidents['incendios'])} en {len(incidents['comunidades'])} "
+            f"comunidades ({info['bytes'] // 1024} KB)"
+        )
 
     print(f"Leídas {read_count} detecciones; usadas {df.height}; descartadas {log.total()}:")
     for row in log.rows:

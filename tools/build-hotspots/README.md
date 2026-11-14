@@ -26,6 +26,11 @@ uv run --project tools/build-hotspots build-hotspots \
 | `--interim`                   | no se escribe   | Carpeta para la tabla normalizada en Parquet            |
 | `--seed`                      | `20261114`      | Semilla del intervalo bootstrap de los factores         |
 
+Con `--regions data/raw/limites` genera además `incidents-v1.json`: los incendios de los últimos
+90 días por comunidad autónoma (ver «Incendios»). Los límites (`spain-communities.geojson` y
+`spain-provinces.geojson`, de [click_that_hood](https://github.com/codeforamerica/click_that_hood))
+se descargan a `data/raw/limites/`, que no se versiona; en la web solo aparecen los nombres.
+
 Pruebas y lint: `uv run pytest` y `uv run ruff check .` dentro de `tools/build-hotspots/`.
 
 ## Datos de entrada
@@ -118,3 +123,15 @@ Ningún fichero puede pasar de 1024 KB (límite del guardián del repo); el scri
 
 NASA FIRMS / LANCE: MODIS Collection 6.1 (Terra y Aqua) y VIIRS S-NPP 375 m Collection 2.
 Datos de acceso libre; NASA no avala este producto.
+
+## Incendios (`incidents-v1.json`)
+
+Agrupa las detecciones de los últimos 90 días en incendios: dos detecciones van juntas si están a
+menos de 2 km y a menos de 3 días (encadenando, como un frente que avanza). Solo cuentan los grupos
+de 3 o más detecciones. Para cada incendio:
+
+- **Comunidad autónoma y provincia** de la detección más potente (si cae en el mar, la más cercana).
+- **Contorno**: unión de las huellas de píxel (375 m VIIRS, 1 km MODIS) con un cierre morfológico de
+  300 m, para que siga la forma del área afectada y no una rejilla. No es un perímetro oficial.
+- **Actividad reciente**: detecciones en los 3 últimos días del dato. No significa «sin extinguir».
+- Fechas, número de detecciones, sensores, FRP máxima y total y área estimada.

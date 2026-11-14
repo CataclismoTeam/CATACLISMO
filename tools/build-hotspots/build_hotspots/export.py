@@ -33,6 +33,7 @@ V = f"v{FORMAT_VERSION}"
 MANIFEST = f"hotspots-manifest-{V}.json"
 CELLS = f"hotspots-cells-{V}.bin"
 RECENT = f"detections-recent-{V}.json"
+INCIDENTS = f"incidents-{V}.json"
 # El guardián del repo rechaza ficheros versionados de más de 1024 KB
 MAX_FILE_KB = 1024
 
@@ -51,6 +52,12 @@ def _write(out: Path, name: str, payload: bytes) -> dict[str, object]:
         raise ValueError(f"{name} ocupa {len(payload) // 1024} KB (máximo {MAX_FILE_KB} KB)")
     (out / name).write_bytes(payload)
     return {"fichero": name, "bytes": len(payload), "sha256": hashlib.sha256(payload).hexdigest()}
+
+
+def write_json(out: Path, name: str, data: object) -> dict[str, object]:
+    out.mkdir(parents=True, exist_ok=True)
+    payload = json.dumps(data, ensure_ascii=False, separators=(",", ":")).encode("utf-8")
+    return _write(out, name, payload)
 
 
 def _recent(df: pl.DataFrame, cfg: Config) -> dict[str, object]:
