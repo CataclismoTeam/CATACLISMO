@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """
-Fase 2 — Agregación cell_day (grano: cell_id + date + sensor)
+Algoritmo VALEN (Fase 2) — Agregación cell_day (grano: cell_id + date + sensor)
 
 Lee observations.parquet (Fase 1), agrupa por (cell_id_L0, date, sensor)
 y genera cell_day.parquet + cell_day.json (array único) con 15 campos contractuales.
@@ -26,6 +26,8 @@ import numpy as np
 import pandas as pd
 from pyproj import Transformer
 
+ALGORITHM_NAME: str = "valen"
+
 # ---------------------------------------------------------------------------
 # Configuración de logging
 # ---------------------------------------------------------------------------
@@ -35,7 +37,7 @@ logging.basicConfig(
     format="%(asctime)s %(levelname)s %(name)s: %(message)s",
     handlers=[logging.StreamHandler(sys.stdout)]
 )
-logger = logging.getLogger("phase2_cell_day")
+logger = logging.getLogger("valen.phase2_cell_day")
 
 # ---------------------------------------------------------------------------
 # Constantes
@@ -274,7 +276,7 @@ def write_outputs(cell_day: pd.DataFrame, output_dir: Path) -> None:
 
 
 def build_arg_parser() -> argparse.ArgumentParser:
-    p = argparse.ArgumentParser(description="Fase 2: Agregación cell_day")
+    p = argparse.ArgumentParser(description="Algoritmo VALEN — Fase 2: Agregación cell_day")
     p.add_argument("--input", type=Path, required=True,
                    help="observations.parquet de Fase 1")
     p.add_argument("--output", type=Path, required=True,

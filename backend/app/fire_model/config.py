@@ -50,13 +50,18 @@ QUADRANT_SYMBOLS: dict[int, str] = {
 }
 
 # ---------------------------------------------------------------------------
-# Registro ordenado de canales de entrada (100% basado en 11_ML_DATA_CONTRACT.md).
-# Todos los canales provienen exclusivamente de `cell_day` (MODIS/VIIRS).
+# Registro ordenado de canales de entrada (Contrato Cell Day + Enriquecimiento VALEN).
+# - Canales 0..12 (13): Métricas satelitales `cell_day` (MODIS/VIIRS).
+# - Canales 13..16 (4): Meteorología `meteo` de VALEN (Meteomatics: FWI, viento, humedad, temp).
+# - Canales 17..19 (3): Precipitación y sequía `rainfall` de VALEN (NASA POWER).
+# - Canales 20..21 (2): Combustible `vegetation` (WorldCover+IFN3) y score global de VALEN.
+#
 # El canal i del tensor SIEMPRE corresponde a CHANNEL_REGISTRY[i]. Un modelo con
-# C canales consume los primeros C nombres. Para añadir más canales del contrato
-# (o futuros sensores), usa `expand_model_channels`.
+# C canales consume los primeros C nombres. Para expandir un modelo ya entrenado
+# con nuevos canales de VALEN, usa `expand_model_channels`.
 # ---------------------------------------------------------------------------
 CHANNEL_REGISTRY: tuple[str, ...] = (
+    # --- Bloque 1: Cell Day (MODIS / VIIRS) [0..12] ---
     "frp_sum_mw",  # 0: log1p(frp_sum_mw) / norm, energía radiativa integrada [0, 1]
     "frp_max_mw",  # 1: log1p(frp_max_mw) / norm, pico de FRP en la celda-día [0, 1]
     "frp_mean_mw",  # 2: log1p(frp_mean_mw) / norm, FRP medio por detección [0, 1]
@@ -70,13 +75,40 @@ CHANNEL_REGISTRY: tuple[str, ...] = (
     "n_platforms",  # 10: clip(n_platforms / 3.0, 0, 1), diversidad de plataformas [0, 1]
     "product_mix",  # 11: fracción NRT (0.0=todo SP, 1.0=todo NRT) [0, 1]
     "viirs_obs_share",  # 12: n_obs_viirs / max(n_obs_total, 1), peso del sensor VIIRS [0, 1]
+    # --- Bloque 2: Meteo de VALEN [13..16] ---
+    "meteo_fwi",  # 13: clip(fwi / 50.0, 0, 1), Fire Weather Index [0, 1]
+    "meteo_wind_speed",  # 14: clip(wind_speed_ms / 20.0, 0, 1), velocidad del viento 10m [0, 1]
+    "meteo_humidity_inv",  # 15: clip(1 - (rh - 10) / 80, 0, 1), sequedad atmosférica [0, 1]
+    "meteo_temp",  # 16: clip((temp_c + 5) / 50.0, 0, 1), temperatura a 2m [0, 1]
+    # --- Bloque 3: Rainfall / Sequía de VALEN [17..19] ---
+    "rain_days_since_1mm",  # 17: clip(days_since_rain_1mm / 30.0, 0, 1), días sin lluvia >=1mm [0, 1]
+    "rain_dry_spell_max",  # 18: clip(dry_spell_max_days / 30.0, 0, 1), racha seca máxima [0, 1]
+    "rain_precip_30d_inv",  # 19: clip(1 - precip_30d_mm / 100.0, 0, 1), déficit hídrico 30d [0, 1]
+    # --- Bloque 4: Vegetation & Validación de VALEN [20..21] ---
+    "veg_flammability",  # 20: clip((combined_flammability - 1) / 4.0, 0, 1), inflamabilidad [0, 1]
+    "valen_score",  # 21: score global de validación de VALEN [0, 1]
 )
-NUM_CHANNELS: int = 1  # Base inicial: sólo frp_sum_mw
-EXPANDED_NUM_CHANNELS: int = 7  # Expansión por defecto con variables clave de cell_day
+CELL_DAY_NUM_CHANNELS: int = 13  # Canales exclusivos de cell_day (0..12)
+VALEN_NUM_CHANNELS: int = len(CHANNEL_REGISTRY)  # 22 canales (Cell Day + Meteo + Rainfall + Veg + Score)
+NUM_CHANNELS: int = VALEN_NUM_CHANNELS  # Por defecto CATA consume todos los canales de VALEN (22)
+EXPANDED_NUM_CHANNELS: int = VALEN_NUM_CHANNELS  # Expansión completa a los 22 canales de VALEN
 
-# Constantes de normalización logarítmica: log1p(x) / LOG1P_SCALE -> clip [0, 1]
+# Constantes de normalización logarítmica y física -> clip [0, 1]
 FRP_LOG1P_SCALE: float = 8.0  # log1p(2980 MW) ≈ 8.0
 OBS_LOG1P_SCALE: float = 5.0  # log1p(147 obs) ≈ 5.0
+FWI_MAX_SCALE: float = 50.0  # FWI típico 0..50+
+WIND_SPEED_MAX_MS: float = 20.0  # 20 m/s = 72 km/h
+HUMIDITY_MIN_PCT: float = 10.0
+HUMIDITY_MAX_PCT: float = 90.0
+TEMP_MIN_C: float = -5.0
+TEMP_MAX_C: float = 45.0
+RAIN_DAYS_MAX_SCALE: float = 30.0  # 30+ días sin lluvia / racha seca
+PRECIP_30D_MAX_MM: float = 100.0  # 100 mm en 30 días
+VEG_FLAMMABILITY_MIN: float = 1.0
+VEG_FLAMMABILITY_MAX: float = 5.0
+
+# Decisiones de VALEN admitidas por CATA (descarta ruido "RECHAZA" por defecto)
+VALEN_ACCEPTED_DECISIONS: tuple[str, ...] = ("ACEPTA", "REVISAR_MANUAL", "VALIDATED", "UNCERTAIN")
 
 # ---------------------------------------------------------------------------
 # Arquitectura
@@ -123,15 +155,29 @@ SYNTH_NUM_SAMPLES: int = 512
 SYNTH_EPISODE_EXTRA_STEPS: int = 10  # Pasos simulados adicionales por episodio
 
 # ---------------------------------------------------------------------------
-# Rutas
+# Rutas (Integración VALEN -> CATA -> LUCIA)
 # ---------------------------------------------------------------------------
 ALGORITHM_NAME: str = "cata"
+SOURCE_VALIDATION_ALGORITHM: str = "valen"
+TARGET_ROUTING_ALGORITHM: str = "lucia"
+
 BASE_DIR: str = os.path.dirname(os.path.abspath(__file__))
 ARTIFACTS_DIR: str = os.path.join(BASE_DIR, "artifacts")
 MODEL_DIR: str = os.path.join(ARTIFACTS_DIR, "models")
 LOG_DIR: str = os.path.join(ARTIFACTS_DIR, "logs")
-DEFAULT_MODEL_PATH: str = os.path.join(MODEL_DIR, "cata_c1.keras")
+PREDICTIONS_DIR: str = os.path.join(ARTIFACTS_DIR, "predictions")
+
+DEFAULT_MODEL_PATH: str = os.path.join(MODEL_DIR, f"cata_c{NUM_CHANNELS}.keras")
 DEFAULT_TFLITE_PATH: str = os.path.join(MODEL_DIR, "cata.tflite")
+DEFAULT_PREDICTIONS_PATH: str = os.path.join(PREDICTIONS_DIR, "cata_predictions.json")
+
+# Rutas por defecto de los artefactos validados y enriquecidos por VALEN
+VALEN_OUTPUT_DIR: str = os.path.abspath(os.path.join(BASE_DIR, "..", "ingestion", "output"))
+DEFAULT_VALEN_CELL_DAY_PATH: str = os.path.join(VALEN_OUTPUT_DIR, "cell_day.parquet")
+DEFAULT_VALEN_METEO_PATH: str = os.path.join(VALEN_OUTPUT_DIR, "cell_day_meteo.json")
+DEFAULT_VALEN_RAINFALL_PATH: str = os.path.join(VALEN_OUTPUT_DIR, "cell_day_rainfall.json")
+DEFAULT_VALEN_VEGETATION_PATH: str = os.path.join(VALEN_OUTPUT_DIR, "cell_day_vegetation.json")
+DEFAULT_VALEN_VALIDATED_PATH: str = os.path.join(VALEN_OUTPUT_DIR, "validated_cell_day.json")
 
 
 @dataclass(frozen=True)

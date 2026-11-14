@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """
-Algoritmo de Scoring Multi-fuente para Fase 3b — Validación Inteligente.
+Algoritmo VALEN (Fase 3b) — Scoring Multi-fuente y Validación Inteligente de Datos.
 
 Combina:
 - Sensores (MODIS/VIIRS) y confidence
@@ -22,6 +22,8 @@ from typing import Any
 
 import numpy as np
 import pandas as pd
+
+ALGORITHM_NAME: str = "valen"
 
 # ---------------------------------------------------------------------------
 # Configuración de pesos (ajustables)
@@ -174,8 +176,8 @@ def extract_features(row: pd.Series) -> dict[str, float]:
     return features
 
 
-def compute_score(features: dict[str, float], weights: dict[str, float] = None) -> float:
-    """Calcula score ponderado (0-1)."""
+def valen_compute_score(features: dict[str, float], weights: dict[str, float] = None) -> float:
+    """Algoritmo VALEN: calcula score ponderado (0-1)."""
     if weights is None:
         weights = DEFAULT_WEIGHTS
 
@@ -189,8 +191,8 @@ def compute_score(features: dict[str, float], weights: dict[str, float] = None) 
     return score / total_weight if total_weight > 0 else 0.0
 
 
-def decide(score: float, thresholds: dict = None) -> str:
-    """Decisión basada en score."""
+def valen_decide(score: float, thresholds: dict = None) -> str:
+    """Algoritmo VALEN: decisión basada en score."""
     if thresholds is None:
         thresholds = DEFAULT_THRESHOLDS
     if score >= thresholds["accept"]:
@@ -199,6 +201,11 @@ def decide(score: float, thresholds: dict = None) -> str:
         return "REVISAR_MANUAL"
     else:
         return "RECHAZA"
+
+
+# Aliases de compatibilidad
+compute_score = valen_compute_score
+decide = valen_decide
 
 
 # ---------------------------------------------------------------------------
@@ -290,7 +297,7 @@ def merge_enrichments(
     return df
 
 
-def run_scoring(
+def run_valen_scoring(
     cell_day_path: Path,
     output_path: Path,
     meteo_path: Path | None = None,
@@ -300,7 +307,7 @@ def run_scoring(
     thresholds: dict = None,
     json_output: Path | None = None,
 ) -> pd.DataFrame:
-    """Ejecuta scoring completo sobre cell_day."""
+    """Ejecuta el algoritmo VALEN de scoring completo sobre cell_day."""
     cell_day = pd.read_parquet(cell_day_path)
     print(f"Cargados {len(cell_day)} cell-days")
 
@@ -317,10 +324,11 @@ def run_scoring(
     results = []
     for _, row in df.iterrows():
         features = extract_features(row)
-        score = compute_score(features, weights)
-        decision = decide(score, thresholds)
+        score = valen_compute_score(features, weights)
+        decision = valen_decide(score, thresholds)
 
         result = {
+            "algorithm": ALGORITHM_NAME,
             "cell_id": row["cell_id"],
             "date": str(row["date"]),
             "sensor": row["sensor"],
@@ -334,7 +342,7 @@ def run_scoring(
     results_df = pd.DataFrame(results)
 
     # Estadísticas
-    print(f"\n=== RESULTADOS SCORING ===")
+    print(f"\n=== RESULTADOS ALGORITMO VALEN (SCORING) ===")
     print(f"Total: {len(results_df)}")
     print(f"Decisiones: {results_df['decision'].value_counts().to_dict()}")
     print(f"Score mean: {results_df['score'].mean():.4f}")
@@ -356,12 +364,16 @@ def run_scoring(
     return results_df
 
 
+# Alias de compatibilidad
+run_scoring = run_valen_scoring
+
+
 # ---------------------------------------------------------------------------
 # CLI
 # ---------------------------------------------------------------------------
 
 def build_arg_parser():
-    p = argparse.ArgumentParser(description="Scoring Multi-fuente Fase 3b")
+    p = argparse.ArgumentParser(description="Algoritmo VALEN — Scoring Multi-fuente Fase 3b")
     p.add_argument("--cell-day", type=Path, required=True, help="cell_day.parquet")
     p.add_argument("--output", type=Path, required=True, help="validated_cell_day.parquet")
     p.add_argument("--json-output", type=Path, help="validated_cell_day.json (array único)")

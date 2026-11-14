@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """
-Escritor JSON unificado — salida en 1 archivo JSON (array) en lugar de JSONL.
+Algoritmo VALEN — Escritor JSON unificado (salida en 1 archivo JSON array en lugar de JSONL).
 
 Uso:
     from json_output import JSONArrayWriter

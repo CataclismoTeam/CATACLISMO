@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """
-Fase 1 — Proyección EPSG:3035 + Asignación a celdas L0–L3 (GENÉRICO)
+Algoritmo VALEN (Fase 1) — Proyección EPSG:3035 + Asignación a celdas L0–L3 (GENÉRICO)
 
 Lee archivos JSON de FIRMS (MODIS/VIIRS, SP/NRT), aplica tipos, proyecta a EPSG:3035,
 calcula celdas anidadas 2×2, añade control de calidad y trazabilidad,
@@ -32,6 +32,8 @@ import numpy as np
 import pandas as pd
 from pyproj import Transformer
 
+ALGORITHM_NAME: str = "valen"
+
 # ---------------------------------------------------------------------------
 # Configuración de logging
 # ---------------------------------------------------------------------------
@@ -41,7 +43,7 @@ logging.basicConfig(
     format="%(asctime)s %(levelname)s %(name)s: %(message)s",
     handlers=[logging.StreamHandler(sys.stdout)]
 )
-logger = logging.getLogger("phase1_projection")
+logger = logging.getLogger("valen.phase1_projection")
 
 # ---------------------------------------------------------------------------
 # Constantes y umbrales (configurables vía CLI)
@@ -521,7 +523,7 @@ def write_outputs(df: pd.DataFrame, parquet_path: Path, json_path: Path) -> None
 
 
 def build_arg_parser() -> argparse.ArgumentParser:
-    p = argparse.ArgumentParser(description="Fase 1: Proyección + Celdas (GENÉRICO)")
+    p = argparse.ArgumentParser(description="Algoritmo VALEN — Fase 1: Proyección + Celdas (GENÉRICO)")
     p.add_argument("--input", nargs="+", type=Path, required=True,
                    help="Archivos JSON o directorios (recursivo)")
     p.add_argument("--output", type=Path, required=True,

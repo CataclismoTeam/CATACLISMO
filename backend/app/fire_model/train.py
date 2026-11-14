@@ -1,26 +1,28 @@
 """
-train.py — Pipeline de entrenamiento incremental del predictor de fuego
-alineado estrictamente con el esquema de datos `11_ML_DATA_CONTRACT.md`.
+train.py — Pipeline de entrenamiento e inferencia del algoritmo CATA (ConvLSTM),
+integrado con el algoritmo de validación y enriquecimiento de datos VALEN
+y con salida de predicciones estructurada para el futuro algoritmo LUCIA
+(cálculo de vías de escape de personas y animales).
 
-Sin variables exógenas (sin viento, pendiente ni NDVI): predice únicamente
-a partir de los campos existentes en el contrato (`cell_day` / `observations`
-de MODIS y VIIRS en la grilla `ES5K:L0:Y{iy}:X{ix}`).
+Entradas desde VALEN (`backend/app/ingestion/output/`):
+  1. `cell_day` (`cell_day.parquet` / `cell_day.json`): 13 canales térmicos MODIS/VIIRS.
+  2. `meteo` (`cell_day_meteo.json`): 4 canales meteorológicos (FWI, viento, humedad, temperatura).
+  3. `rainfall` (`cell_day_rainfall.json`): 3 canales de sequía y precipitación acumulada.
+  4. `vegetation` (`cell_day_vegetation.json`): inflamabilidad del combustible (WorldCover + IFN3).
+  5. `validated_cell_day` (`validated_cell_day.json` / `.parquet`): filtrado de ruido (`decision != RECHAZA`)
+     y score global de confianza `valen_score`.
+
+Salida de predicciones de CATA para LUCIA:
+  - Archivo JSON (`artifacts/predictions/cata_predictions.json` o `--predictions-output`)
+    con cuadrículas diferenciadas (`SAFE`, `PREDICTED_FIRE`, `CONFIRMED_BURNED`, `CONFIRMED_AND_CONTINUES`),
+    tiempos estimados de llegada del fuego y costes de tránsito para personas y animales.
 
 Modos:
-  scratch   Entrena un modelo nuevo con C canales del contrato.
+  scratch   Entrena un modelo CATA nuevo con C canales (por defecto C=22 con todo VALEN).
   finetune  Carga un checkpoint (.keras/.h5) y continúa entrenando sus pesos.
-  expand    Channel surgery sobre un checkpoint (C_old -> C_new) + entrenamiento
-            en dos fases (warmup de la 1ª capa, luego ajuste fino completo).
-  demo      Smoke test end-to-end: scratch(C=1) -> finetune -> expand(C=7).
-
-Fuentes de datos (`--data`):
-  1. Archivo `cell_day.parquet` o `cell_day.jsonl` con el esquema oficial
-     de `11_ML_DATA_CONTRACT.md` (respeta exclusión de `invalid_periods`,
-     agregación multi-sensor por celda-día y partición espacial train/val por
-     `cell_id` según §6 del contrato).
-  2. Archivo `.npz` pre-empaquetado con `X: (N, T, H, W, C)` e `Y: (N, H, W, 1)`.
-  3. Si no se pasa `--data`, usa `SyntheticContractGenerator`, que simula
-     registros `cell_day` siguiendo el esquema exacto del contrato.
+  expand    Channel surgery sobre un checkpoint (C_old -> C_new) + entrenamiento en 2 fases.
+  predict   Carga un modelo CATA y datos de VALEN (o sintéticos) y exporta predicciones para LUCIA.
+  demo      Smoke test end-to-end: scratch(C=1) -> finetune -> expand(C=22) -> exporta predicciones para LUCIA.
 """
 
 from __future__ import annotations
@@ -46,6 +48,7 @@ try:
         compile_model,
         create_model,
         expand_model_channels,
+        export_cata_predictions_for_lucia,
         extract_model_config,
         load_fire_model,
         set_expansion_warmup,
@@ -58,6 +61,7 @@ except ImportError:
         compile_model,
         create_model,
         expand_model_channels,
+        export_cata_predictions_for_lucia,
         extract_model_config,
         load_fire_model,
         set_expansion_warmup,
@@ -81,7 +85,7 @@ def _shift(a: np.ndarray, dy: int, dx: int) -> np.ndarray:
 
 
 # ===========================================================================
-# 1. Utilidades del contrato de datos (rejilla 1000x1000m, `ES1K:L0:Y{iy}:X{ix}`)
+# 1. Utilidades del contrato de datos y normalización de canales VALEN -> CATA
 # ===========================================================================
 def parse_cell_id(cell_id: str) -> tuple[int, int, int]:
     """Parsea `ES1K:L{level}:Y{iy}:X{ix}` (o `ES5K:...`) -> (level, iy, ix)."""
@@ -102,16 +106,18 @@ def format_cell_id(
 
 
 def normalize_contract_channels(raw: dict[str, np.ndarray], num_channels: int) -> np.ndarray:
-    """Convierte las métricas crudas de `cell_day` a canales normalizados en [0, 1].
+    """Convierte las métricas crudas de VALEN (`cell_day` + `meteo` + `rainfall` + `vegetation`) a [0, 1].
 
-    `raw` contiene arrays de igual shape `(..., H, W)` con las magnitudes
-    definidas en `11_ML_DATA_CONTRACT.md` §2:
-      - frp_sum_mw, frp_max_mw, frp_mean_mw, frp_p50_mw (en MW)
-      - n_obs, n_high_conf, n_day, n_night, n_platforms (conteos)
-      - confidence_rank_max (0, 1, 2)
-      - footprint_max_km (km)
-      - product_mix (0.0 a 1.0)
-      - n_obs_viirs (opcional, para viirs_obs_share)
+    `raw` contiene arrays de igual shape `(..., H, W)` con:
+      - Bloque 1 (`cell_day`): frp_sum_mw, frp_max_mw, frp_mean_mw, frp_p50_mw,
+        n_obs, n_high_conf, confidence_rank_max, n_day, n_night, footprint_max_km,
+        n_platforms, product_mix, n_obs_viirs.
+      - Bloque 2 (`meteo`): meteo_fwi (o fwi 0..50), meteo_wind_speed (o wind_speed_ms 0..20),
+        meteo_humidity_inv (o humidity_pct 10..90), meteo_temp (o temp_c -5..45).
+      - Bloque 3 (`rainfall`): rain_days_since_1mm (0..30), rain_dry_spell_max (0..30),
+        rain_precip_30d_inv (o precip_30d_mm 0..100).
+      - Bloque 4 (`vegetation` + `valen`): veg_flammability (o combined_flammability 1..5),
+        valen_score (0..1).
 
     Devuelve tensor `(..., H, W, num_channels)` alineado con `config.CHANNEL_REGISTRY`.
     """
@@ -121,8 +127,86 @@ def normalize_contract_channels(raw: dict[str, np.ndarray], num_channels: int) -
     n_obs_raw = np.maximum(raw["n_obs"], 0.0)
     n_obs_denom = np.maximum(n_obs_raw, 1.0)
     active = (n_obs_raw > 0).astype(np.float32)
+    zeros = np.zeros_like(n_obs_raw, dtype=np.float32)
+
+    # Meteo: acepta tanto valores ya normalizados [0,1] como magnitudes físicas crudas
+    if "meteo_fwi" in raw:
+        meteo_fwi = np.clip(raw["meteo_fwi"], 0.0, 1.0)
+    elif "fwi" in raw:
+        meteo_fwi = np.clip(raw["fwi"] / config.FWI_MAX_SCALE, 0.0, 1.0)
+    else:
+        meteo_fwi = zeros
+
+    if "meteo_wind_speed" in raw:
+        meteo_wind = np.clip(raw["meteo_wind_speed"], 0.0, 1.0)
+    elif "wind_speed_ms" in raw:
+        meteo_wind = np.clip(raw["wind_speed_ms"] / config.WIND_SPEED_MAX_MS, 0.0, 1.0)
+    else:
+        meteo_wind = zeros
+
+    if "meteo_humidity_inv" in raw:
+        meteo_hum_inv = np.clip(raw["meteo_humidity_inv"], 0.0, 1.0)
+    elif "humidity_pct" in raw:
+        meteo_hum_inv = np.clip(
+            1.0
+            - (raw["humidity_pct"] - config.HUMIDITY_MIN_PCT)
+            / (config.HUMIDITY_MAX_PCT - config.HUMIDITY_MIN_PCT),
+            0.0,
+            1.0,
+        )
+    else:
+        meteo_hum_inv = zeros
+
+    if "meteo_temp" in raw:
+        meteo_temp = np.clip(raw["meteo_temp"], 0.0, 1.0)
+    elif "temp_c" in raw:
+        meteo_temp = np.clip(
+            (raw["temp_c"] - config.TEMP_MIN_C) / (config.TEMP_MAX_C - config.TEMP_MIN_C),
+            0.0,
+            1.0,
+        )
+    else:
+        meteo_temp = zeros
+
+    # Rainfall / Sequía
+    if "rain_days_since_1mm" in raw:
+        rain_dsr = np.clip(raw["rain_days_since_1mm"], 0.0, 1.0)
+    elif "days_since_rain_1mm" in raw:
+        rain_dsr = np.clip(raw["days_since_rain_1mm"] / config.RAIN_DAYS_MAX_SCALE, 0.0, 1.0)
+    else:
+        rain_dsr = zeros
+
+    if "rain_dry_spell_max" in raw:
+        rain_dsm = np.clip(raw["rain_dry_spell_max"], 0.0, 1.0)
+    elif "dry_spell_max_days" in raw:
+        rain_dsm = np.clip(raw["dry_spell_max_days"] / config.RAIN_DAYS_MAX_SCALE, 0.0, 1.0)
+    else:
+        rain_dsm = zeros
+
+    if "rain_precip_30d_inv" in raw:
+        rain_p30_inv = np.clip(raw["rain_precip_30d_inv"], 0.0, 1.0)
+    elif "precip_30d_mm" in raw:
+        rain_p30_inv = np.clip(1.0 - raw["precip_30d_mm"] / config.PRECIP_30D_MAX_MM, 0.0, 1.0)
+    else:
+        rain_p30_inv = zeros
+
+    # Vegetation & VALEN score
+    if "veg_flammability" in raw:
+        veg_flam = np.clip(raw["veg_flammability"], 0.0, 1.0)
+    elif "combined_flammability" in raw:
+        veg_flam = np.clip(
+            (raw["combined_flammability"] - config.VEG_FLAMMABILITY_MIN)
+            / (config.VEG_FLAMMABILITY_MAX - config.VEG_FLAMMABILITY_MIN),
+            0.0,
+            1.0,
+        )
+    else:
+        veg_flam = zeros
+
+    valen_score = np.clip(raw.get("valen_score", active * 0.5), 0.0, 1.0)
 
     computed: dict[str, np.ndarray] = {
+        # Bloque 1: Cell Day (0..12)
         "frp_sum_mw": np.clip(np.log1p(np.maximum(raw["frp_sum_mw"], 0.0)) / frp_scale, 0.0, 1.0),
         "frp_max_mw": np.clip(np.log1p(np.maximum(raw["frp_max_mw"], 0.0)) / frp_scale, 0.0, 1.0),
         "frp_mean_mw": np.clip(
@@ -140,6 +224,18 @@ def normalize_contract_channels(raw: dict[str, np.ndarray], num_channels: int) -
         "viirs_obs_share": (
             np.clip(raw.get("n_obs_viirs", n_obs_raw * 0.65) / n_obs_denom, 0.0, 1.0) * active
         ),
+        # Bloque 2: Meteo de VALEN (13..16)
+        "meteo_fwi": meteo_fwi,
+        "meteo_wind_speed": meteo_wind,
+        "meteo_humidity_inv": meteo_hum_inv,
+        "meteo_temp": meteo_temp,
+        # Bloque 3: Rainfall de VALEN (17..19)
+        "rain_days_since_1mm": rain_dsr,
+        "rain_dry_spell_max": rain_dsm,
+        "rain_precip_30d_inv": rain_p30_inv,
+        # Bloque 4: Vegetation & VALEN score (20..21)
+        "veg_flammability": veg_flam,
+        "valen_score": valen_score,
     }
 
     names = config.CHANNEL_REGISTRY[:num_channels]
@@ -147,101 +243,326 @@ def normalize_contract_channels(raw: dict[str, np.ndarray], num_channels: int) -
 
 
 # ===========================================================================
-# 2. Lector de artefactos reales (`cell_day.parquet` / `.jsonl` y `parsed_data.csv*`)
+# 2. Lector e integración de los datos de VALEN (Cell Day + Meteo + Rainfall + Veg)
 # ===========================================================================
-def load_parsed_csv_1km(
-    path: str,
-    grid_size: int = config.GRID_SIZE,
-    time_steps: int = config.TIME_STEPS,
-    num_channels: int = config.NUM_CHANNELS,
-    chunk_size_m: float = config.CHUNK_SIZE_M,
-    val_split: float = config.VALIDATION_SPLIT,
-    seed: int = config.SEED,
-) -> tuple[np.ndarray, np.ndarray, np.ndarray, np.ndarray]:
-    """Construye la rejilla 1000x1000m directamente desde `parsed_data.csv` / `.csv.gz`."""
+def _read_json_or_jsonl_records(path: str) -> list[dict]:
+    """Lee un archivo JSON (array) o JSONL y devuelve lista de dicts."""
+    if not path or not os.path.exists(path):
+        return []
+    with open(path, encoding="utf-8") as f:
+        content = f.read().strip()
+    if not content:
+        return []
+    try:
+        parsed = json.loads(content)
+        return parsed if isinstance(parsed, list) else [parsed]
+    except json.JSONDecodeError:
+        return [json.loads(line) for line in content.splitlines() if line.strip()]
+
+
+def _resolve_valen_paths(
+    primary_path: str,
+    meteo_path: str | None = None,
+    rainfall_path: str | None = None,
+    vegetation_path: str | None = None,
+    validated_path: str | None = None,
+) -> dict[str, str | None]:
+    """Descubre automáticamente los 5 archivos de VALEN a partir de una carpeta o ruta base."""
+    if os.path.isdir(primary_path):
+        base_dir = primary_path
+        cd_parquet = os.path.join(base_dir, "cell_day.parquet")
+        cd_json = os.path.join(base_dir, "cell_day.json")
+        cell_day_file = cd_parquet if os.path.exists(cd_parquet) else cd_json
+    else:
+        base_dir = os.path.dirname(os.path.abspath(primary_path))
+        fname = os.path.basename(primary_path)
+        if fname.startswith("validated_cell_day"):
+            validated_path = validated_path or primary_path
+            cd_parquet = os.path.join(base_dir, "cell_day.parquet")
+            cd_json = os.path.join(base_dir, "cell_day.json")
+            cell_day_file = (
+                cd_parquet
+                if os.path.exists(cd_parquet)
+                else (cd_json if os.path.exists(cd_json) else primary_path)
+            )
+        else:
+            cell_day_file = primary_path
+
+    def _auto(explicit: str | None, candidates: Sequence[str]) -> str | None:
+        if explicit and os.path.exists(explicit):
+            return explicit
+        for c in candidates:
+            p = os.path.join(base_dir, c)
+            if os.path.exists(p):
+                return p
+        return None
+
+    return {
+        "cell_day": cell_day_file,
+        "meteo": _auto(meteo_path, ("cell_day_meteo.json", "cell_day_meteo.jsonl")),
+        "rainfall": _auto(rainfall_path, ("cell_day_rainfall.json", "cell_day_rainfall.jsonl")),
+        "vegetation": _auto(
+            vegetation_path, ("cell_day_vegetation.json", "cell_day_vegetation.jsonl")
+        ),
+        "validated": _auto(
+            validated_path, ("validated_cell_day.parquet", "validated_cell_day.json")
+        ),
+    }
+
+
+def _enrich_cell_day_with_valen(
+    df,
+    meteo_path: str | None = None,
+    rainfall_path: str | None = None,
+    vegetation_path: str | None = None,
+    validated_path: str | None = None,
+    include_rejected: bool = False,
+):
+    """Enriquece `cell_day` con Meteo, Rainfall, Vegetation y Validación de VALEN."""
     import pandas as pd
 
-    df = pd.read_csv(path)
-    lat = pd.to_numeric(df["latitude"], errors="coerce")
-    lon = pd.to_numeric(df["longitude"], errors="coerce")
-    valid = lat.notna() & lon.notna() & df["acquisition_date"].notna()
-    df = df[valid].copy()
-    lat, lon = lat[valid], lon[valid]
+    df = df.copy()
 
-    # Proyección métrica local a cuadrículas de `chunk_size_m` (1000 x 1000 m)
-    mean_lat_rad = np.radians(float(lat.mean()))
-    y_m = lat.to_numpy(np.float64) * 111139.0
-    x_m = lon.to_numpy(np.float64) * 111139.0 * np.cos(mean_lat_rad)
-    iy = np.floor(y_m / chunk_size_m).astype(int)
-    ix = np.floor(x_m / chunk_size_m).astype(int)
+    # 1. Validación de VALEN (`validated_cell_day`): score, decision y features pre-normalizadas
+    val_lookup: dict[tuple[str, str, str], dict] = {}
+    val_cell_date_lookup: dict[tuple[str, str], dict] = {}
+    if validated_path and os.path.exists(validated_path):
+        if validated_path.endswith(".parquet"):
+            val_records = pd.read_parquet(validated_path).to_dict(orient="records")
+        else:
+            val_records = _read_json_or_jsonl_records(validated_path)
+        for r in val_records:
+            cid = str(r.get("cell_id", ""))
+            dt = str(r.get("date", ""))
+            sen = str(r.get("sensor", ""))
+            val_lookup[(cid, dt, sen)] = r
+            val_cell_date_lookup[(cid, dt)] = r
 
-    frp = pd.to_numeric(df.get("frp", 0.0), errors="coerce").fillna(0.0).clip(lower=0.0)
-    scan = pd.to_numeric(df.get("src_scan", 1.0), errors="coerce").fillna(1.0)
-    track = pd.to_numeric(df.get("src_track", 1.0), errors="coerce").fillna(1.0)
-    footprint = np.maximum(scan, track)
+    # Si `df` era directamente `validated_cell_day` sin métricas FRP, aseguramos columnas base
+    if "n_obs" not in df.columns:
+        df["n_obs"] = 1
+        df["n_day"] = 1
+        df["n_night"] = 0
+        df["n_platforms"] = 1
+        df["n_high_conf"] = 0
+        df["confidence_rank_max"] = 1
+        df["frp_sum_mw"] = 5.0
+        df["frp_mean_mw"] = 5.0
+        df["frp_max_mw"] = 5.0
+        df["frp_p50_mw"] = 5.0
+        df["footprint_max_km"] = 0.5
+        df["product_mix"] = 0.0
 
-    conf_str = df.get("confidence", "").astype(str).str.strip().str.lower()
-    conf_num = pd.to_numeric(conf_str, errors="coerce")
-    conf_rank = np.where(
-        (conf_str == "h") | (conf_num >= 80),
-        2,
-        np.where((conf_str == "l") | (conf_num < 30), 0, 1),
-    )
+    # Filtrado por decisión de VALEN (descarta ruido "RECHAZA" salvo que se pida incluirlo)
+    decisions = []
+    scores = []
+    val_feats = []
+    for _, row in df.iterrows():
+        key3 = (str(row.get("cell_id", "")), str(row.get("date", "")), str(row.get("sensor", "")))
+        key2 = (str(row.get("cell_id", "")), str(row.get("date", "")))
+        vr = val_lookup.get(key3) or val_cell_date_lookup.get(key2) or {}
+        dec = row.get("decision") if "decision" in row and pd.notna(row.get("decision")) else vr.get("decision", "ACEPTA")
+        sc = row.get("score") if "score" in row and pd.notna(row.get("score")) else vr.get("score", 0.5)
+        feats = row.get("features") if "features" in row and isinstance(row.get("features"), dict) else (vr.get("features") or {})
+        decisions.append(str(dec))
+        scores.append(float(sc) if sc is not None else 0.5)
+        val_feats.append(feats if isinstance(feats, dict) else {})
 
-    dn = df.get("src_daynight", "D").astype(str).str.upper()
-    sensor = df.get("sensor", "VIIRS").astype(str).str.upper()
-    prod = df.get("source_product", "SP").astype(str).str.upper()
+    df["valen_decision"] = decisions
+    df["valen_score"] = scores
+    df["_valen_features"] = val_feats
 
-    work = pd.DataFrame(
-        {
-            "iy": iy,
-            "ix": ix,
-            "date": df["acquisition_date"].astype(str),
-            "sensor": sensor,
-            "frp": frp,
-            "footprint": footprint,
-            "conf_rank": conf_rank,
-            "is_high": (conf_rank == 2).astype(int),
-            "is_day": (dn == "D").astype(int),
-            "is_night": (dn == "N").astype(int),
-            "is_nrt": (prod == "NRT").astype(float),
-            "plat": df.get("satellite", sensor).astype(str),
-        }
-    )
+    if not include_rejected and val_lookup:
+        kept = df[df["valen_decision"].isin(config.VALEN_ACCEPTED_DECISIONS)]
+        if len(kept) > 0:
+            logger.info(
+                "Filtro VALEN aplicado: %d/%d registros aceptados/revisables (descartados %d RECHAZA)",
+                len(kept),
+                len(df),
+                len(df) - len(kept),
+            )
+            df = kept.copy()
 
-    cell_rows = []
-    for (cy, cx, d, s), g in work.groupby(["iy", "ix", "date", "sensor"]):
-        cell_rows.append(
-            {
-                "cell_id": format_cell_id(int(cy), int(cx)),
-                "level": config.GRID_LEVEL,
-                "date": d,
-                "year_month": d[:7],
-                "sensor": s,
-                "n_obs": len(g),
-                "n_day": int(g["is_day"].sum()),
-                "n_night": int(g["is_night"].sum()),
-                "n_platforms": int(g["plat"].nunique()),
-                "n_high_conf": int(g["is_high"].sum()),
-                "confidence_rank_max": int(g["conf_rank"].max()),
-                "frp_sum_mw": float(g["frp"].sum()),
-                "frp_mean_mw": float(g["frp"].mean()),
-                "frp_max_mw": float(g["frp"].max()),
-                "frp_p50_mw": float(g["frp"].median()),
-                "footprint_max_km": float(g["footprint"].max()),
-                "product_mix": float(g["is_nrt"].mean()),
-                "flags": [],
+    # 2. Vegetación de VALEN (`cell_day_vegetation.json`): inflamabilidad combinada 1..5
+    veg_by_cell: dict[str, float] = {}
+    if vegetation_path and os.path.exists(vegetation_path):
+        for r in _read_json_or_jsonl_records(vegetation_path):
+            cid = str(r.get("cell_id", ""))
+            flam = r.get("combined_flammability")
+            if flam is None and isinstance(r.get("worldcover"), dict):
+                flam = r["worldcover"].get("flammability")
+            if cid and flam is not None:
+                veg_by_cell[cid] = float(
+                    np.clip(
+                        (float(flam) - config.VEG_FLAMMABILITY_MIN)
+                        / (config.VEG_FLAMMABILITY_MAX - config.VEG_FLAMMABILITY_MIN),
+                        0.0,
+                        1.0,
+                    )
+                )
+
+    # 3. Rainfall / Sequía de VALEN (`cell_day_rainfall.json`)
+    rain_by_cell_date: dict[tuple[str, str], dict[str, float]] = {}
+    rain_by_cell: dict[str, dict[str, float]] = {}
+    if rainfall_path and os.path.exists(rainfall_path):
+        for r in _read_json_or_jsonl_records(rainfall_path):
+            cid = str(r.get("cell_id", ""))
+            dt = str(r.get("reference_date") or r.get("date") or "")
+            if not cid:
+                continue
+            dsr = r.get("days_since_rain_1mm")
+            dsm = r.get("dry_spell_max_days")
+            p30 = r.get("precip_30d_mm")
+            norm_rain = {
+                "rain_days_since_1mm": (
+                    float(np.clip(float(dsr) / config.RAIN_DAYS_MAX_SCALE, 0.0, 1.0))
+                    if dsr is not None
+                    else None
+                ),
+                "rain_dry_spell_max": (
+                    float(np.clip(float(dsm) / config.RAIN_DAYS_MAX_SCALE, 0.0, 1.0))
+                    if dsm is not None
+                    else None
+                ),
+                "rain_precip_30d_inv": (
+                    float(np.clip(1.0 - float(p30) / config.PRECIP_30D_MAX_MM, 0.0, 1.0))
+                    if p30 is not None
+                    else None
+                ),
             }
-        )
-    return _build_patches_from_cell_day_df(
-        pd.DataFrame(cell_rows),
-        grid_size=grid_size,
-        time_steps=time_steps,
-        num_channels=num_channels,
-        invalid_periods=("2026-09",),
-        val_split=val_split,
-        seed=seed,
-    )
+            rain_by_cell[cid] = norm_rain
+            if dt:
+                rain_by_cell_date[(cid, dt)] = norm_rain
+
+    # 4. Meteorología de VALEN (`cell_day_meteo.json`)
+    meteo_by_cell_date: dict[tuple[str, str], dict[str, float]] = {}
+    meteo_by_cell: dict[str, dict[str, float]] = {}
+    if meteo_path and os.path.exists(meteo_path):
+        for r in _read_json_or_jsonl_records(meteo_path):
+            cid = str(r.get("cell_id", ""))
+            dt = str(r.get("date", ""))
+            if not cid or "error" in r:
+                continue
+            params = r.get("parameters") or {}
+
+            def _extract_param(p_key: str, flat_key: str) -> float | None:
+                if flat_key in r and r[flat_key] is not None:
+                    return float(r[flat_key])
+                p_obj = params.get(p_key)
+                if isinstance(p_obj, dict):
+                    dates_list = p_obj.get("dates") or []
+                    vals = [d.get("value") for d in dates_list if isinstance(d, dict) and d.get("value") is not None]
+                    if vals:
+                        return float(np.mean(vals))
+                return None
+
+            fwi_v = _extract_param("fire_weather_index:idx", "fwi")
+            wind_v = _extract_param("wind_speed_10m:ms", "wind_speed")
+            hum_v = _extract_param("relative_humidity_2m:p", "humidity")
+            temp_v = _extract_param("t_2m:C", "temperature")
+
+            norm_m = {
+                "meteo_fwi": (
+                    float(np.clip(fwi_v / config.FWI_MAX_SCALE, 0.0, 1.0))
+                    if fwi_v is not None
+                    else None
+                ),
+                "meteo_wind_speed": (
+                    float(np.clip(wind_v / config.WIND_SPEED_MAX_MS, 0.0, 1.0))
+                    if wind_v is not None
+                    else None
+                ),
+                "meteo_humidity_inv": (
+                    float(
+                        np.clip(
+                            1.0
+                            - (hum_v - config.HUMIDITY_MIN_PCT)
+                            / (config.HUMIDITY_MAX_PCT - config.HUMIDITY_MIN_PCT),
+                            0.0,
+                            1.0,
+                        )
+                    )
+                    if hum_v is not None
+                    else None
+                ),
+                "meteo_temp": (
+                    float(
+                        np.clip(
+                            (temp_v - config.TEMP_MIN_C) / (config.TEMP_MAX_C - config.TEMP_MIN_C),
+                            0.0,
+                            1.0,
+                        )
+                    )
+                    if temp_v is not None
+                    else None
+                ),
+            }
+            meteo_by_cell[cid] = norm_m
+            if dt:
+                meteo_by_cell_date[(cid, dt)] = norm_m
+
+    # Ensamblar columnas normalizadas [0, 1] para cada fila con fallback a `validated_cell_day.features`
+    col_fwi, col_wind, col_hum, col_temp = [], [], [], []
+    col_dsr, col_dsm, col_p30, col_veg = [], [], [], []
+
+    for _, row in df.iterrows():
+        cid = str(row.get("cell_id", ""))
+        dt = str(row.get("date", ""))
+        vf = row["_valen_features"]
+
+        m_info = meteo_by_cell_date.get((cid, dt)) or meteo_by_cell.get(cid) or {}
+        r_info = rain_by_cell_date.get((cid, dt)) or rain_by_cell.get(cid) or {}
+
+        fwi_val = m_info.get("meteo_fwi")
+        if fwi_val is None:
+            fwi_val = float(vf.get("fwi", 0.0))
+
+        wind_val = m_info.get("meteo_wind_speed")
+        if wind_val is None:
+            wind_val = float(vf.get("wind_speed", 0.0))
+
+        hum_val = m_info.get("meteo_humidity_inv")
+        if hum_val is None:
+            hum_val = float(vf.get("humidity", 0.0))
+
+        temp_val = m_info.get("meteo_temp")
+        if temp_val is None:
+            temp_val = float(np.clip(0.5 * fwi_val + 0.5 * hum_val, 0.0, 1.0))
+
+        dsr_val = r_info.get("rain_days_since_1mm")
+        if dsr_val is None:
+            dsr_val = float(vf.get("days_since_rain_1mm", 0.0))
+
+        dsm_val = r_info.get("rain_dry_spell_max")
+        if dsm_val is None:
+            dsm_val = float(vf.get("dry_spell_max", dsr_val))
+
+        p30_val = r_info.get("rain_precip_30d_inv")
+        if p30_val is None:
+            p30_val = float(vf.get("precip_30d", 0.0))
+
+        veg_val = veg_by_cell.get(cid)
+        if veg_val is None:
+            veg_val = float(vf.get("vegetation_flammability", 0.75))
+
+        col_fwi.append(fwi_val)
+        col_wind.append(wind_val)
+        col_hum.append(hum_val)
+        col_temp.append(temp_val)
+        col_dsr.append(dsr_val)
+        col_dsm.append(dsm_val)
+        col_p30.append(p30_val)
+        col_veg.append(veg_val)
+
+    df["meteo_fwi"] = np.asarray(col_fwi, dtype=np.float32)
+    df["meteo_wind_speed"] = np.asarray(col_wind, dtype=np.float32)
+    df["meteo_humidity_inv"] = np.asarray(col_hum, dtype=np.float32)
+    df["meteo_temp"] = np.asarray(col_temp, dtype=np.float32)
+    df["rain_days_since_1mm"] = np.asarray(col_dsr, dtype=np.float32)
+    df["rain_dry_spell_max"] = np.asarray(col_dsm, dtype=np.float32)
+    df["rain_precip_30d_inv"] = np.asarray(col_p30, dtype=np.float32)
+    df["veg_flammability"] = np.asarray(col_veg, dtype=np.float32)
+    return df.drop(columns=["_valen_features"], errors="ignore")
 
 
 def load_contract_cell_day(
@@ -252,25 +573,42 @@ def load_contract_cell_day(
     invalid_periods: Sequence[str] = ("2026-09",),
     val_split: float = config.VALIDATION_SPLIT,
     seed: int = config.SEED,
-) -> tuple[np.ndarray, np.ndarray, np.ndarray, np.ndarray]:
-    """Carga `cell_day.parquet` / `.jsonl` o `parsed_data.csv` / `.csv.gz` en rejilla 1000x1000m."""
+    meteo_path: str | None = None,
+    rainfall_path: str | None = None,
+    vegetation_path: str | None = None,
+    validated_path: str | None = None,
+    include_rejected: bool = False,
+    return_patch_meta: bool = False,
+):
+    """Carga y cruza los artefactos de VALEN (`cell_day`, `meteo`, `rainfall`, `vegetation`, `validated`)."""
     import pandas as pd
 
-    if path.endswith(".csv") or path.endswith(".csv.gz"):
-        return load_parsed_csv_1km(
-            path,
-            grid_size=grid_size,
-            time_steps=time_steps,
-            num_channels=num_channels,
-            val_split=val_split,
-            seed=seed,
-        )
-    if path.endswith(".parquet"):
-        df = pd.read_parquet(path)
-    elif path.endswith(".jsonl") or path.endswith(".json"):
-        df = pd.read_json(path, lines=path.endswith(".jsonl"))
+    resolved = _resolve_valen_paths(
+        path,
+        meteo_path=meteo_path,
+        rainfall_path=rainfall_path,
+        vegetation_path=vegetation_path,
+        validated_path=validated_path,
+    )
+    cd_path = resolved["cell_day"]
+    if not cd_path or not os.path.exists(cd_path):
+        raise FileNotFoundError(f"No se encontró archivo cell_day en: {path}")
+
+    if cd_path.endswith(".parquet"):
+        df = pd.read_parquet(cd_path)
+    elif cd_path.endswith(".jsonl") or cd_path.endswith(".json"):
+        df = pd.DataFrame(_read_json_or_jsonl_records(cd_path))
     else:
-        raise ValueError(f"Formato no soportado: {path} (use .parquet, .jsonl, .csv.gz o .npz)")
+        raise ValueError(f"Formato no soportado: {cd_path} (use carpeta VALEN, .parquet, .json, .csv.gz o .npz)")
+
+    df = _enrich_cell_day_with_valen(
+        df,
+        meteo_path=resolved["meteo"],
+        rainfall_path=resolved["rainfall"],
+        vegetation_path=resolved["vegetation"],
+        validated_path=resolved["validated"],
+        include_rejected=include_rejected,
+    )
 
     return _build_patches_from_cell_day_df(
         df,
@@ -280,6 +618,7 @@ def load_contract_cell_day(
         invalid_periods=invalid_periods,
         val_split=val_split,
         seed=seed,
+        return_patch_meta=return_patch_meta,
     )
 
 
@@ -291,7 +630,8 @@ def _build_patches_from_cell_day_df(
     invalid_periods: Sequence[str],
     val_split: float,
     seed: int,
-) -> tuple[np.ndarray, np.ndarray, np.ndarray, np.ndarray]:
+    return_patch_meta: bool = False,
+):
     import pandas as pd
 
     if "level" in df.columns:
@@ -306,16 +646,44 @@ def _build_patches_from_cell_day_df(
             s = set(fl) if isinstance(fl, (list, tuple, np.ndarray)) else set()
             return "partial_period" not in s and "island_domain" not in s
 
-        df = df[df["flags"].map(_keep_flags)]
+        df_filtered = df[df["flags"].map(_keep_flags)]
+        if len(df_filtered) > 0:
+            df = df_filtered
 
     parsed = df["cell_id"].map(parse_cell_id)
     df = df.copy()
     df["iy"] = [p[1] for p in parsed]
     df["ix"] = [p[2] for p in parsed]
-    df["n_obs_viirs"] = np.where(df["sensor"] == "VIIRS", df["n_obs"], 0)
+    df["date"] = df["date"].astype(str)
+    df["n_obs_viirs"] = np.where(df.get("sensor", "VIIRS") == "VIIRS", df["n_obs"], 0)
     df["w_frp_mean"] = df["frp_mean_mw"] * df["n_obs"]
     df["w_frp_p50"] = df["frp_p50_mw"] * df["n_obs"]
     df["w_pmix"] = df["product_mix"] * df["n_obs"]
+
+    for valen_col, default_val in (
+        ("meteo_fwi", 0.0),
+        ("meteo_wind_speed", 0.0),
+        ("meteo_humidity_inv", 0.0),
+        ("meteo_temp", 0.0),
+        ("rain_days_since_1mm", 0.0),
+        ("rain_dry_spell_max", 0.0),
+        ("rain_precip_30d_inv", 0.0),
+        ("veg_flammability", 0.75),
+        ("valen_score", 0.5),
+    ):
+        if valen_col not in df.columns:
+            df[valen_col] = default_val
+
+    # Mapa de centroides WGS84 por celda (iy, ix) para exportar a LUCIA
+    centroids_by_cell: dict[tuple[int, int], list[float]] = {}
+    if "cell_centroid_lonlat" in df.columns:
+        for _, r in df[["iy", "ix", "cell_centroid_lonlat"]].drop_duplicates(subset=["iy", "ix"]).iterrows():
+            c_lonlat = r["cell_centroid_lonlat"]
+            if isinstance(c_lonlat, (list, tuple, np.ndarray)) and len(c_lonlat) >= 2:
+                centroids_by_cell[(int(r["iy"]), int(r["ix"]))] = [
+                    round(float(c_lonlat[0]), 6),
+                    round(float(c_lonlat[1]), 6),
+                ]
 
     grouped = df.groupby(["iy", "ix", "date"], as_index=False).agg(
         frp_sum_mw=("frp_sum_mw", "sum"),
@@ -331,6 +699,15 @@ def _build_patches_from_cell_day_df(
         n_platforms=("n_platforms", "sum"),
         w_pmix=("w_pmix", "sum"),
         n_obs_viirs=("n_obs_viirs", "sum"),
+        meteo_fwi=("meteo_fwi", "max"),
+        meteo_wind_speed=("meteo_wind_speed", "max"),
+        meteo_humidity_inv=("meteo_humidity_inv", "max"),
+        meteo_temp=("meteo_temp", "max"),
+        rain_days_since_1mm=("rain_days_since_1mm", "max"),
+        rain_dry_spell_max=("rain_dry_spell_max", "max"),
+        rain_precip_30d_inv=("rain_precip_30d_inv", "max"),
+        veg_flammability=("veg_flammability", "max"),
+        valen_score=("valen_score", "max"),
     )
     denom = np.maximum(grouped["n_obs"].to_numpy(np.float32), 1.0)
     grouped["frp_mean_mw"] = grouped["w_frp_mean"] / denom
@@ -368,9 +745,19 @@ def _build_patches_from_cell_day_df(
         "n_platforms",
         "product_mix",
         "n_obs_viirs",
+        "meteo_fwi",
+        "meteo_wind_speed",
+        "meteo_humidity_inv",
+        "meteo_temp",
+        "rain_days_since_1mm",
+        "rain_dry_spell_max",
+        "rain_precip_30d_inv",
+        "veg_flammability",
+        "valen_score",
     ]
 
     x_tr, y_tr, x_va, y_va = [], [], [], []
+    meta_tr, meta_va = [], []
     half = grid_size // 2
 
     for b_id in unique_blocks:
@@ -387,6 +774,13 @@ def _build_patches_from_cell_day_df(
             continue
 
         raw_cube = {k: np.zeros((n_days, grid_size, grid_size), np.float32) for k in raw_keys}
+        # La inflamabilidad de la vegetación es una propiedad estática del terreno en cada celda:
+        # la propagamos a todos los pasos temporales de la celda para que CATA conozca el combustible vecino.
+        for _, v_row in sub[["iy", "ix", "veg_flammability"]].drop_duplicates(subset=["iy", "ix"]).iterrows():
+            vy = int(v_row["iy"]) - y0
+            vx = int(v_row["ix"]) - x0
+            raw_cube["veg_flammability"][:, vy, vx] = float(v_row["veg_flammability"])
+
         ti = sub["date"].map(date_to_idx).to_numpy()
         yi = (sub["iy"] - y0).to_numpy()
         xi = (sub["ix"] - x0).to_numpy()
@@ -394,8 +788,14 @@ def _build_patches_from_cell_day_df(
             raw_cube[k][ti, yi, xi] = sub[k].to_numpy(np.float32)
 
         features = normalize_contract_channels(raw_cube, num_channels)
-        # Target definido por quien entrena (§6): actividad térmica en t+1 (n_obs > 0)
+        # Target: actividad térmica validada en t+1 (n_obs > 0)
         burning = (raw_cube["n_obs"] > 0).astype(np.float32)
+
+        block_centroids = {
+            (iy, ix): lonlat
+            for (iy, ix), lonlat in centroids_by_cell.items()
+            if y0 <= iy < y0 + grid_size and x0 <= ix < x0 + grid_size
+        }
 
         is_val = b_id in val_blocks
         for s in range(n_days - time_steps):
@@ -403,12 +803,32 @@ def _build_patches_from_cell_day_df(
             win_y = burning[s + time_steps][..., None]
             if win_x[..., 0].sum() == 0 and win_y.sum() == 0:
                 continue
+            patch_info = {
+                "zone_id": f"ES1K_block_{b_id}_{dates[s + time_steps - 1]}",
+                "y0": int(y0),
+                "x0": int(x0),
+                "reference_date": str(dates[s + time_steps - 1]),
+                "predicted_date": str(dates[s + time_steps]),
+                "centroids": block_centroids,
+            }
             if is_val:
                 x_va.append(win_x)
                 y_va.append(win_y)
+                meta_va.append(patch_info)
             else:
                 x_tr.append(win_x)
                 y_tr.append(win_y)
+                meta_tr.append(patch_info)
+
+    if return_patch_meta:
+        return (
+            np.asarray(x_tr, np.float32),
+            np.asarray(y_tr, np.float32),
+            np.asarray(x_va, np.float32),
+            np.asarray(y_va, np.float32),
+            meta_tr,
+            meta_va,
+        )
 
     return (
         np.asarray(x_tr, np.float32),
@@ -419,14 +839,11 @@ def _build_patches_from_cell_day_df(
 
 
 # ===========================================================================
-# 3. Generador sintético fiel a `11_ML_DATA_CONTRACT.md` (sin viento ni slope)
+# 3. Generador sintético de los 22 canales VALEN -> CATA
 # ===========================================================================
 class SyntheticContractGenerator:
-    """Simula la evolución de puntos calientes MODIS/VIIRS según `11_ML_DATA_CONTRACT.md`.
-
-    No utiliza ninguna variable externa (ni viento, ni pendiente, ni NDVI).
-    Toda la dinámica emerge exclusivamente de las propiedades observadas en
-    `cell_day` sobre la grilla `ES5K:L0:Y{iy}:X{ix}`.
+    """Simula la evolución de incendios con las 22 variables de VALEN:
+    Cell Day (MODIS/VIIRS) + Meteo + Rainfall + Vegetation + Score de validación.
     """
 
     def __init__(
@@ -450,7 +867,7 @@ class SyntheticContractGenerator:
         self._yy, self._xx = yy.astype(np.float32), xx.astype(np.float32)
 
     def _susceptibility_field(self) -> np.ndarray:
-        """Susceptibilidad espacial intrínseca de las celdas L0 (sin exógenos)."""
+        """Campo continuo de inflamabilidad vegetal y sequía base en celdas L0."""
         f = np.zeros((self.n, self.n), np.float32)
         for _ in range(5):
             fx, fy = self.rng.uniform(-2.5, 2.5, 2)
@@ -463,12 +880,23 @@ class SyntheticContractGenerator:
         return np.clip(f * 1.15 - 0.05, 0.0, 1.0).astype(np.float32)
 
     def simulate_episode(self, n_steps: int) -> tuple[dict[str, np.ndarray], np.ndarray]:
-        """Simula `n_steps` días de la grilla `cell_day`.
+        """Simula `n_steps` días de la grilla con Cell Day + Meteo + Rainfall + Vegetation.
 
         Devuelve `(raw_channels_dict, true_burning_mask)`.
         """
         n = self.n
         suscept = self._susceptibility_field()
+        veg_flam = np.clip(suscept + self.rng.normal(0, 0.06, (n, n)), 0.0, 1.0).astype(np.float32)
+        rain_dsr_base = np.clip(
+            0.35 + 0.55 * suscept + self.rng.normal(0, 0.08, (n, n)), 0.0, 1.0
+        ).astype(np.float32)
+        rain_dsm_base = np.clip(
+            np.maximum(rain_dsr_base, rain_dsr_base + self.rng.uniform(0.0, 0.2, (n, n))), 0.0, 1.0
+        ).astype(np.float32)
+        rain_p30_inv_base = np.clip(
+            0.4 + 0.5 * rain_dsr_base + self.rng.normal(0, 0.07, (n, n)), 0.0, 1.0
+        ).astype(np.float32)
+
         duration = (2 + np.round(4 * suscept)).astype(np.int32)
 
         age = np.full((n, n), -1, np.int32)  # -1: inactivo; >=0: días ardiendo
@@ -493,6 +921,15 @@ class SyntheticContractGenerator:
             "n_platforms",
             "product_mix",
             "n_obs_viirs",
+            "meteo_fwi",
+            "meteo_wind_speed",
+            "meteo_humidity_inv",
+            "meteo_temp",
+            "rain_days_since_1mm",
+            "rain_dry_spell_max",
+            "rain_precip_30d_inv",
+            "veg_flammability",
+            "valen_score",
         ]
         raw = {k: np.zeros((n_steps, n, n), np.float32) for k in raw_keys}
         burning_hist = np.zeros((n_steps, n, n), np.float32)
@@ -500,6 +937,20 @@ class SyntheticContractGenerator:
         for step in range(n_steps):
             burning = (age >= 0) & (age < duration)
             burning_hist[step] = burning.astype(np.float32)
+
+            # Variables meteorológicas diarias (Meteo de VALEN)
+            wind_day = np.clip(
+                self.rng.uniform(0.2, 0.75) + self.rng.normal(0, 0.08, (n, n)), 0.0, 1.0
+            ).astype(np.float32)
+            hum_inv_day = np.clip(
+                0.35 + 0.45 * suscept + self.rng.normal(0, 0.08, (n, n)), 0.0, 1.0
+            ).astype(np.float32)
+            temp_day = np.clip(
+                0.45 + 0.35 * hum_inv_day + self.rng.normal(0, 0.06, (n, n)), 0.0, 1.0
+            ).astype(np.float32)
+            fwi_day = np.clip(
+                0.40 * wind_day + 0.35 * hum_inv_day + 0.25 * rain_dsr_base, 0.0, 1.0
+            ).astype(np.float32)
 
             vigor = np.where(
                 burning,
@@ -564,6 +1015,20 @@ class SyntheticContractGenerator:
                 observed, np.clip(self.rng.beta(1.2, 3.0, (n, n)), 0.0, 1.0), 0.0
             ).astype(np.float32)
 
+            valen_sc = np.where(
+                observed,
+                np.clip(
+                    0.30 * (conf_rank / 2.0)
+                    + 0.25 * fwi_day
+                    + 0.20 * veg_flam
+                    + 0.15 * rain_dsr_base
+                    + 0.10 * (n_plat / 3.0),
+                    0.35,
+                    1.0,
+                ),
+                0.0,
+            ).astype(np.float32)
+
             raw["frp_sum_mw"][step] = frp_sum
             raw["frp_max_mw"][step] = frp_max
             raw["frp_mean_mw"][step] = frp_mean
@@ -577,12 +1042,22 @@ class SyntheticContractGenerator:
             raw["n_platforms"][step] = n_plat
             raw["product_mix"][step] = pmix
             raw["n_obs_viirs"][step] = n_obs_viirs
+            raw["meteo_fwi"][step] = fwi_day
+            raw["meteo_wind_speed"][step] = wind_day
+            raw["meteo_humidity_inv"][step] = hum_inv_day
+            raw["meteo_temp"][step] = temp_day
+            raw["rain_days_since_1mm"][step] = np.clip(rain_dsr_base + step * 0.01, 0.0, 1.0)
+            raw["rain_dry_spell_max"][step] = rain_dsm_base
+            raw["rain_precip_30d_inv"][step] = rain_p30_inv_base
+            raw["veg_flammability"][step] = veg_flam
+            raw["valen_score"][step] = valen_sc
 
             spread_power = vigor * (
-                0.65
-                + 0.25 * (n_high / np.maximum(n_obs, 1.0))
-                + 0.20 * (n_night / np.maximum(n_obs, 1.0))
-                + 0.15 * np.clip(footprint / 3.0, 0.0, 1.0)
+                0.45
+                + 0.20 * fwi_day
+                + 0.15 * wind_day
+                + 0.10 * (n_high / np.maximum(n_obs, 1.0))
+                + 0.10 * (n_night / np.maximum(n_obs, 1.0))
             )
             no_ignite = np.ones((n, n), np.float32)
             for dy, dx in _NEIGHBORS:
@@ -590,7 +1065,7 @@ class SyntheticContractGenerator:
                 src = _shift(spread_power, dy, dx)
                 p = (self.base_spread / dist) * src
                 no_ignite *= 1.0 - np.clip(p, 0.0, 1.0)
-            p_ignite = (1.0 - no_ignite) * suscept
+            p_ignite = (1.0 - no_ignite) * (0.6 * veg_flam + 0.4 * rain_dsr_base)
             new_fire = (age < 0) & (self.rng.random((n, n)) < p_ignite)
 
             age = np.where(age >= 0, age + 1, age)
@@ -666,7 +1141,7 @@ def make_datasets(
 
 
 def get_data(args, num_channels: int, grid: int, time_steps: int, seed_offset: int = 0):
-    """Carga datos del contrato (.parquet/.jsonl/.npz) o sintéticos."""
+    """Carga datos de VALEN (Cell Day + Meteo + Rainfall + Vegetation), .npz o sintéticos."""
     seed = args.seed + seed_offset
     if args.data:
         if args.data.endswith(".npz"):
@@ -689,13 +1164,19 @@ def get_data(args, num_channels: int, grid: int, time_steps: int, seed_offset: i
             time_steps=time_steps,
             num_channels=num_channels,
             seed=seed,
+            meteo_path=getattr(args, "meteo", None),
+            rainfall_path=getattr(args, "rainfall", None),
+            vegetation_path=getattr(args, "vegetation", None),
+            validated_path=getattr(args, "validated", None),
+            include_rejected=getattr(args, "include_rejected", False),
         )
         logger.info(
-            "Datos contrato (%s): train=%s val=%s | celdas activas=%.4f",
-            os.path.basename(args.data),
+            "Datos VALEN (%s): train=%s val=%s | canales=%d | celdas activas=%.4f",
+            os.path.basename(args.data.rstrip("/\\")),
             x_tr.shape,
             x_va.shape,
-            y_tr.mean(),
+            num_channels,
+            y_tr.mean() if len(y_tr) else 0.0,
         )
         return (
             _arrays_to_ds(x_tr, y_tr, args.batch_size, True, seed),
@@ -705,9 +1186,10 @@ def get_data(args, num_channels: int, grid: int, time_steps: int, seed_offset: i
     gen = SyntheticContractGenerator(grid, time_steps, num_channels, seed=seed)
     x_arr, y_arr = gen.generate(args.samples)
     logger.info(
-        "Datos sintéticos (esquema cell_day): X=%s Y=%s | canales=%s | celdas en llamas=%.4f",
+        "Datos sintéticos (esquema VALEN->CATA): X=%s Y=%s | canales=%d %s | celdas en llamas=%.4f",
         x_arr.shape,
         y_arr.shape,
+        num_channels,
         list(config.CHANNEL_REGISTRY[:num_channels]),
         y_arr.mean(),
     )
@@ -754,11 +1236,13 @@ def save_metadata(
     history: dict,
     parent: str | None = None,
 ):
-    """Sidecar JSON con el contrato de E/S alineado con `11_ML_DATA_CONTRACT.md`."""
+    """Sidecar JSON con el contrato de E/S VALEN -> CATA -> LUCIA."""
     cfg = extract_model_config(model)
     meta = {
         "algorithm": config.ALGORITHM_NAME,
-        "schema_reference": "11_ML_DATA_CONTRACT.md",
+        "source_validation_algorithm": config.SOURCE_VALIDATION_ALGORITHM,
+        "target_routing_algorithm": config.TARGET_ROUTING_ALGORITHM,
+        "schema_reference": "11_ML_DATA_CONTRACT.md + VALEN (CellDay, Meteo, Rainfall, Vegetation)",
         "grid_id": config.GRID_ID,
         "crs": config.CRS,
         "grid_level": config.GRID_LEVEL,
@@ -785,6 +1269,68 @@ def evaluate(model, val_ds, label: str) -> dict[str, float]:
     return res
 
 
+def _maybe_export_predictions_for_lucia(
+    model: keras.Model,
+    args,
+    default_export: bool = False,
+) -> str | None:
+    """Genera el archivo de predicciones de CATA para LUCIA si procede."""
+    pred_out = getattr(args, "predictions_output", None)
+    if not pred_out and not default_export:
+        return None
+    pred_out = pred_out or config.DEFAULT_PREDICTIONS_PATH
+
+    cfg = extract_model_config(model)
+    data_source = args.data
+    if not data_source and os.path.exists(config.DEFAULT_VALEN_CELL_DAY_PATH):
+        data_source = config.VALEN_OUTPUT_DIR
+
+    if data_source and not data_source.endswith(".npz") and not data_source.endswith(".csv") and not data_source.endswith(".csv.gz"):
+        try:
+            x_tr, _, x_va, _, meta_tr, meta_va = load_contract_cell_day(
+                data_source,
+                grid_size=cfg.height,
+                time_steps=cfg.time_steps,
+                num_channels=cfg.num_channels,
+                seed=args.seed,
+                meteo_path=getattr(args, "meteo", None),
+                rainfall_path=getattr(args, "rainfall", None),
+                vegetation_path=getattr(args, "vegetation", None),
+                validated_path=getattr(args, "validated", None),
+                include_rejected=getattr(args, "include_rejected", False),
+                return_patch_meta=True,
+            )
+            # Tomamos las últimas ventanas temporales activas de cada bloque para predecir t+1
+            all_x = np.concatenate([x_tr, x_va], axis=0) if len(x_tr) and len(x_va) else (x_tr if len(x_tr) else x_va)
+            all_meta = (meta_tr + meta_va) if (meta_tr or meta_va) else []
+            if len(all_x) > 0:
+                max_zones = min(len(all_x), getattr(args, "max_prediction_zones", 8))
+                # Seleccionar las ventanas con mayor actividad térmica reciente
+                scores_act = all_x[:, -1, :, :, 0].sum(axis=(1, 2))
+                top_idx = np.argsort(scores_act)[::-1][:max_zones]
+                seq_batch = all_x[top_idx]
+                origins_batch = [all_meta[int(i)] for i in top_idx] if all_meta else None
+                export_cata_predictions_for_lucia(
+                    model=model,
+                    sequence=seq_batch,
+                    output_path=pred_out,
+                    patch_origins=origins_batch,
+                )
+                return pred_out
+        except Exception as exc:  # noqa: BLE001
+            logger.warning("Fallback a muestra sintética para exportar predicciones (%s)", exc)
+
+    sample_x, _ = SyntheticContractGenerator(
+        cfg.height, cfg.time_steps, cfg.num_channels, seed=args.seed + 99
+    ).generate(2)
+    export_cata_predictions_for_lucia(
+        model=model,
+        sequence=sample_x,
+        output_path=pred_out,
+    )
+    return pred_out
+
+
 # ===========================================================================
 # 6. Modos de ejecución (Algoritmo CATA)
 # ===========================================================================
@@ -804,6 +1350,7 @@ def run_scratch(args) -> str:
     )
     save_metadata(out, model, "scratch", hist)
     logger.info("Modelo CATA guardado en %s", out)
+    _maybe_export_predictions_for_lucia(model, args, default_export=True)
     return out
 
 
@@ -822,6 +1369,7 @@ def run_finetune(args) -> str:
     evaluate(model, val_ds, "después de fine-tuning")
     save_metadata(out, model, "finetune", hist, parent=args.checkpoint)
     logger.info("Modelo CATA ajustado guardado en %s", out)
+    _maybe_export_predictions_for_lucia(model, args, default_export=False)
     return out
 
 
@@ -875,13 +1423,40 @@ def run_expand(args) -> str:
         parent=args.checkpoint,
     )
     logger.info("Modelo CATA expandido guardado en %s", out)
+    _maybe_export_predictions_for_lucia(model, args, default_export=True)
     return out
 
 
+def run_predict(args) -> str:
+    """Carga un modelo CATA (o lo instancia) y exporta las predicciones de VALEN para LUCIA."""
+    ckpt = args.checkpoint or config.DEFAULT_MODEL_PATH
+    if os.path.exists(ckpt):
+        model = load_fire_model(ckpt, compile_model_flag=False)
+        logger.info("Modelo CATA cargado desde %s", ckpt)
+    else:
+        cfg = ModelConfig(
+            num_channels=args.channels,
+            time_steps=args.time_steps,
+            height=args.grid,
+            width=args.grid,
+        )
+        model = create_model(cfg)
+        logger.info(
+            "Checkpoint no encontrado (%s); usando modelo CATA inicializado con C=%d canales",
+            ckpt,
+            cfg.num_channels,
+        )
+    out_pred = _maybe_export_predictions_for_lucia(model, args, default_export=True)
+    return out_pred or config.DEFAULT_PREDICTIONS_PATH
+
+
 def run_demo(args) -> None:
-    """Smoke test rápido de los tres modos encadenados sobre el contrato."""
+    """Smoke test rápido de los modos encadenados (C=1 -> C=22 con VALEN) + predicción para LUCIA."""
     demo_dir = os.path.join(config.MODEL_DIR, "demo")
     base = os.path.join(demo_dir, "cata_c1.keras")
+
+    saved_pred_out = args.predictions_output
+    args.predictions_output = None
 
     args.channels, args.output = 1, base
     run_scratch(args)
@@ -892,6 +1467,7 @@ def run_demo(args) -> None:
     args.checkpoint = args.output
     args.new_channels = args.new_channels or config.EXPANDED_NUM_CHANNELS
     args.output = os.path.join(demo_dir, f"cata_c{args.new_channels}.keras")
+    args.predictions_output = saved_pred_out or config.DEFAULT_PREDICTIONS_PATH
     expanded_path = run_expand(args)
 
     # Demostración del marcado diferenciado de cuadrantes (1000x1000m):
@@ -911,7 +1487,11 @@ def run_demo(args) -> None:
         n_pers,
         n_pred_only,
     )
-    logger.info("DEMO CATA OK — artefactos en %s", demo_dir)
+    logger.info(
+        "DEMO CATA OK — modelos en %s | predicciones para LUCIA en %s",
+        demo_dir,
+        args.predictions_output,
+    )
 
 
 def _require_checkpoint(args):
@@ -924,11 +1504,15 @@ def _require_checkpoint(args):
 # ===========================================================================
 def parse_args(argv=None):
     p = argparse.ArgumentParser(
-        description="Entrenamiento del algoritmo CATA (ConvLSTM, 11_ML_DATA_CONTRACT.md)"
+        description="Entrenamiento y predicción del algoritmo CATA (integrado con VALEN -> salida para LUCIA)"
     )
-    p.add_argument("--mode", choices=["scratch", "finetune", "expand", "demo"], default="scratch")
-    p.add_argument("--channels", type=int, default=config.NUM_CHANNELS, help="C para modo scratch")
-    p.add_argument("--new-channels", type=int, default=None, help="C nuevo para modo expand")
+    p.add_argument(
+        "--mode",
+        choices=["scratch", "finetune", "expand", "predict", "demo"],
+        default="scratch",
+    )
+    p.add_argument("--channels", type=int, default=config.NUM_CHANNELS, help="C para modo scratch (defecto: 22 canales VALEN)")
+    p.add_argument("--new-channels", type=int, default=None, help="C nuevo para modo expand (defecto: 22 canales VALEN)")
     p.add_argument(
         "--init",
         choices=["zeros", "glorot_uniform", "he_normal"],
@@ -936,13 +1520,29 @@ def parse_args(argv=None):
         help="Inicialización de los pesos de los canales nuevos",
     )
     p.add_argument("--checkpoint", type=str, default=None, help="Modelo previo (.keras/.h5)")
-    p.add_argument("--output", type=str, default=None, help="Ruta de salida del modelo")
+    p.add_argument("--output", type=str, default=None, help="Ruta de salida del modelo (.keras)")
+    p.add_argument(
+        "--predictions-output",
+        type=str,
+        default=None,
+        help="Ruta del archivo JSON de predicciones de CATA para LUCIA (defecto: artifacts/predictions/cata_predictions.json)",
+    )
     p.add_argument(
         "--data",
         type=str,
         default=None,
-        help="Ruta a cell_day.parquet / cell_day.jsonl (contrato) o dataset .npz",
+        help="Carpeta output de VALEN, archivo cell_day/validated_cell_day (.parquet/.json) o dataset .npz",
     )
+    p.add_argument("--meteo", type=str, default=None, help="Ruta opcional a cell_day_meteo.json de VALEN")
+    p.add_argument("--rainfall", type=str, default=None, help="Ruta opcional a cell_day_rainfall.json de VALEN")
+    p.add_argument("--vegetation", type=str, default=None, help="Ruta opcional a cell_day_vegetation.json de VALEN")
+    p.add_argument("--validated", type=str, default=None, help="Ruta opcional a validated_cell_day.json/.parquet de VALEN")
+    p.add_argument(
+        "--include-rejected",
+        action="store_true",
+        help="Si se indica, incluye también las celdas descartadas como RECHAZA por VALEN",
+    )
+    p.add_argument("--max-prediction-zones", type=int, default=8, help="Nº máximo de zonas activas a exportar para LUCIA")
     p.add_argument("--samples", type=int, default=config.SYNTH_NUM_SAMPLES)
     p.add_argument("--grid", type=int, default=config.GRID_SIZE)
     p.add_argument("--time-steps", type=int, default=config.TIME_STEPS)
@@ -975,6 +1575,7 @@ def main(argv=None):
         "scratch": run_scratch,
         "finetune": run_finetune,
         "expand": run_expand,
+        "predict": run_predict,
         "demo": run_demo,
     }[args.mode](args)
 
