@@ -1,0 +1,29 @@
+# Entorno local: PostgreSQL + PostGIS y la API. Uso: docker compose up
+services:
+  db:
+    image: postgis/postgis:18-3.7
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER:-cataclismo}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-cataclismo}
+      POSTGRES_DB: ${POSTGRES_DB:-cataclismo}
+    ports:
+      - '127.0.0.1:5432:5432'
+    volumes:
+      - pgdata:/var/lib/postgresql
+    healthcheck:
+      test: ['CMD-SHELL', 'pg_isready -U "$$POSTGRES_USER" -d "$$POSTGRES_DB"']
+      interval: 5s
+      retries: 10
+
+  api:
+    build: ./backend
+    environment:
+      DATABASE_URL: postgresql+asyncpg://${POSTGRES_USER:-cataclismo}:${POSTGRES_PASSWORD:-cataclismo}@db:5432/${POSTGRES_DB:-cataclismo}
+    ports:
+      - '127.0.0.1:8000:8000'
+    depends_on:
+      db:
+        condition: service_healthy
+
+volumes:
+  pgdata:
