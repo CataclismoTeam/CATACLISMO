@@ -7,6 +7,10 @@ from google import genai
 # Archivo especializado donde se va a guardar la documentación
 DOCS_FILE_PATH = Path("docs/TECHNICAL_DOCS.md")
 
+# Modelo de Gemini (gemini-2.5-flash ya no está disponible para claves nuevas).
+# Se puede cambiar sin tocar el código con la variable GEMINI_MODEL.
+MODEL = os.environ.get("GEMINI_MODEL") or "gemini-3.8-flash"
+
 def clean_markdown_output(text: str) -> str:
     """Removes outer ```markdown ... ``` wrappers if the LLM adds them."""
     text = text.strip()
@@ -80,10 +84,10 @@ The goal of this document is twofold:
 {code_context}
 """
 
-    print("Calling Gemini API to generate technical documentation...")
+    print(f"Calling Gemini API ({MODEL}) to generate technical documentation...")
     client = genai.Client(api_key=api_key)
     response = client.models.generate_content(
-        model="gemini-2.5-flash",
+        model=MODEL,
         contents=prompt,
     )
 
