@@ -1,2 +1,2 @@
-# CATACLISMO-Nasa-Spaceapps-2026
+# CATACLISMO
 CATACLISMO's team submission for Nasa Space Apps 2026
