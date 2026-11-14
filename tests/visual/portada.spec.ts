@@ -21,8 +21,12 @@ test.describe('regresión visual', () => {
     await expect(page.getByRole('dialog', { name: 'CATACLISMO' })).toBeVisible();
     // En móvil el calendario empieza plegado: basta con que su barra esté pintada
     await expect(page.locator('#calendario-titulo')).toBeVisible();
-    // Sin el cálculo del área a medias: si no, la captura depende de la velocidad del runner
-    await expect(page.getByText('Calculando la superficie')).toHaveCount(0);
+    // Con el calendario desplegado (escritorio), se espera a que termine el cálculo del área:
+    // si no, la captura depende de la velocidad del runner. Se espera lo que SÍ debe aparecer,
+    // no a que desaparezca "Calculando", que podría no haber aparecido aún.
+    if (await page.getByRole('button', { name: 'Plegar' }).isVisible()) {
+      await expect(page.getByText('Toda el área con datos')).toBeVisible();
+    }
     await page.evaluate(() => document.fonts.ready);
     await expect(page).toHaveScreenshot('portada.png', {
       animations: 'disabled',
