@@ -48,7 +48,7 @@ export function Shell() {
   return (
     <div className="flex h-dvh flex-col overflow-hidden">
       <TopBar />
-      <div className="flex min-h-0 flex-1">
+      <div className="flex min-h-0 flex-1 flex-col lg:flex-row">
         <NavRail />
         <main className="flex min-w-0 flex-1 flex-col">
           <MapStage />

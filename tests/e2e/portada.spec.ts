@@ -94,12 +94,8 @@ test('los incendios detectados se filtran por comunidad y se abren en el mapa', 
   await expect(page.getByTestId('mapa')).toBeVisible();
   const panel = page.getByRole('complementary', { name: 'Incendios' });
   const rail = page.getByRole('navigation', { name: 'Módulos' });
-  if (await rail.isVisible()) {
-    const button = rail.getByRole('button', { name: 'Incendios' });
-    if ((await button.getAttribute('aria-pressed')) !== 'true') await button.click();
-  } else {
-    await page.getByRole('button', { name: 'Incendios', exact: true }).click();
-  }
+  const button = rail.getByRole('button', { name: 'Incendios' });
+  if ((await button.getAttribute('aria-pressed')) !== 'true') await button.click();
   await expect(panel.getByText('Real · FIRMS')).toBeVisible();
   await panel.getByLabel('Comunidad autónoma').selectOption('Andalucía');
   const first = panel.getByRole('button', { name: /detecciones/ }).first();

@@ -25,7 +25,7 @@ export function NavRail() {
   return (
     <nav
       aria-label="Módulos"
-      className="hidden w-21 shrink-0 flex-col gap-1 border-r border-line bg-surface p-1.5 lg:flex"
+      className="order-last flex shrink-0 gap-1 border-t border-line bg-surface p-1.5 pb-[max(0.375rem,env(safe-area-inset-bottom))] lg:order-first lg:w-21 lg:flex-col lg:border-t-0 lg:border-r lg:pb-1.5"
     >
       {MODULES.map(({ id, label, icon: Icon, panel }) => {
         const open = !!panel && leftPanel === panel;
@@ -42,7 +42,8 @@ export function NavRail() {
             }
             onClick={panel ? () => setLeftPanel(open ? null : panel) : undefined}
             className={cn(
-              'flex h-14 flex-col items-center justify-center gap-1 rounded-md border text-xs',
+              'h-14 flex-1 flex-col items-center justify-center gap-1 rounded-md border text-xs lg:flex-none',
+              panel ? 'flex' : 'hidden lg:flex',
               panel
                 ? 'cursor-pointer text-ink hover:bg-hover'
                 : 'cursor-not-allowed border-transparent text-ink-muted opacity-60',

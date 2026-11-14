@@ -16,9 +16,8 @@ async function start(page: Page) {
 test('las unidades se separan en aire, tierra y mar, y tierra va por grupos', async ({ page }) => {
   await start(page);
   const rail = page.getByRole('navigation', { name: 'Módulos' });
-  // Escritorio: botón del rail. Móvil: barra del mapa (ningún panel abierto al empezar)
-  if (await rail.isVisible()) await rail.getByRole('button', { name: 'Unidades' }).click();
-  else await page.getByRole('button', { name: 'Unidades', exact: true }).click();
+  // El rail lateral (escritorio) y la barra inferior (móvil) son la misma navegación
+  await rail.getByRole('button', { name: 'Unidades' }).click();
   const panel = page.getByRole('complementary', { name: 'Unidades' });
   const tabs = panel.getByRole('tablist', { name: 'Dominio' });
   await expect(tabs.getByRole('tab', { name: /Aire/ })).toBeVisible();
