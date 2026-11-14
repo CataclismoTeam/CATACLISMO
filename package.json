@@ -1,0 +1,33 @@
+{
+  "name": "cataclismo",
+  "type": "module",
+  "version": "0.0.0",
+  "private": true,
+  "packageManager": "pnpm@12.15.0",
+  "scripts": {
+    "dev": "pnpm --filter frontend dev",
+    "build": "pnpm --filter frontend build",
+    "check": "pnpm --filter frontend check",
+    "lint": "pnpm --filter frontend lint",
+    "format": "prettier --write . --ignore-path .gitignore --ignore-path config/prettierignore",
+    "format:check": "prettier --check . --ignore-path .gitignore --ignore-path config/prettierignore",
+    "check:guard": "node tools/guard.mjs",
+    "check:links": "node tools/check-links.mjs",
+    "check:html": "html-validate --config config/htmlvalidate.json dist/index.html dist/404.html ops/maintenance.html",
+    "check:size": "node tools/check-size.mjs",
+    "check:commits": "node tools/commit-msg.mjs --range origin/main..HEAD",
+    "lighthouse": "pnpm dlx @lhci/cli@0.16.1 autorun --config=config/lighthouserc.json",
+    "test:e2e": "playwright test --config config/playwright.config.ts",
+    "prepare": "lefthook install"
+  },
+  "devDependencies": {
+    "@playwright/test": "1.65.0",
+    "html-validate": "11.21.1",
+    "lefthook": "2.2.2",
+    "prettier": "3.10.1"
+  },
+  "prettier": {
+    "singleQuote": true,
+    "printWidth": 100
+  }
+}

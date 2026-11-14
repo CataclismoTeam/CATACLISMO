@@ -1,0 +1,50 @@
+:root {
+  --bg: #0b0f1a;
+  --fg: #e6e9f2;
+  --accent: #ffb454;
+  color-scheme: dark;
+  font-family: system-ui, sans-serif;
+  background: var(--bg);
+  color: var(--fg);
+}
+
+body {
+  margin: 0;
+}
+
+.app {
+  min-height: 100vh;
+  display: flex;
+  flex-direction: column;
+}
+
+.header {
+  padding: 2rem 1rem;
+  text-align: center;
+}
+
+.header h1 {
+  margin: 0 0 0.5rem;
+  letter-spacing: 0.2em;
+}
+
+button {
+  margin-top: 1rem;
+  padding: 0.75rem 1.5rem;
+  border: 0;
+  border-radius: 0.5rem;
+  background: var(--accent);
+  color: #1a1206;
+  font: inherit;
+  font-weight: 600;
+  cursor: pointer;
+}
+
+.globe {
+  flex: 1;
+  min-height: 70vh;
+}
+
+.loading {
+  text-align: center;
+}

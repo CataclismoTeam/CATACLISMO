@@ -1,0 +1,114 @@
+# ─────────────────────────────────────────────────────────────────────────────
+# .gitignore de CATACLISMO
+# Regla general: si no es código fuente, configuración del proyecto o un recurso
+# público de la web, no se sube. El módulo "Guardián" del CI falla si algo de
+# esta lista acaba versionado (tools/guard.mjs).
+# ─────────────────────────────────────────────────────────────────────────────
+
+# ── Dependencias ─────────────────────────────────────────────────────────────
+node_modules/
+.pnpm-store/
+.yarn/
+# Lockfiles de otros gestores (usamos pnpm)
+package-lock.json
+yarn.lock
+bun.lockb
+bun.lock
+
+# ── Builds y cachés ──────────────────────────────────────────────────────────
+dist/
+.cache/
+.vite/
+.turbo/
+*.tsbuildinfo
+
+# ── Python (backend) ─────────────────────────────────────────────────────────
+.venv/
+venv/
+__pycache__/
+*.py[cod]
+.pytest_cache/
+.ruff_cache/
+.mypy_cache/
+*.egg-info/
+
+# ── Informes de herramientas y tests ─────────────────────────────────────────
+.lighthouseci/
+.playwright-mcp/
+playwright-report/
+test-results/
+blob-report/
+coverage/
+.nyc_output/
+*.lcov
+
+# ── Secretos y credenciales (NUNCA se suben) ─────────────────────────────────
+.env
+.env.*
+!.env.example
+*.pem
+*.key
+*.crt
+*.cer
+*.p12
+*.pfx
+*.jks
+*.keystore
+*.gpg
+*.asc
+id_rsa*
+id_ed25519*
+id_ecdsa*
+*.ppk
+.npmrc
+.netrc
+.htpasswd
+credentials*.json
+secrets*.json
+service-account*.json
+*.secret
+*.secrets
+
+# ── Datos y volcados ─────────────────────────────────────────────────────────
+*.sql
+*.sqlite
+*.sqlite3
+*.db
+*.dump
+*.bak
+*.backup
+*.tmp
+*.swp
+*~
+
+# ── Logs ─────────────────────────────────────────────────────────────────────
+*.log
+logs/
+npm-debug.log*
+pnpm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+
+# ── Agentes de IA y herramientas locales ─────────────────────────────────────
+.claude/
+CLAUDE.local.md
+.codex/
+.cursor/
+.aider*
+.continue/
+.copilot/
+
+# ── Editores ─────────────────────────────────────────────────────────────────
+.vscode/*
+!.vscode/extensions.json
+.idea/
+*.sublime-*
+.history/
+
+# ── Sistema operativo ────────────────────────────────────────────────────────
+.DS_Store
+._*
+Thumbs.db
+desktop.ini
+.directory
+.Trash-*
