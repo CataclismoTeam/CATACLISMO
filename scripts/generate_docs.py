@@ -11,12 +11,14 @@ DOCS_FILE_PATH = Path("docs/TECHNICAL_DOCS.md")
 # Se puede cambiar sin tocar el código con la variable GEMINI_MODEL.
 MODEL = os.environ.get("GEMINI_MODEL") or "gemini-3.8-flash"
 
+
 def clean_markdown_output(text: str) -> str:
     """Removes outer ```markdown ... ``` wrappers if the LLM adds them."""
     text = text.strip()
     text = re.sub(r"^```(?:markdown|md)?\s*\n", "", text, flags=re.IGNORECASE)
     text = re.sub(r"\n```\s*$", "", text)
     return text.strip()
+
 
 def main():
     api_key = os.environ.get("GEMINI_API_KEY")
@@ -101,6 +103,7 @@ The goal of this document is twofold:
     DOCS_FILE_PATH.parent.mkdir(parents=True, exist_ok=True)
     DOCS_FILE_PATH.write_text(cleaned_markdown + "\n", encoding="utf-8")
     print(f"Successfully updated {DOCS_FILE_PATH.as_posix()}")
+
 
 if __name__ == "__main__":
     main()
