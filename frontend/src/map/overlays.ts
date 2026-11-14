@@ -4,24 +4,12 @@ import type { FilterSpecification, GeoJSONSource, Map as MapLibre } from 'maplib
 import type { LayerId } from '../store/ui.ts';
 import { Flame } from 'lucide';
 import type { Detections } from './detections.ts';
+import { fireCells } from './detections.ts';
 import { incidentPoints, outlines, type IncidentsFile } from './incidents.ts';
 import { provider } from './providers.ts';
-import { routesGeoJson, spread, type Route, type Scenario } from './scenario.ts';
+import { routesGeoJson, spread, spreadFrom, type Route, type Scenario } from './scenario.ts';
 
-// Rampas sobrias (sin neones): fuego real en tintas sólidas, predicción en tramas.
-export const FRP_RAMP: [number, string][] = [
-  [0, '#f2c14e'],
-  [10, '#f08a3c'],
-  [50, '#d9482b'],
-  [200, '#8f1d1d'],
-];
-export const FIRE_INTENSITY_RAMP: [number, string][] = [
-  [0, '#fff3b0'],
-  [500, '#ffd166'],
-  [2000, '#f08a3c'],
-  [5000, '#d9482b'],
-  [8000, '#8f1d1d'],
-];
+// Predicción en tramas; el fuego (real o simulado) en celdas rojas sólidas.
 export const PREDICTION_BANDS: [hours: number, color: string, label: string][] = [
   [2, '#b5541e', '1–2 h'],
   [4, '#c98a2b', '2–4 h'],
@@ -38,8 +26,8 @@ export function tokenColor(name: string, fallback: string): string {
 
 /** Capas de MapLibre que controla cada interruptor del panel. */
 export const LAYER_IDS: Record<LayerId, string[]> = {
-  detecciones: ['det-heat', 'real-fill', 'real-line', 'real-icon'],
-  incendio: ['inc-glow', 'inc-fill', 'inc-extrusion', 'inc-line'],
+  detecciones: ['det-cell', 'det-cell-line', 'real-fill', 'real-icon'],
+  incendio: ['inc-fill', 'inc-line'],
   prediccion: ['pred-tint', 'pred-fill', 'pred-line'],
   unidades: [],
   evacuacion: ['ruta-casing', 'ruta-line'],
@@ -78,9 +66,7 @@ const NEAR_ONLY = [
   'pred-tint',
   'pred-fill',
   'pred-line',
-  'inc-glow',
   'inc-fill',
-  'inc-extrusion',
   'inc-line',
   'ruta-casing',
   'ruta-line',
@@ -217,6 +203,16 @@ export function installOverlays(
 
   // Predicción (MODELO): celdas de 250 m con trama y borde discontinuo
   const cells = spread(scenario);
+  // Los incendios reales llevan el mismo halo de propagación que el simulado (viento de poniente
+  // de demostración: FIRMS no trae viento)
+  if (incidents) {
+    // Solo los activos: un halo por cada uno de los 232 pesaría demasiado y los antiguos ya no avanzan
+    for (const i of incidents.incendios.filter((x) => x.activo)) {
+      for (const f of spreadFrom([i.lon, i.lat], 270, 15).features) {
+        if (f.properties.fase === 'prediccion') cells.features.push(f);
+      }
+    }
+  }
   upsertSource(map, 'incendio', cells);
   if (!map.getLayer('pred-fill')) {
     // Tinte translúcido por franja horaria + trama encima: se lee de lejos y en gris
@@ -269,59 +265,14 @@ export function installOverlays(
       },
       beforeLabels,
     );
-    // Incendio activo (SIMULADO): superficie térmica y altura de llama.
-    map.addLayer(
-      {
-        id: 'inc-extrusion',
-        type: 'fill-extrusion',
-        source: 'incendio',
-        filter: ['==', ['get', 'fase'], 'activo'],
-        paint: {
-          'fill-extrusion-color': [
-            'interpolate',
-            ['linear'],
-            ['get', 'intensidad'],
-            ...FIRE_INTENSITY_RAMP.flat(),
-          ],
-          'fill-extrusion-height': ['get', 'altura'],
-          'fill-extrusion-base': 0,
-          'fill-extrusion-opacity': 0.78,
-          'fill-extrusion-vertical-gradient': true,
-        },
-      },
-      beforeLabels,
-    );
+    // Incendio activo (SIMULADO): celdas sólidas de 250 m, como en la referencia del equipo
     map.addLayer(
       {
         id: 'inc-fill',
         type: 'fill',
         source: 'incendio',
         filter: ['==', ['get', 'fase'], 'activo'],
-        paint: {
-          'fill-color': [
-            'interpolate',
-            ['linear'],
-            ['get', 'intensidad'],
-            ...FIRE_INTENSITY_RAMP.flat(),
-          ],
-          'fill-opacity': 0.64,
-          'fill-antialias': true,
-        },
-      },
-      beforeLabels,
-    );
-    map.addLayer(
-      {
-        id: 'inc-glow',
-        type: 'line',
-        source: 'incendio',
-        filter: ['==', ['get', 'fase'], 'activo'],
-        paint: {
-          'line-color': '#ffdf8a',
-          'line-width': 3,
-          'line-blur': 5,
-          'line-opacity': 0.65,
-        },
+        paint: { 'fill-color': ACTIVE_COLOR, 'fill-opacity': 0.85 },
       },
       beforeLabels,
     );
@@ -337,48 +288,30 @@ export function installOverlays(
     );
   }
 
-  // Incendios REALES (FIRMS): superficie de calor ponderada por FRP y contorno del área
-  // afectada. Con zoom lejano se apagan y queda un único icono por incendio.
+  // Incendios REALES (FIRMS): mismas celdas rojas de 250 m que el simulado. Con zoom lejano, un icono por incendio.
   if (detections) {
-    upsertSource(map, 'detecciones', detections.geojson);
-    if (!map.getLayer('det-heat')) {
+    upsertSource(map, 'celdas-reales', fireCells(detections));
+    if (!map.getLayer('det-cell')) {
       map.addLayer(
         {
-          id: 'det-heat',
-          type: 'heatmap',
-          source: 'detecciones',
-          minzoom: FAR_ZOOM - 1,
+          id: 'det-cell',
+          type: 'fill',
+          source: 'celdas-reales',
+          minzoom: FAR_ZOOM,
           paint: {
-            'heatmap-weight': ['interpolate', ['linear'], ['get', 'frp'], 0, 0.15, 100, 1],
-            'heatmap-intensity': ['interpolate', ['linear'], ['zoom'], 8, 0.8, 13, 2.2],
-            'heatmap-radius': ['interpolate', ['exponential', 2], ['zoom'], 8, 6, 12, 22, 15, 70],
-            'heatmap-color': [
-              'interpolate',
-              ['linear'],
-              ['heatmap-density'],
-              0,
-              'rgba(0,0,0,0)',
-              0.15,
-              FIRE_INTENSITY_RAMP[0][1],
-              0.35,
-              FIRE_INTENSITY_RAMP[1][1],
-              0.6,
-              FIRE_INTENSITY_RAMP[2][1],
-              0.8,
-              FIRE_INTENSITY_RAMP[3][1],
-              1,
-              FIRE_INTENSITY_RAMP[4][1],
-            ],
-            'heatmap-opacity': [
-              'interpolate',
-              ['linear'],
-              ['zoom'],
-              FAR_ZOOM - 1,
-              0,
-              FAR_ZOOM,
-              0.85,
-            ],
+            'fill-color': ACTIVE_COLOR,
+            'fill-opacity': 0.85,
           },
+        },
+        beforeLabels,
+      );
+      map.addLayer(
+        {
+          id: 'det-cell-line',
+          type: 'line',
+          source: 'celdas-reales',
+          minzoom: FAR_ZOOM,
+          paint: { 'line-color': '#2a0d08', 'line-width': 0.5, 'line-opacity': 0.6 },
         },
         beforeLabels,
       );
@@ -396,17 +329,6 @@ export function installOverlays(
           minzoom: FAR_ZOOM,
           // Casi transparente: solo sirve para pulsar el incendio y ver su ficha
           paint: { 'fill-color': '#000000', 'fill-opacity': 0.01 },
-        },
-        beforeLabels,
-      );
-      map.addLayer(
-        {
-          id: 'real-line',
-          type: 'line',
-          source: 'incendios-reales',
-          minzoom: FAR_ZOOM,
-          layout: { 'line-join': 'round' },
-          paint: { 'line-color': '#fff1d6', 'line-width': 1.6, 'line-opacity': 0.9 },
         },
         beforeLabels,
       );

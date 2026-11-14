@@ -19,7 +19,8 @@ test.describe('regresión visual', () => {
     await page.evaluate(() => document.fonts.ready);
     // La portada es el briefing sobre el calendario ya cargado
     await expect(page.getByRole('dialog', { name: 'CATACLISMO' })).toBeVisible();
-    await expect(page.locator('table')).toBeVisible();
+    // En móvil el calendario empieza plegado: basta con que su barra esté pintada
+    await expect(page.locator('#calendario-titulo')).toBeVisible();
     await expect(page).toHaveScreenshot('portada.png', {
       animations: 'disabled',
       caret: 'hide',

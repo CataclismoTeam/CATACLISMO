@@ -25,7 +25,6 @@ import {
   type EscapeRoutes,
   type Route,
 } from './scenario.ts';
-import { LeftToolbar } from './LeftToolbar.tsx';
 import { UnitsPanel } from './UnitsPanel.tsx';
 import {
   CoordinatesBar,
@@ -336,7 +335,6 @@ export default function MapView() {
           <span className="rounded-sm bg-canvas px-3 py-1.5">Cargando el mapa…</span>
         </p>
       )}
-      <LeftToolbar />
       <IncidentsPanel incidents={incidents} routes={routes} />
       <UnitsPanel />
       <LayersPanel detections={detections} />

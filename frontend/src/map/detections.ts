@@ -1,6 +1,6 @@
-// Detecciones REALES de FIRMS (últimos 90 días). Se pintan como superficie de calor ponderada
-// por la potencia radiativa (FRP), con el contorno del incendio encima: no como cuadrados.
-import type { FeatureCollection, Point } from 'geojson';
+// Detecciones REALES de FIRMS (últimos 90 días). Se pintan en celdas de 250 m, igual que el
+// incendio simulado, con color según la potencia radiativa (FRP).
+import type { FeatureCollection, Point, Polygon } from 'geojson';
 
 interface RecentFile {
   desde: string;
@@ -47,4 +47,57 @@ export async function loadDetections(): Promise<Detections> {
     geometry: { type: 'Point', coordinates: [d.lon[i], lat] },
   }));
   return { from: d.desde, to: d.hasta, geojson: { type: 'FeatureCollection', features } };
+}
+
+/** Lado de celda, el mismo que el incendio simulado (≈ 250 m). */
+const CELL = 0.0025;
+
+/**
+ * Celdas de 250 m con fuego real: cada detección marca las celdas que cubre su píxel y cada una guarda
+ * la potencia máxima. Mismo aspecto que el incendio simulado; el color dice que es real.
+ */
+export function fireCells(
+  detections: Detections,
+): FeatureCollection<Polygon, { frp: number; detecciones: number }> {
+  const cells = new Map<string, { i: number; j: number; frp: number; n: number }>();
+  for (const f of detections.geojson.features) {
+    const [lon, lat] = f.geometry.coordinates;
+    // Huella del píxel del sensor: VIIRS ~375 m, MODIS ~1 km de lado
+    const halfKm = f.properties.sensor === 'MODIS' ? 0.5 : 0.1875;
+    const dLat = halfKm / 111.32;
+    const dLon = dLat / Math.cos((lat * Math.PI) / 180);
+    for (let i = Math.floor((lon - dLon) / CELL); i <= Math.floor((lon + dLon) / CELL); i++) {
+      for (let j = Math.floor((lat - dLat) / CELL); j <= Math.floor((lat + dLat) / CELL); j++) {
+        const key = `${i}:${j}`;
+        const cell = cells.get(key);
+        if (cell) {
+          cell.frp = Math.max(cell.frp, f.properties.frp);
+          cell.n += 1;
+        } else cells.set(key, { i, j, frp: f.properties.frp, n: 1 });
+      }
+    }
+  }
+  return {
+    type: 'FeatureCollection',
+    features: [...cells.values()].map(({ i, j, frp, n }) => {
+      const w = i * CELL;
+      const s = j * CELL;
+      return {
+        type: 'Feature',
+        properties: { frp, detecciones: n },
+        geometry: {
+          type: 'Polygon',
+          coordinates: [
+            [
+              [w, s],
+              [w + CELL, s],
+              [w + CELL, s + CELL],
+              [w, s + CELL],
+              [w, s],
+            ],
+          ],
+        },
+      };
+    }),
+  };
 }

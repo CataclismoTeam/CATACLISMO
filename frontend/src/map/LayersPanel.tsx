@@ -4,7 +4,7 @@ import { cn } from '../lib/cn.ts';
 import { useUi, type Basemap, type LayerId } from '../store/ui.ts';
 import { Button } from '../ui/Button.tsx';
 import type { Detections } from './detections.ts';
-import { ACTIVE_COLOR, FIRE_INTENSITY_RAMP, PREDICTION_BANDS } from './overlays.ts';
+import { ACTIVE_COLOR, PREDICTION_BANDS } from './overlays.ts';
 import { provider } from './providers.ts';
 
 const BASEMAPS: [Basemap, string][] = [
@@ -180,18 +180,7 @@ export function LayersPanel({ detections }: { detections?: Detections }) {
             <div className="flex flex-col gap-1">
               <span className="text-xs text-ink-muted">
                 NASA FIRMS, {detections ? `${detections.from} a ${detections.to}` : 'cargando…'}.
-                Calor según la potencia del fuego; línea clara = área afectada estimada.
-              </span>
-              <span
-                aria-hidden
-                className="h-3 w-full rounded-sm"
-                style={{
-                  background: `linear-gradient(to right, ${FIRE_INTENSITY_RAMP.map(([, c]) => c).join(', ')})`,
-                }}
-              />
-              <span className="flex justify-between text-xs text-ink-muted">
-                <span>Menos potencia</span>
-                <span>Más potencia</span>
+                Celdas de 250 m con fuego detectado y, alrededor, la propagación prevista.
               </span>
               <div className="flex flex-wrap gap-x-3 gap-y-1 text-xs">
                 <span className="flex items-center gap-1.5">
@@ -223,30 +212,7 @@ export function LayersPanel({ detections }: { detections?: Detections }) {
           id="incendio"
           label="Incendio activo"
           origin="simulado"
-          legend={
-            <div className="flex flex-col gap-2">
-              <span className="text-xs text-ink-muted">
-                Intensidad térmica y altura de llama simuladas sobre el relieve.
-              </span>
-              <div className="flex flex-wrap gap-x-3 gap-y-1">
-                {FIRE_INTENSITY_RAMP.map(([value, color]) => (
-                  <Swatch key={value} fill={color}>
-                    {value === 0 ? 'baja' : value >= 8000 ? '≥ 8.000 MW' : `≥ ${value} MW`}
-                  </Swatch>
-                ))}
-              </div>
-              <div className="flex items-center gap-2 text-xs text-ink-muted">
-                <span
-                  aria-hidden
-                  className="h-3 w-8 rounded-sm"
-                  style={{
-                    background: `linear-gradient(to top, ${ACTIVE_COLOR}, #ffd166, #fff3b0)`,
-                  }}
-                />
-                Altura de llama 4–46 m
-              </div>
-            </div>
-          }
+          legend={<Swatch fill={ACTIVE_COLOR}>Zona ardiendo ahora (celdas de 250 m)</Swatch>}
         />
         <Toggle
           id="prediccion"

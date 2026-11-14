@@ -356,10 +356,22 @@ export function spread(
   Polygon,
   { horas: number; fase: 'activo' | 'prediccion'; intensidad: number; altura: number }
 > {
-  const [lon0, lat0] = s.ignition;
-  const head = 0.6 + s.windKmh * 0.045; // km/h en la cabeza
-  const e = Math.min(0.85, 0.35 + s.windKmh / 60);
-  const towards = rad((s.windFrom + 180) % 360);
+  return spreadFrom(s.ignition, s.windFrom, s.windKmh);
+}
+
+/** Misma propagación desde un punto cualquiera: la usan también los incendios reales. */
+export function spreadFrom(
+  ignition: [number, number],
+  windFrom: number,
+  windKmh: number,
+): FeatureCollection<
+  Polygon,
+  { horas: number; fase: 'activo' | 'prediccion'; intensidad: number; altura: number }
+> {
+  const [lon0, lat0] = ignition;
+  const head = 0.6 + windKmh * 0.045; // km/h en la cabeza
+  const e = Math.min(0.85, 0.35 + windKmh / 60);
+  const towards = rad((windFrom + 180) % 360);
   const cosLat = Math.cos(rad(lat0));
   const span = 0.09;
   const features: FeatureCollection<
