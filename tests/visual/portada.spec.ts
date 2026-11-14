@@ -21,12 +21,8 @@ test.describe('regresión visual', () => {
     await expect(page.getByRole('dialog', { name: 'CATACLISMO' })).toBeVisible();
     // En móvil el calendario empieza plegado: basta con que su barra esté pintada
     await expect(page.locator('#calendario-titulo')).toBeVisible();
-    // Con el calendario desplegado (escritorio), se espera a que termine el cálculo del área:
-    // si no, la captura depende de la velocidad del runner. Se espera lo que SÍ debe aparecer,
-    // no a que desaparezca "Calculando", que podría no haber aparecido aún.
-    if (await page.getByRole('button', { name: 'Plegar' }).isVisible()) {
-      await expect(page.getByText('Toda el área con datos')).toBeVisible();
-    }
+    // Bajo el briefing el área aún no se calcula (arranca al cerrarlo): "Calculando…" es el estado
+    // estable de esta captura, no una carga a medias
     await page.evaluate(() => document.fonts.ready);
     await expect(page).toHaveScreenshot('portada.png', {
       animations: 'disabled',
