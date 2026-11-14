@@ -6,7 +6,7 @@ sistema y las referencias se generan en el mismo entorno (Ubuntu + Chromium de P
 
 ## Cuándo falla
 
-- **Falta una referencia** (captura nueva o primera vez): el test falla y escribe la captura. El job
+- **Falta una referencia** (captura nueva o primera vez): Playwright escribe la captura y el test pasa (no hay nada con qué comparar). El job
   **E2E: Playwright** la sube en el artefacto `referencias-visuales`, ya con su nombre final.
 - **Cambia el aspecto**: el test falla y el artefacto `playwright-trazas` trae la captura esperada,
   la real y la diferencia.
