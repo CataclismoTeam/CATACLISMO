@@ -1,0 +1,3 @@
+# El CSV sin comprimir supera el máximo de 1024 KB de tools/guard.mjs.
+# En el repositorio se versiona output/parsed_data.csv.gz (mismo contenido).
+output/parsed_data.csv
