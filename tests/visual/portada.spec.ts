@@ -21,6 +21,9 @@ test.describe('regresión visual', () => {
     await expect(page.getByRole('dialog', { name: 'CATACLISMO' })).toBeVisible();
     // En móvil el calendario empieza plegado: basta con que su barra esté pintada
     await expect(page.locator('#calendario-titulo')).toBeVisible();
+    // Sin el cálculo del área a medias: si no, la captura depende de la velocidad del runner
+    await expect(page.getByText('Calculando la superficie')).toHaveCount(0);
+    await page.evaluate(() => document.fonts.ready);
     await expect(page).toHaveScreenshot('portada.png', {
       animations: 'disabled',
       caret: 'hide',
