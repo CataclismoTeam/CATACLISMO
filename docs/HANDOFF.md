@@ -1,32 +1,35 @@
-# Relevo: estado de CATACLISMO (2026-11-14, tarde)
+# Relevo: estado de CATACLISMO (2026-11-14, noche) · front v2
 
-Reglas del usuario: español, pnpm siempre, nada de push ni PR sin permiso, `main` protegida (PR + squash + Conventional Commits). La especificación original está en `docs/PROMPT-FRONTEND.md`; donde choque, manda este documento.
+Reglas del usuario: español, pnpm siempre. **Todo se sube directamente a `main`** (sin ramas
+ni PR), integrando antes `origin/main` y pasando las comprobaciones locales. Nunca `--force`.
 
-## Hecho (rama `feat/shell-calendario`, sale de `feat/datos-hotspots`; todo local, sin push)
+## Hecho (en `main`, etiqueta `front-v2.0.0`)
 
-| Commit    | Bloque                                                                                                                                                                                                                                                                                                                                                                          |
-| --------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `93548db` | Armonización MODIS + VIIRS (`tools/build-hotspots`, Python + uv) y agregados en `frontend/public/data/`                                                                                                                                                                                                                                                                         |
-| `1e94bb7` | Shell oscuro, tokens, calendario mes × año con mediana, anomalía, CSV, PNG y metodología                                                                                                                                                                                                                                                                                        |
-| `4baec53` | Mapa MapLibre + MapTiler: 2D/3D (2.5D = 3D inclinado + exageración), satélite / topográfico con curvas / oscuro, sombreado, detecciones FIRMS reales como cuadrados del píxel, escenarios simulados forestal e interfaz urbano-forestal con fuego en celdas de 250 m y predicción con trama, vías de escape, iconos de unidades con estado, panel de capas, coordenadas y radio |
-| `cf0b267` | Predicción más legible y marcadores separados                                                                                                                                                                                                                                                                                                                                   |
+- **Datos** (`tools/build-hotspots`): armonización MODIS + VIIRS, calendario mes × año,
+  incendios reales de los últimos 90 días por comunidad autónoma (`incidents-v1.json`) y vías
+  de escape de las simulaciones con el algoritmo del equipo (`escape-routes-v1.json`).
+- **Mapa** (MapLibre + MapTiler): 2D y 3D (el 2.5D es el 3D inclinado), satélite y
+  topográfico con curvas. Incendios reales como superficie de calor con contorno; de lejos,
+  un icono por incendio. 12 simulaciones en 9 comunidades, con propagación prevista.
+- **Operativo**: unidades por aire, tierra (en grupos) y mar; radio con General Tierra y un
+  canal por grupo; fichas en el lateral, se cierran con Esc.
+- **Interfaz**: Ajustes con tema sistema/claro/oscuro, daltonismo (Okabe-Ito) y modo
+  proyección; favicon propio. Lighthouse local: rendimiento 0,93; resto 1.
 
-Comprobado en local: format, tsc, oxlint, Vitest (16), build, `check:size`, `check:links`, `check:html`, guardián y e2e (22 en verde, escritorio y móvil).
-
-Clave de MapTiler: `VITE_MAPTILER_KEY` en `.env` de la raíz (ignorado; `vite.config.ts` usa `envDir: '..'`). En el CI llega como `vars.VITE_MAPTILER_KEY` al paso Build de `deploy.yml` (ya creada). Sin clave, el mapa usa Esri, OpenTopoMap, CARTO y Terrarium de AWS.
+Clave de MapTiler: `VITE_MAPTILER_KEY` en `.env` (ignorado). En el CI, `vars.VITE_MAPTILER_KEY`.
 
 ## Avisos
 
-- Los e2e arrancan el mapa en 2D (`localStorage cataclismo.mapa`), porque sin GPU el relieve 3D satura el navegador. El test de modos solo comprueba el cambio de estado.
-- Las capturas de regresión visual se borraron en `1e94bb7` y el CI las regenerará (ver `tests/visual/README.md`). Revisa el artefacto `referencias-visuales` y súbelas.
-- Lighthouse no se ha pasado en local con el mapa siempre cargado. Revísalo en el CI (rendimiento ≥ 0,9).
-- `tools/serve.mjs` sirve ahora `.mjs` como JavaScript (lo necesita el worker de MapLibre 6).
+- Los e2e arrancan el mapa en 2D (sin GPU el 3D satura el navegador).
+- El mapa se carga al cerrar el briefing en la primera visita (rendimiento).
+- Las capturas de regresión visual las genera el CI (artefacto `referencias-visuales`):
+  revisarlas y subirlas a `tests/visual/__screenshots__/`.
+- Montes de Toledo no tiene vías de escape: no hay núcleos amenazados en el área.
 
 ## Pendiente
 
-1. Push de las ramas y PRs a `main` (pedir permiso).
-2. Conectar el área del calendario con el mapa: dibujar un rectángulo en el mapa y usarlo como área del calendario.
-3. Pulsar un mes del calendario para filtrar las detecciones del mapa a ese periodo (hoy el mapa muestra los últimos 90 días).
-4. Ficha al pulsar una celda de fuego o una detección (fecha, sensor, FRP, confianza).
-5. `docs/ux-ruta-de-lanzamiento.md` (7 puntos GO / AÚN NO con evidencia) y actualizar `frontend/README.md` a MapLibre.
-6. Diseño offline (no implementado): proveedor de teselas locales con PMTiles en `src/map/providers.ts`.
+1. Dibujar el área del calendario en el mapa y filtrar el mapa por el mes elegido.
+2. Ficha al pulsar una detección suelta (fecha, sensor, FRP, confianza).
+3. `docs/ux-ruta-de-lanzamiento.md` (7 puntos GO / AÚN NO) y `frontend/README.md` a MapLibre.
+4. Exponer en FastAPI el modelo CATA y las vías de escape cuando haya pesos entrenados.
+5. Modo sin conexión: teselas locales (PMTiles) en `src/map/providers.ts`.

@@ -135,3 +135,19 @@ de 3 o más detecciones. Para cada incendio:
   300 m, para que siga la forma del área afectada y no una rejilla. No es un perímetro oficial.
 - **Actividad reciente**: detecciones en los 3 últimos días del dato. No significa «sin extinguir».
 - Fechas, número de detecciones, sensores, FRP máxima y total y área estimada.
+
+## Vías de escape de las simulaciones (`build-escape-routes`)
+
+```bash
+uv run --project tools/build-hotspots build-escape-routes \
+  --scenarios frontend/src/map/scenarios.json --out frontend/public/data
+```
+
+Usa el **algoritmo de evacuación del equipo** (`backend/search/main.py`): propagación del fuego
+con viento y A* espacio-temporal. Para cada simulación monta una rejilla de 100 m (~15 km de lado)
+con carreteras y núcleos de OpenStreetMap (Overpass, caché en `data/raw/osm/`, no versionada) y mar
+fuera de las comunidades autónomas. Busca rutas desde los núcleos amenazados (el fuego llega en
+≤ 8 h) hasta refugios a ≥ 4 km donde tarda ≥ 2,5 veces más. Calibración: un turno = 12 min
+(frente de ~2 km/h) y evacuación en vehículo a ~20 km/h. Escribe `escape-routes-v1.json` con
+distancia, tiempo y margen frente al fuego. Si Overpass falla en una zona, esa simulación queda
+sin rutas y las demás siguen.
