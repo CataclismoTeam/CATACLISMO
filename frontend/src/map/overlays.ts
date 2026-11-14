@@ -25,7 +25,7 @@ export const ROUTE_COLOR = '#2f9e62';
 export const LAYER_IDS: Record<LayerId, string[]> = {
   detecciones: ['det-fill', 'det-line'],
   incendio: ['inc-fill', 'inc-line'],
-  prediccion: ['pred-fill', 'pred-line'],
+  prediccion: ['pred-tint', 'pred-fill', 'pred-line'],
   unidades: [],
   evacuacion: ['ruta-casing', 'ruta-line'],
   curvas: ['curvas-line', 'curvas-label'],
@@ -34,13 +34,13 @@ export const LAYER_IDS: Record<LayerId, string[]> = {
 
 /** Trama diagonal para la predicción: se distingue del fuego real también en gris. */
 function hatch(color: string): { width: number; height: number; data: Uint8ClampedArray } {
-  const size = 16;
+  const size = 24;
   const canvas = document.createElement('canvas');
   canvas.width = canvas.height = size;
   const ctx = canvas.getContext('2d');
   if (!ctx) return { width: 1, height: 1, data: new Uint8ClampedArray(4) };
   ctx.strokeStyle = color;
-  ctx.lineWidth = 2.5;
+  ctx.lineWidth = 2;
   ctx.beginPath();
   for (const o of [-size, 0, size]) {
     ctx.moveTo(o, size);
@@ -125,6 +125,29 @@ export function installOverlays(
   const cells = spread(scenario);
   upsertSource(map, 'incendio', cells);
   if (!map.getLayer('pred-fill')) {
+    // Tinte translúcido por franja horaria + trama encima: se lee de lejos y en gris
+    map.addLayer(
+      {
+        id: 'pred-tint',
+        type: 'fill',
+        source: 'incendio',
+        filter: ['==', ['get', 'fase'], 'prediccion'],
+        paint: {
+          'fill-color': [
+            'step',
+            ['get', 'horas'],
+            PREDICTION_BANDS[0][1],
+            2,
+            PREDICTION_BANDS[1][1],
+            4,
+            PREDICTION_BANDS[2][1],
+          ],
+          'fill-opacity': 0.28,
+          'fill-antialias': false,
+        },
+      },
+      beforeLabels,
+    );
     map.addLayer(
       {
         id: 'pred-fill',
@@ -146,9 +169,8 @@ export function installOverlays(
         filter: ['==', ['get', 'fase'], 'prediccion'],
         paint: {
           'line-color': '#e0b070',
-          'line-width': 0.6,
-          'line-opacity': 0.5,
-          'line-dasharray': [2, 2],
+          'line-width': 0.4,
+          'line-opacity': 0.35,
         },
       },
       beforeLabels,
