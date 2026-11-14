@@ -502,7 +502,10 @@ def write_outputs(df: pd.DataFrame, parquet_path: Path, json_path: Path) -> None
     df.to_parquet(parquet_path, compression="zstd", index=False)
     logger.info(f"Escrito Parquet: {parquet_path} ({parquet_path.stat().st_size / 1024:.1f} KB)")
 
-    from json_output import JSONArrayWriter
+    try:
+        from .json_output import JSONArrayWriter
+    except ImportError:
+        from json_output import JSONArrayWriter
 
     with JSONArrayWriter(json_path, indent=2) as w:
         for _, row in df.iterrows():

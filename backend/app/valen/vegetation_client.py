@@ -442,7 +442,10 @@ class VegetationClient:
                 enriched.append({"cell_id": cell_id, "error": str(e)})
 
         output_path.parent.mkdir(parents=True, exist_ok=True)
-        from json_output import JSONArrayWriter
+        try:
+            from .json_output import JSONArrayWriter
+        except ImportError:
+            from json_output import JSONArrayWriter
 
         with JSONArrayWriter(output_path, indent=2) as w:
             for r in enriched:

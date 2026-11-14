@@ -355,7 +355,10 @@ def run_valen_scoring(
 
     # Guardar JSON (array único) si se solicita
     if json_output:
-        from json_output import JSONArrayWriter
+        try:
+            from .json_output import JSONArrayWriter
+        except ImportError:
+            from json_output import JSONArrayWriter
         with JSONArrayWriter(json_output, indent=2) as w:
             for _, row in results_df.iterrows():
                 w.write(row.to_dict())

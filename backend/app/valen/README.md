@@ -1,13 +1,13 @@
-# VALEN (`ingestion`) — Algoritmo de Ingesta, Enriquecimiento Multi-Fuente y Validación de Datos
+# VALEN (`valen`) — Algoritmo de Ingesta, Enriquecimiento Multi-Fuente y Validación de Datos
 
 > **Contexto consolidado para IA / Generación de Documentación:**  
-> Este documento unifica todas las notas técnicas de desarrollo de **VALEN** (`README.md`, `PIPELINE_SUMMARY.md`, `SESSION_LOG.md`, `update_phase1`, `update_phase2`, `update_meteomatics`, `update_vegetation_rainfall` y `update_scoring`), así como su integración directa con **CATA** (`backend/app/fire_model/`) y el futuro algoritmo de evacuación **LUCIA**.
+> Este documento unifica todas las notas técnicas de desarrollo de **VALEN** (`README.md`, `PIPELINE_SUMMARY.md`, `SESSION_LOG.md`, `update_phase1`, `update_phase2`, `update_meteomatics`, `update_vegetation_rainfall` y `update_scoring`), así como su integración directa con **CATA** (`backend/app/cata/`) y el futuro algoritmo de evacuación **LUCIA**.
 
 ---
 
 ## 1. Visión General y Rol en la Arquitectura (`VALEN` → `CATA` → `LUCIA`)
 
-- **Identificador del algoritmo:** `ALGORITHM_NAME = "valen"` (`backend/app/ingestion/`).
+- **Identificador del algoritmo:** `ALGORITHM_NAME = "valen"` (`backend/app/valen/`).
 - **Problema que resuelve:** Los satélites de la NASA (FIRMS: sensores **MODIS** en Terra/Aqua y **VIIRS** en SNPP/NOAA-20/21) detectan anomalías térmicas brutas (*hotspots*), que incluyen numerosos falsos positivos (chimeneas industriales, quemas agrícolas controladas, reflejos solares en paneles o láminas de agua, saturación de sensor).
 - **Qué hace VALEN:**
   1. Ingiere y proyecta las detecciones satelitales a la rejilla europea métrica **ETRS89-LAEA (`EPSG:3035`)** con celdas tácticas de **1000 × 1000 m (`ES1K`)** y jerarquía anidada 2×2 (`L0` a `L3`).
@@ -21,15 +21,15 @@
      - `REVISAR_MANUAL` ($0.30 - 0.70$): Anomalía térmica plausible que requiere seguimiento o carece de alguna fuente externa.
      - `RECHAZA` ($< 0.30$): Falso positivo descartado.
 - **Conexión con CATA y LUCIA:**
-  - **CATA (`backend/app/fire_model/`)** descarta automáticamente los registros `RECHAZA` de **VALEN** y consume un tensor de **22 canales** (`13` de `cell_day` + `4` de `meteo` + `3` de `rainfall` + `1` de `vegetation` + `1` de `valen_score`).
+  - **CATA (`backend/app/cata/`)** descarta automáticamente los registros `RECHAZA` de **VALEN** y consume un tensor de **22 canales** (`13` de `cell_day` + `4` de `meteo` + `3` de `rainfall` + `1` de `vegetation` + `1` de `valen_score`).
   - **CATA** genera el archivo `cata_predictions.json` con probabilidades en `t+1`, cuadrantes diferenciados (`SAFE`, `PREDICTED_FIRE`, `CONFIRMED_BURNED`, `CONFIRMED_AND_CONTINUES`), tiempos estimados de llegada del fuego y costes de paso diferenciados para **personas** y **animales**, listo para alimentar a **LUCIA**.
 
 ---
 
-## 2. Estructura del Paquete (`backend/app/ingestion/`)
+## 2. Estructura del Paquete (`backend/app/valen/`)
 
 ```text
-backend/app/ingestion/
+backend/app/valen/
 ├── __init__.py               # ALGORITHM_NAME = "valen"
 ├── phase1_projection.py      # Fase 1: Parser streaming FIRMS + proyección EPSG:3035 + celdas L0-L3
 ├── phase2_cell_day.py        # Fase 2: Agregación por (cell_id_L0, date, sensor) — 15 bloques contractuales
@@ -162,12 +162,25 @@ backend/app/ingestion/
   - `0.30 <= score < 0.70` → `REVISAR_MANUAL`
   - `score < 0.30` → `RECHAZA`
 
+### Fase 3d: Red Viaria de Carreteras y Caminos con OpenStreetMap (`roads_client.py` + `laea.py`)
+- **Fuente oficial:** **OpenStreetMap (Overpass API)** — consulta vectorial `way["highway"]` sobre el *bounding box* WGS84 de cada bloque de `32 × 32 km` de la rejilla `ES1K`.
+- **Proyección y rasterización (`laea.py`):** Proyecta la geometría de cada carretera/camino a `EPSG:3035` mediante fórmulas elipsoidales GRS80 exactas (sin depender de librerías C externas) y muestrea cada segmento cada `50 m` para asignar la longitud exacta en kilómetros a cada celda `ES1K:L0:Y{iy:05d}:X{ix:05d}`.
+- **Jerarquía de vías y factores de velocidad para LUCIA (`HIGHWAY_CLASSES`):**
+  - `major` (`motorway`, `trunk`, `primary`): factor humano `0.40–0.50` (avance rápido); `motorway`/`trunk` marcan `motorway_barrier = True` para fauna/ganado (factor animal `1.20–1.40` por vallado perimetral).
+  - `secondary` (`secondary`, `tertiary`): factor humano `0.50–0.58`, factor animal `0.90–0.95`.
+  - `local` (`unclassified`, `residential`, `service`): factor humano `0.60–0.65`, factor animal `0.85–1.00`.
+  - `track` (pistas forestales y caminos agrícolas): factor humano `0.72`, factor animal `0.78`.
+  - `path` (`path`, `footway`, `bridleway`, `cycleway`): factor humano `0.82–0.85`, factor animal `0.78–0.85`.
+- **Caché y salida:**
+  - Caché SQLite persistente por *bounding box*: `cache/roads_cache.sqlite`.
+  - Artefacto de salida consumido por **LUCIA**: `output/cell_roads.json` (`road_length_km`, `road_access_score` $\in [0, 1]$, `best_highway_class`, `human_speed_factor`, `animal_speed_factor`, `motorway_barrier`).
+
 ---
 
 ## 4. Comandos de Ejecución del Pipeline VALEN
 
 ```bash
-cd backend/app/ingestion
+cd backend/app/valen
 
 # 1. Fase 1: Proyección EPSG:3035 y asignación de celdas L0-L3 (1000 m)
 ../../.venv/bin/python phase1_projection.py \
@@ -194,6 +207,11 @@ cd backend/app/ingestion
 ../../.venv/bin/python rainfall_client.py \
   --cell-day output/cell_day.parquet \
   --output output/cell_day_rainfall.json --lookback 90
+
+# 3d. Enriquecimiento de carreteras y caminos (OpenStreetMap Overpass API)
+../../.venv/bin/python roads_client.py \
+  --from-cata ../cata/artifacts/predictions/cata_predictions.json \
+  --output output/cell_roads.json
 
 # 4. Puntuación y validación final (VALEN)
 ../../.venv/bin/python scoring_client.py \

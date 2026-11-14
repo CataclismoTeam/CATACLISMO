@@ -7,8 +7,8 @@ y genera cell_day.parquet + cell_day.json (array único) con 15 campos contractu
 
 Uso:
     python phase2_cell_day.py \
-        --input backend/app/ingestion/output/observations.parquet \
-        --output backend/app/ingestion/output \
+        --input backend/app/valen/output/observations.parquet \
+        --output backend/app/valen/output \
         --cell-size 1000
 """
 
@@ -251,7 +251,10 @@ def validate_cell_day(cell_day: pd.DataFrame, observations: pd.DataFrame) -> Non
 
 def write_outputs(cell_day: pd.DataFrame, output_dir: Path) -> None:
     """Escribe Parquet y JSON (array único)."""
-    from json_output import JSONArrayWriter
+    try:
+        from .json_output import JSONArrayWriter
+    except ImportError:
+        from json_output import JSONArrayWriter
 
     parquet_path = output_dir / "cell_day.parquet"
     json_path = output_dir / "cell_day.json"
