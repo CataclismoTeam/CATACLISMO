@@ -13,13 +13,13 @@ from dataclasses import dataclass, field
 
 # ---------------------------------------------------------------------------
 # Rejilla espacial y ventana temporal (alineado con 11_ML_DATA_CONTRACT.md)
-# Grid ID: ES-LAEA-5K-v1 (EPSG:3035), celdas L0 = 5000 m, grano diario
+# Grid ID: ES-LAEA-1K-v1 (EPSG:3035), celdas L0 = 1000 m, grano diario
 # ---------------------------------------------------------------------------
-GRID_ID: str = "ES-LAEA-5K-v1"
+GRID_ID: str = "ES-LAEA-1K-v1"
 CRS: str = "EPSG:3035"
-GRID_LEVEL: int = 0  # Nivel L0 = 5 km (L1=10km, L2=20km, L3=40km)
-GRID_SIZE: int = 64  # Sub-grilla N x N celdas (ventana espacial)
-CHUNK_SIZE_M: float = 5000.0  # Tamaño de celda L0 en metros (5 km)
+GRID_LEVEL: int = 0  # Nivel L0 = 1 km (L1=2km, L2=4km, L3=8km)
+GRID_SIZE: int = 320  # Sub-grilla N x N celdas (ventana espacial 320km)
+CHUNK_SIZE_M: float = 1000.0  # Tamaño de celda L0 en metros (1 km)
 TIME_STEPS: int = 5  # T: nº de pasos temporales (días) de entrada
 
 # ---------------------------------------------------------------------------
@@ -39,7 +39,7 @@ CHANNEL_REGISTRY: tuple[str, ...] = (
     "confidence_rank_max",  # 6: confidence_rank_max / 2.0 (0=low, 0.5=nominal, 1.0=high)
     "n_day_ratio",  # 7: n_day / max(n_obs, 1), fracción de detecciones diurnas [0, 1]
     "n_night_ratio",  # 8: n_night / max(n_obs, 1), fracción de detecciones nocturnas [0, 1]
-    "footprint_max_km",  # 9: clip(footprint_max_km / 5.0, 0, 1), huella máxima del píxel [0, 1]
+    "footprint_max_km",  # 9: clip(footprint_max_km / 1.0, 0, 1), huella máxima del píxel [0, 1]
     "n_platforms",  # 10: clip(n_platforms / 3.0, 0, 1), diversidad de plataformas [0, 1]
     "product_mix",  # 11: fracción NRT (0.0=todo SP, 1.0=todo NRT) [0, 1]
     "viirs_obs_share",  # 12: n_obs_viirs / max(n_obs_total, 1), peso del sensor VIIRS [0, 1]

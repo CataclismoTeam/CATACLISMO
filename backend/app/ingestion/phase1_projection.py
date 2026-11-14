@@ -474,8 +474,8 @@ def build_arg_parser() -> argparse.ArgumentParser:
                    help="Archivos JSON o directorios (recursivo)")
     p.add_argument("--output", type=Path, required=True,
                    help="Directorio de salida")
-    p.add_argument("--cell-size", type=int, default=5000,
-                   help="Tamaño de celda L0 en metros (default: 5000)")
+    p.add_argument("--cell-size", type=int, default=1000,
+                   help="Tamaño de celda L0 en metros (default: 1000)")
     p.add_argument("--grid-prefix", type=str, default=None,
                    help="Prefijo grid ID (default: ES{size}K, ej. ES5K para 5000, ES1K para 1000)")
     p.add_argument("--partial-period-start", type=str, default=DEFAULT_PARTIAL_PERIOD_START,

@@ -15,12 +15,15 @@ Reescrita la **Fase 1** como script **genérico y parametrizable** (`phase1_proj
 - Escribe `observations.parquet` + `observations.jsonl` en `--output`
 - Mantiene toda la lógica contractual: tipos, proyección EPSG:3035, celdas anidadas 2×2, `confidence_rank`, flags, trazabilidad
 
-### Dos ejecuciones realizadas
+### Configuración por defecto actualizada
 
-| Ejecución | Cell size | Grid prefix | Output dir | Uso |
-|---|---|---|---|---|
-| 1 (commit `bc251fd`) | 5000 m | ES5K | `output/` | Contrato original (CATA compatible) |
-| 2 (actual) | 1000 m | ES1K | `output_1km/` | Prueba/resolución fina |
+| Parámetro | Valor por defecto | Contrato actual |
+|---|---|---|
+| Cell size L0 | 1000 m | ES-LAEA-1K-v1 |
+| Grid prefix | ES1K | `ES1K:L0:Y{iy}:X{ix}` |
+| Niveles | L0=1km, L1=2km, L2=4km, L3=8km | Anidamiento 2×2 |
+
+> **Cambio de contrato**: El tamaño de celda base pasó de 5 km (ES5K) a 1 km (ES1K). CATA config actualizado (`GRID_SIZE=320`, `CHUNK_SIZE_M=1000`).
 
 ---
 
