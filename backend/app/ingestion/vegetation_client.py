@@ -1,11 +1,11 @@
 #!/usr/bin/env python3
 """
-Cliente de vegetación para Fase 3b: ESA WorldCover 10m + MITECO IFN3.
+Cliente de vegetaci├│n para Fase 3b: ESA WorldCover 10m + MITECO IFN3.
 
 - ESA WorldCover 2021: 10m, 11 clases globales, GeoTIFF/COG via AWS S3 / Copernicus
-- MITECO IFN3 (Inventario Forestal Nacional): WMS/GeoJSON, especies forestales España
+- MITECO IFN3 (Inventario Forestal Nacional): WMS/GeoJSON, especies forestales Espa├▒a
 - Cache local de tiles WorldCover
-- Lookup rápido por coordenada (centroide celda)
+- Lookup r├ípido por coordenada (centroide celda)
 - Mapeo a inflamabilidad por clase
 """
 
@@ -25,18 +25,18 @@ import requests
 from pyproj import Transformer
 
 # ---------------------------------------------------------------------------
-# Configuración
+# Configuraci├│n
 # ---------------------------------------------------------------------------
 
-# ESA WorldCover 2021 (COG en AWS S3 público)
+# ESA WorldCover 2021 (COG en AWS S3 p├║blico)
 WORLDCOVER_BASE_URL = "https://esa-worldcover.s3.eu-central-1.amazonaws.com/v100/2021"
-WORLDCOVER_TILE_SIZE = 3 * 3600  # 3° x 3° en segundos = ~330km x 330km
+WORLDCOVER_TILE_SIZE = 3 * 3600  # 3┬░ x 3┬░ en segundos = ~330km x 330km
 WORLDCOVER_RESOLUTION = 10  # metros
 
 # MITECO IFN3 WMS
 IFN3_WMS_URL = "https://www.miteco.gob.es/arcgis/services/IFN3/MapServer/WMSServer"
 
-# Transformador EPSG:3035 -> EPSG:4326 (para WorldCover que está en WGS84)
+# Transformador EPSG:3035 -> EPSG:4326 (para WorldCover que est├í en WGS84)
 TRANSFORMER_3035_TO_4326 = Transformer.from_crs("EPSG:3035", "EPSG:4326", always_xy=True)
 
 # Clases WorldCover 2021 (11 clases)
@@ -54,8 +54,8 @@ WORLDCOVER_CLASSES = {
     100: "Moss and lichen",
 }
 
-# Inflamabilidad relativa por clase WorldCover (1-5, 5=más inflamable)
-# Basado en literatura de incendios mediterráneos
+# Inflamabilidad relativa por clase WorldCover (1-5, 5=m├ís inflamable)
+# Basado en literatura de incendios mediterr├íneos
 FLAMMABILITY_WORLDCOVER = {
     10: 4,   # Tree cover (bosque) - depende de especie
     20: 5,   # Shrubland (matorral) - muy inflamable
@@ -70,12 +70,12 @@ FLAMMABILITY_WORLDCOVER = {
     100: 1,  # Moss/lichen - muy bajo
 }
 
-# Especies forestales IFN3 principales en España y su inflamabilidad (1-5)
+# Especies forestales IFN3 principales en Espa├▒a y su inflamabilidad (1-5)
 IFN3_SPECIES_FLAMMABILITY = {
-    # Coníferas (alta inflamabilidad)
+    # Con├¡feras (alta inflamabilidad)
     "Pinus halepensis": 5,      # Pino carrasco
     "Pinus pinaster": 5,        # Pino rodeno
-    "Pinus pinea": 4,           # Pino piñonero
+    "Pinus pinea": 4,           # Pino pi├▒onero
     "Pinus sylvestris": 4,      # Pino silvestre
     "Pinus nigra": 4,           # Pino laricio
     "Pinus uncinata": 3,        # Pino negro
@@ -88,9 +88,9 @@ IFN3_SPECIES_FLAMMABILITY = {
     "Quercus pubescens": 3,     # Roble pubescente
     # Otras frondosas (media-baja)
     "Fagus sylvatica": 2,       # Haya
-    "Castanea sativa": 2,       # Castaño
+    "Castanea sativa": 2,       # Casta├▒o
     "Betula pendula": 2,        # Abedul
-    "Populus sp.": 2,           # Chopo/álamo
+    "Populus sp.": 2,           # Chopo/├ílamo
     "Eucalyptus sp.": 5,        # Eucalipto (muy inflamable)
     # Matorrales
     "Cistus sp.": 5,            # Jara
@@ -108,7 +108,7 @@ DEFAULT_CACHE_DB = DEFAULT_CACHE_DIR / "vegetation_cache.sqlite"
 # ---------------------------------------------------------------------------
 
 class VegetationCache:
-    """Cache persistente para consultas de vegetación."""
+    """Cache persistente para consultas de vegetaci├│n."""
 
     def __init__(self, db_path: Path = DEFAULT_CACHE_DB):
         self.db_path = db_path
@@ -218,8 +218,8 @@ class VegetationCache:
 # ---------------------------------------------------------------------------
 
 def lonlat_to_tile(lon: float, lat: float) -> tuple[int, int]:
-    """Convierte lon/lat a índices de tile WorldCover (3°x3°)."""
-    # Tiles van de -180 a 180 (lon) y -90 a 84 (lat) en pasos de 3°
+    """Convierte lon/lat a ├¡ndices de tile WorldCover (3┬░x3┬░)."""
+    # Tiles van de -180 a 180 (lon) y -90 a 84 (lat) en pasos de 3┬░
     tile_x = int(np.floor((lon + 180) / 3))
     tile_y = int(np.floor((lat + 90) / 3))
     return tile_x, tile_y
@@ -237,8 +237,8 @@ def tile_to_bbox(tile_x: int, tile_y: int) -> tuple[float, float, float, float]:
 def get_worldcover_tile_url(tile_x: int, tile_y: int) -> str:
     """URL del tile WorldCover COG en AWS S3."""
     # Formato: ESA_WorldCover_10m_2021_v100_N{lat}E{lon}_Map.tif
-    # lat: N/S + 2 dígitos (ej. N36, S03)
-    # lon: E/W + 3 dígitos (ej. E003, W012)
+    # lat: N/S + 2 d├¡gitos (ej. N36, S03)
+    # lon: E/W + 3 d├¡gitos (ej. E003, W012)
     min_lat = tile_y * 3 - 90
     min_lon = tile_x * 3 - 180
     lat_str = f"{'N' if min_lat >= 0 else 'S'}{abs(min_lat):02d}"
@@ -272,16 +272,16 @@ class VegetationClient:
         tile_x, tile_y = lonlat_to_tile(lon, lat)
         tile_url = get_worldcover_tile_url(tile_x, tile_y)
 
-        # Para producción real, aquí se leería el COG con rasterio/rioxarray
-        # y se extraería el valor del pixel en (lon, lat).
-        # Como demo/placeholder, simulamos basado en ubicación geográfica aproximada.
-        # En implementación real:
+        # Para producci├│n real, aqu├¡ se leer├¡a el COG con rasterio/rioxarray
+        # y se extraer├¡a el valor del pixel en (lon, lat).
+        # Como demo/placeholder, simulamos basado en ubicaci├│n geogr├ífica aproximada.
+        # En implementaci├│n real:
         # import rasterio
         # with rasterio.open(tile_url) as src:
         #     row, col = src.index(lon, lat)
         #     class_id = src.read(1)[row, col]
 
-        # PLACEHOLDER: clasificar por región biogeográfica aproximada
+        # PLACEHOLDER: clasificar por regi├│n biogeogr├ífica aproximada
         class_id = self._estimate_class_by_region(lon, lat)
 
         result = {
@@ -299,12 +299,12 @@ class VegetationClient:
         return result
 
     def _estimate_class_by_region(self, lon: float, lat: float) -> int:
-        """Estimación aproximada por región (placeholder hasta leer COG real)."""
-        # Península Ibérica aproximada
+        """Estimaci├│n aproximada por regi├│n (placeholder hasta leer COG real)."""
+        # Pen├¡nsula Ib├®rica aproximada
         if -10 <= lon <= 5 and 36 <= lat <= 44:
-            # Simplificación: bosque/matorral en montañas, cultivo en llanuras
-            # En implementación real, leer del COG
-            return 20  # Shrubland como default mediterráneo
+            # Simplificaci├│n: bosque/matorral en monta├▒as, cultivo en llanuras
+            # En implementaci├│n real, leer del COG
+            return 20  # Shrubland como default mediterr├íneo
         return 10  # Tree cover default
 
     # ---- IFN3 ----
@@ -341,7 +341,7 @@ class VegetationClient:
             data = response.json()
             species = self._parse_ifn3_response(data)
         except Exception as e:
-            print(f"WARNING: IFN3 WMS falló para ({lon}, {lat}): {e}")
+            print(f"WARNING: IFN3 WMS fall├│ para ({lon}, {lat}): {e}")
             species = []
 
         # Calcular inflamabilidad
@@ -372,7 +372,7 @@ class VegetationClient:
             features = data.get("features", [])
             for feat in features:
                 props = feat.get("properties", {})
-                # Buscar campos de especie (varían según servicio)
+                # Buscar campos de especie (var├¡an seg├║n servicio)
                 for key in ["ESPECIE", "ESPECIE_PR", "ESPECIE_PRINCIPAL", "ESPECIE_DOMINANTE"]:
                     if key in props and props[key]:
                         sp = str(props[key]).strip()
@@ -385,7 +385,7 @@ class VegetationClient:
     # ---- Combinado ----
 
     def get_vegetation_profile(self, lon: float, lat: float, use_cache: bool = True) -> dict:
-        """Perfil completo de vegetación para una coordenada."""
+        """Perfil completo de vegetaci├│n para una coordenada."""
         wc = self.get_worldcover_class(lon, lat, use_cache)
         ifn3 = self.get_ifn3_species(lon, lat, use_cache)
 
@@ -407,7 +407,7 @@ class VegetationClient:
         limit: int | None = None,
         use_cache: bool = True,
     ) -> pd.DataFrame:
-        """Enriquece cell_day.parquet con perfil de vegetación."""
+        """Enriquece cell_day.parquet con perfil de vegetaci├│n."""
         cell_day = pd.read_parquet(cell_day_path)
         print(f"Cargados {len(cell_day)} cell-days")
 
@@ -418,7 +418,7 @@ class VegetationClient:
         if limit:
             unique_cells = unique_cells.head(limit)
 
-        print(f"Consultando vegetación para {len(unique_cells)} celdas únicas...")
+        print(f"Consultando vegetaci├│n para {len(unique_cells)} celdas ├║nicas...")
 
         enriched = []
         for _, row in unique_cells.iterrows():
@@ -440,11 +440,13 @@ class VegetationClient:
                 enriched.append({"cell_id": cell_id, "error": str(e)})
 
         output_path.parent.mkdir(parents=True, exist_ok=True)
-        with output_path.open("w", encoding="utf-8") as f:
-            for r in enriched:
-                f.write(json.dumps(r, ensure_ascii=False) + "\n")
+        from json_output import JSONArrayWriter
 
-        print(f"Enriquecimiento vegetación completado: {len(enriched)} celdas")
+        with JSONArrayWriter(output_path, indent=2) as w:
+            for r in enriched:
+                w.write(r)
+
+        print(f"Enriquecimiento vegetaci├│n completado: {len(enriched)} celdas")
         print(f"Cache stats: {self.cache.stats()}")
         return pd.DataFrame(enriched)
 
@@ -455,7 +457,7 @@ class VegetationClient:
 
 def build_arg_parser():
     import argparse
-    p = argparse.ArgumentParser(description="Cliente Vegetación WorldCover + IFN3")
+    p = argparse.ArgumentParser(description="Cliente Vegetaci├│n WorldCover + IFN3")
     p.add_argument("--cell-day", type=Path, help="cell_day.parquet a enriquecer")
     p.add_argument("--output", type=Path, help="JSONL salida enriquecido")
     p.add_argument("--cache-dir", type=Path, default=DEFAULT_CACHE_DIR, help="Directorio cache")

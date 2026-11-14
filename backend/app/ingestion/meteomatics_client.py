@@ -2,11 +2,11 @@
 """
 Cliente Meteomatics con cacheo inteligente para Fase 3.
 
-- Autenticación con credenciales hackathon
-- Rate limiting: 1000 queries/día
+- Autenticaci├│n con credenciales hackathon
+- Rate limiting: 1000 queries/d├¡a
 - Cache persistente en SQLite (evita queries repetidos)
-- Batch queries por celda-día
-- Parámetros clave para riesgo de incendio
+- Batch queries por celda-d├¡a
+- Par├ímetros clave para riesgo de incendio
 """
 
 from __future__ import annotations
@@ -25,29 +25,29 @@ import pandas as pd
 import requests
 
 # ---------------------------------------------------------------------------
-# Configuración
+# Configuraci├│n
 # ---------------------------------------------------------------------------
 
 BASE_URL = "https://api.meteomatics.com"
 
-# Parámetros clave para riesgo de incendio (Meteomatics parameter names)
+# Par├ímetros clave para riesgo de incendio (Meteomatics parameter names)
 FIRE_PARAMETERS = [
-    "t_2m:C",                    # Temperatura 2m (°C)
+    "t_2m:C",                    # Temperatura 2m (┬░C)
     "relative_humidity_2m:p",    # Humedad relativa 2m (%)
     "wind_speed_10m:ms",         # Velocidad viento 10m (m/s)
-    "wind_dir_10m:d",            # Dirección viento 10m (grados)
+    "wind_dir_10m:d",            # Direcci├│n viento 10m (grados)
     "wind_gusts_10m_1h:ms",      # Rachas viento 1h (m/s)
-    "precip_1h:mm",              # Precipitación 1h (mm)
-    "precip_24h:mm",             # Precipitación 24h (mm)
-    "global_rad:W/m2",           # Radiación global (W/m²)
-    "fire_weather_index:idx",    # Índice meteorológico de incendio (FWI)
-    "haines_index:idx",          # Índice Haines (estabilidad atmósfera)
-    "fosberg_index:idx",         # Índice Fosberg
+    "precip_1h:mm",              # Precipitaci├│n 1h (mm)
+    "precip_24h:mm",             # Precipitaci├│n 24h (mm)
+    "global_rad:W/m2",           # Radiaci├│n global (W/m┬▓)
+    "fire_weather_index:idx",    # ├ìndice meteorol├│gico de incendio (FWI)
+    "haines_index:idx",          # ├ìndice Haines (estabilidad atm├│sfera)
+    "fosberg_index:idx",         # ├ìndice Fosberg
     "soil_moisture_0_10cm:m3/m3", # Humedad suelo 0-10cm
     "soil_temp_0_10cm:C",        # Temp suelo 0-10cm
 ]
 
-# Parámetros derivados útiles
+# Par├ímetros derivados ├║tiles
 DERIVED_PARAMETERS = [
     "dew_point_2m:C",
     "vapour_pressure_deficit_2m:Pa",
@@ -168,7 +168,7 @@ class MeteomaticsClient:
             self._queries_today = 0
         if self._queries_today >= self.max_queries_per_day:
             raise RuntimeError(
-                f"Rate limit alcanzado: {self.max_queries_per_day} queries/día. "
+                f"Rate limit alcanzado: {self.max_queries_per_day} queries/d├¡a. "
                 f"Espera hasta medianoche UTC."
             )
 
@@ -212,8 +212,8 @@ class MeteomaticsClient:
         use_cache: bool = True,
     ) -> dict:
         """
-        Consulta un parámetro para una coordenada y rango temporal.
-        Usa cache si está disponible y no expirado.
+        Consulta un par├ímetro para una coordenada y rango temporal.
+        Usa cache si est├í disponible y no expirado.
         """
         # Normalizar fechas a ISO UTC
         if "T" not in start:
@@ -246,11 +246,11 @@ class MeteomaticsClient:
         interval: str = "PT1H",
         use_cache: bool = True,
     ) -> dict[str, dict]:
-        """Consulta múltiples parámetros para una coordenada (batch eficiente)."""
-        # Meteomatics permite múltiples parámetros separados por coma
+        """Consulta m├║ltiples par├ímetros para una coordenada (batch eficiente)."""
+        # Meteomatics permite m├║ltiples par├ímetros separados por coma
         param_str = ",".join(params)
         if use_cache:
-            # Verificar cache para cada parámetro individual
+            # Verificar cache para cada par├ímetro individual
             cached_results = {}
             missing = []
             for p in params:
@@ -282,7 +282,7 @@ class MeteomaticsClient:
         use_cache: bool = True,
     ) -> dict[str, Any]:
         """
-        Consulta todos los parámetros para una celda-día.
+        Consulta todos los par├ímetros para una celda-d├¡a.
         centroid_lonlat = [lon, lat]
         date_str = 'YYYY-MM-DD'
         """
@@ -296,7 +296,7 @@ class MeteomaticsClient:
         # Batch query
         results = self.query_batch(params, lat, lon, start, end, interval, use_cache)
 
-        # Estructurar salida por parámetro con metadatos
+        # Estructurar salida por par├ímetro con metadatos
         output = {
             "cell_id": cell_id,
             "date": date_str,
@@ -305,9 +305,9 @@ class MeteomaticsClient:
             "queried_at": datetime.now(timezone.utc).isoformat(),
         }
 
-        # La respuesta de Meteomatics batch viene en una estructura única
-        # Para simplificar, devolvemos la respuesta cruda por parámetro
-        # En uso real, se parsearía cada parámetro de la respuesta JSON
+        # La respuesta de Meteomatics batch viene en una estructura ├║nica
+        # Para simplificar, devolvemos la respuesta cruda por par├ímetro
+        # En uso real, se parsear├¡a cada par├ímetro de la respuesta JSON
         for p in params:
             output["parameters"][p] = results
 
@@ -333,14 +333,14 @@ def enrich_cell_day_with_meteomatics(
 ) -> pd.DataFrame:
     """
     Enriquece cell_day.parquet con datos Meteomatics.
-    Lee cell_day, consulta API para cada (cell_id, date) único,
+    Lee cell_day, consulta API para cada (cell_id, date) ├║nico,
     y guarda DataFrame enriquecido.
     """
     cell_day = pd.read_parquet(cell_day_path)
     print(f"Cargados {len(cell_day)} cell-days")
 
     # Deduplicar por cell_id + date (ya vienen separados por sensor,
-    # pero meteo es igual para ambos sensors en misma celda-día)
+    # pero meteo es igual para ambos sensors en misma celda-d├¡a)
     unique_cells = cell_day.drop_duplicates(subset=["cell_id", "date"])[
         ["cell_id", "date", "cell_centroid_lonlat"]
     ].copy()
@@ -348,7 +348,7 @@ def enrich_cell_day_with_meteomatics(
     if limit:
         unique_cells = unique_cells.head(limit)
 
-    print(f"Consultando Meteomatics para {len(unique_cells)} celdas-día únicas...")
+    print(f"Consultando Meteomatics para {len(unique_cells)} celdas-d├¡a ├║nicas...")
     print(f"Queries disponibles hoy: {client.get_queries_remaining()}")
 
     enriched_rows = []
@@ -381,7 +381,7 @@ def enrich_cell_day_with_meteomatics(
         for r in enriched_rows:
             f.write(json.dumps(r, ensure_ascii=False) + "\n")
 
-    print(f"Enriquecimiento completado: {len(enriched_rows)} celdas-día")
+    print(f"Enriquecimiento completado: {len(enriched_rows)} celdas-d├¡a")
     print(f"Queries totales usadas: {client.get_queries_used_today()}")
     print(f"Cache stats: {client.cache.stats()}")
 
@@ -400,8 +400,8 @@ def build_arg_parser() -> argparse.ArgumentParser:
     p.add_argument("--cell-day", type=Path, help="cell_day.parquet a enriquecer")
     p.add_argument("--output", type=Path, help="Archivo JSONL de salida enriquecido")
     p.add_argument("--cache-dir", type=Path, default=DEFAULT_CACHE_DIR, help="Directorio cache")
-    p.add_argument("--limit", type=int, help="Limitar celdas-día para prueba")
-    p.add_argument("--params", nargs="+", default=ALL_PARAMETERS, help="Parámetros a consultar")
+    p.add_argument("--limit", type=int, help="Limitar celdas-d├¡a para prueba")
+    p.add_argument("--params", nargs="+", default=ALL_PARAMETERS, help="Par├ímetros a consultar")
     p.add_argument("--interval", default="PT1H", help="Intervalo temporal (ISO 8601)")
     p.add_argument("--no-cache", action="store_true", help="Desactivar cache")
     return p

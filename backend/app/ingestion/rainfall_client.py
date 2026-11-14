@@ -1,14 +1,14 @@
 #!/usr/bin/env python3
 """
-Cliente histórico de precipitación para Fase 3b: NASA POWER API + ERA5.
+Cliente hist├│rico de precipitaci├│n para Fase 3b: NASA POWER API + ERA5.
 
-- NASA POWER: gratis, sin key, sin límite de queries, histórico 1983-presente
-  Resolución 0.5° (~50km), parámetros: precipitación, temp, humedad, viento, radiación
-- ERA5 (via Copernicus CDS): 9km/30km, histórico 1979-presente, requiere registro
-- CHIRPS: 0.05° (~5km), solo precipitación, 1981-presente
+- NASA POWER: gratis, sin key, sin l├¡mite de queries, hist├│rico 1983-presente
+  Resoluci├│n 0.5┬░ (~50km), par├ímetros: precipitaci├│n, temp, humedad, viento, radiaci├│n
+- ERA5 (via Copernicus CDS): 9km/30km, hist├│rico 1979-presente, requiere registro
+- CHIRPS: 0.05┬░ (~5km), solo precipitaci├│n, 1981-presente
 - Cache SQLite persistente
-- Cálculo: días desde última lluvia > threshold (ej. 10mm)
-- Métricas: precipitación acumulada 7d/30d/90d, días secos consecutivos
+- C├ílculo: d├¡as desde ├║ltima lluvia > threshold (ej. 10mm)
+- M├®tricas: precipitaci├│n acumulada 7d/30d/90d, d├¡as secos consecutivos
 """
 
 from __future__ import annotations
@@ -25,24 +25,24 @@ import pandas as pd
 import requests
 
 # ---------------------------------------------------------------------------
-# Configuración
+# Configuraci├│n
 # ---------------------------------------------------------------------------
 
 # NASA POWER API
 POWER_BASE_URL = "https://power.larc.nasa.gov/api/temporal/daily/point"
 POWER_PARAMETERS = [
-    "PRECTOTCORR",   # Precipitación corregida (mm/day)
-    "T2M",           # Temperatura 2m (°C)
-    "T2M_MAX",       # Temp máx 2m (°C)
-    "T2M_MIN",       # Temp mín 2m (°C)
+    "PRECTOTCORR",   # Precipitaci├│n corregida (mm/day)
+    "T2M",           # Temperatura 2m (┬░C)
+    "T2M_MAX",       # Temp m├íx 2m (┬░C)
+    "T2M_MIN",       # Temp m├¡n 2m (┬░C)
     "RH2M",          # Humedad relativa 2m (%)
     "WS2M",          # Velocidad viento 2m (m/s)
-    "WD2M",          # Dirección viento 2m (°)
-    "ALLSKY_SFC_SW_DWN", # Radiación solar superficie (kWh/m2/day)
+    "WD2M",          # Direcci├│n viento 2m (┬░)
+    "ALLSKY_SFC_SW_DWN", # Radiaci├│n solar superficie (kWh/m2/day)
 ]
 
-# Thresholds para análisis
-RAIN_THRESHOLD_MM = 1.0      # Día de lluvia si >= 1mm
+# Thresholds para an├ílisis
+RAIN_THRESHOLD_MM = 1.0      # D├¡a de lluvia si >= 1mm
 HEAVY_RAIN_THRESHOLD_MM = 10.0  # Lluvia significativa
 
 DEFAULT_CACHE_DIR = Path(__file__).parent / "cache"
@@ -53,7 +53,7 @@ DEFAULT_CACHE_DB = DEFAULT_CACHE_DIR / "rainfall_cache.sqlite"
 # ---------------------------------------------------------------------------
 
 class RainfallCache:
-    """Cache persistente para datos de precipitación."""
+    """Cache persistente para datos de precipitaci├│n."""
 
     def __init__(self, db_path: Path = DEFAULT_CACHE_DB):
         self.db_path = db_path
@@ -178,7 +178,7 @@ class RainfallCache:
 # ---------------------------------------------------------------------------
 
 class RainfallClient:
-    """Cliente NASA POWER + cálculo métricas de sequía/lluvia."""
+    """Cliente NASA POWER + c├ílculo m├®tricas de sequ├¡a/lluvia."""
 
     def __init__(self, cache: RainfallCache | None = None, timeout: int = 30):
         self.cache = cache or RainfallCache()
@@ -214,16 +214,16 @@ class RainfallClient:
         date: str,
         use_cache: bool = True,
     ) -> dict:
-        """Obtiene datos POWER para un día específico."""
+        """Obtiene datos POWER para un d├¡a espec├¡fico."""
         if use_cache:
             cached = self.cache.get_power_daily(lon, lat, date)
             if cached:
                 return cached
 
-        # POWER requiere rango, pedimos ese día
+        # POWER requiere rango, pedimos ese d├¡a
         data = self._fetch_power_daily(lon, lat, date, date)
 
-        # Extraer valores del día
+        # Extraer valores del d├¡a
         result = {"date": date, "parameters": {}}
         try:
             props = data["properties"]["parameter"]
@@ -246,7 +246,7 @@ class RainfallClient:
         end: str,
         use_cache: bool = True,
     ) -> list[dict]:
-        """Obtiene rango de días (más eficiente que día a día)."""
+        """Obtiene rango de d├¡as (m├ís eficiente que d├¡a a d├¡a)."""
         results = []
         current = start
         while current <= end:
@@ -257,7 +257,7 @@ class RainfallClient:
                     current = (datetime.fromisoformat(current) + timedelta(days=1)).strftime("%Y-%m-%d")
                     continue
 
-            # Fetch en bloques de hasta 365 días (límite POWER)
+            # Fetch en bloques de hasta 365 d├¡as (l├¡mite POWER)
             block_end = min(end, (datetime.fromisoformat(current) + timedelta(days=300)).strftime("%Y-%m-%d"))
             data = self._fetch_power_daily(lon, lat, current, block_end)
 
@@ -290,7 +290,7 @@ class RainfallClient:
         lookback_days: int = 90,
         use_cache: bool = True,
     ) -> dict:
-        """Calcula métricas de sequía/lluvia para una fecha de referencia."""
+        """Calcula m├®tricas de sequ├¡a/lluvia para una fecha de referencia."""
         if use_cache:
             cached = self.cache.get_metrics(lon, lat, reference_date)
             if cached:
@@ -301,13 +301,13 @@ class RainfallClient:
         start_str = start_dt.strftime("%Y-%m-%d")
         ref_str = ref_dt.strftime("%Y-%m-%d")
 
-        # Obtener datos históricos
+        # Obtener datos hist├│ricos
         daily_data = self.get_power_range(lon, lat, start_str, ref_str, use_cache)
 
         if not daily_data:
             return {"error": "No data available"}
 
-        # Extraer precipitación diaria
+        # Extraer precipitaci├│n diaria
         precip = []
         for day in daily_data:
             p = day.get("parameters", {}).get("PRECTOTCORR")
@@ -315,27 +315,27 @@ class RainfallClient:
 
         precip = np.array(precip)
 
-        # Métricas
-        # Días desde última lluvia >= 1mm
+        # M├®tricas
+        # D├¡as desde ├║ltima lluvia >= 1mm
         days_since_1mm = 0
         for p in reversed(precip):
             if p >= RAIN_THRESHOLD_MM:
                 break
             days_since_1mm += 1
 
-        # Días desde última lluvia >= 10mm
+        # D├¡as desde ├║ltima lluvia >= 10mm
         days_since_10mm = 0
         for p in reversed(precip):
             if p >= HEAVY_RAIN_THRESHOLD_MM:
                 break
             days_since_10mm += 1
 
-        # Precipitación acumulada
+        # Precipitaci├│n acumulada
         precip_7d = float(np.sum(precip[-7:])) if len(precip) >= 7 else float(np.sum(precip))
         precip_30d = float(np.sum(precip[-30:])) if len(precip) >= 30 else float(np.sum(precip))
         precip_90d = float(np.sum(precip))
 
-        # Máxima racha seca (días consecutivos < 1mm)
+        # M├íxima racha seca (d├¡as consecutivos < 1mm)
         max_dry = 0
         current_dry = 0
         for p in precip:
@@ -345,7 +345,7 @@ class RainfallClient:
             else:
                 current_dry = 0
 
-        # Días de lluvia en últimos 30 días
+        # D├¡as de lluvia en ├║ltimos 30 d├¡as
         rain_days_30d = int(np.sum(precip[-30:] >= RAIN_THRESHOLD_MM)) if len(precip) >= 30 else int(np.sum(precip >= RAIN_THRESHOLD_MM))
 
         metrics = {
@@ -373,7 +373,7 @@ class RainfallClient:
         lookback_days: int = 90,
         use_cache: bool = True,
     ) -> pd.DataFrame:
-        """Enriquece cell_day.parquet con métricas de lluvia."""
+        """Enriquece cell_day.parquet con m├®tricas de lluvia."""
         cell_day = pd.read_parquet(cell_day_path)
         print(f"Cargados {len(cell_day)} cell-days")
 
@@ -384,7 +384,7 @@ class RainfallClient:
         if limit:
             unique_cells = unique_cells.head(limit)
 
-        print(f"Calculando métricas lluvia para {len(unique_cells)} celdas-día...")
+        print(f"Calculando m├®tricas lluvia para {len(unique_cells)} celdas-d├¡a...")
 
         enriched = []
         for _, row in unique_cells.iterrows():
@@ -410,7 +410,7 @@ class RainfallClient:
             for r in enriched:
                 f.write(json.dumps(r, ensure_ascii=False) + "\n")
 
-        print(f"Enriquecimiento lluvia completado: {len(enriched)} celdas-día")
+        print(f"Enriquecimiento lluvia completado: {len(enriched)} celdas-d├¡a")
         print(f"Cache stats: {self.cache.stats()}")
         return pd.DataFrame(enriched)
 
@@ -425,8 +425,8 @@ def build_arg_parser():
     p.add_argument("--cell-day", type=Path, help="cell_day.parquet a enriquecer")
     p.add_argument("--output", type=Path, help="JSONL salida enriquecido")
     p.add_argument("--cache-dir", type=Path, default=DEFAULT_CACHE_DIR, help="Directorio cache")
-    p.add_argument("--limit", type=int, help="Limitar celdas-día para prueba")
-    p.add_argument("--lookback", type=int, default=90, help="Días hacia atrás para métricas")
+    p.add_argument("--limit", type=int, help="Limitar celdas-d├¡a para prueba")
+    p.add_argument("--lookback", type=int, default=90, help="D├¡as hacia atr├ís para m├®tricas")
     p.add_argument("--no-cache", action="store_true", help="Desactivar cache")
     p.add_argument("--lon", type=float, help="Longitud consulta individual")
     p.add_argument("--lat", type=float, help="Latitud consulta individual")
