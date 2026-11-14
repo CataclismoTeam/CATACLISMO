@@ -46,6 +46,9 @@ coverage/
 .env
 .env.*
 !.env.example
+# Claves locales del frontend (MapTiler): nunca se suben
+frontend/.env
+frontend/.env.*
 *.pem
 *.key
 *.crt
@@ -93,6 +96,9 @@ npm-debug.log*
 pnpm-debug.log*
 yarn-debug.log*
 yarn-error.log*
+
+# ── Hojas de ruta y notas internas ────────────────────────────────────────────
+ROADMAP-FRONTEND.md
 
 # ── Agentes de IA y herramientas locales ─────────────────────────────────────
 .claude/

@@ -1,3 +1,4 @@
+import tailwindcss from '@tailwindcss/vite';
 import react from '@vitejs/plugin-react';
 import { defineConfig } from 'vite';
 import { viteStaticCopy } from 'vite-plugin-static-copy';
@@ -10,6 +11,7 @@ export default defineConfig({
   base: BASE,
   plugins: [
     react(),
+    tailwindcss(),
     // Cesium carga en tiempo de ejecución sus workers, assets y widgets desde CESIUM_BASE_URL
     viteStaticCopy({
       targets: [

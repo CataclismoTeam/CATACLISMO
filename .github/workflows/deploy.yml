@@ -95,6 +95,10 @@ jobs:
         run: pnpm check
       - name: Lint (oxlint)
         run: pnpm lint
+      - name: Pruebas unitarias (Vitest)
+        run: pnpm test
+      - name: Pruebas unitarias (Vitest)
+        run: pnpm test
 
   # ─── 2. Workflows ─────────────────────────────────────────────────────────
   workflows:

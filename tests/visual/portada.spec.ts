@@ -9,10 +9,26 @@ test.describe('regresión visual', () => {
   test('portada', async ({ page }) => {
     await page.goto('./');
     await page.evaluate(() => document.fonts.ready);
+    // La portada es el briefing sobre el calendario ya cargado
+    await expect(page.getByRole('dialog', { name: 'CATACLISMO' })).toBeVisible();
+    await expect(page.locator('table')).toBeVisible();
     await expect(page).toHaveScreenshot('portada.png', {
       animations: 'disabled',
       caret: 'hide',
       // Aquí irá lo que cambie solo (datos en tiempo real, fechas...)
+      mask: [page.locator('[data-dinamico]')],
+      maxDiffPixelRatio: 0.01,
+    });
+  });
+
+  test('calendario', async ({ page }) => {
+    await page.goto('./');
+    await page.getByRole('button', { name: 'Ver el calendario de fuego' }).click();
+    await expect(page.getByRole('img', { name: /Detecciones de/ })).toBeVisible();
+    await page.evaluate(() => document.fonts.ready);
+    await expect(page).toHaveScreenshot('calendario.png', {
+      animations: 'disabled',
+      caret: 'hide',
       mask: [page.locator('[data-dinamico]')],
       maxDiffPixelRatio: 0.01,
     });

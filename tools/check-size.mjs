@@ -11,10 +11,10 @@ import { join, relative, extname } from 'node:path';
 const DIST = 'dist';
 const KB = 1024;
 
-// Límites (en KB). Valores de referencia al crearlos: inicial JS 218, diferido JS 4080,
+// Límites (en KB). Valores de referencia al crearlos: inicial JS 270, diferido JS 4640,
 // CSS 24, cesium/ ~8000.
 const BUDGET = {
-  initialJs: 260, // JS que enlaza index.html
+  initialJs: 300, // JS que enlaza index.html (React + shell, estado y sistema de diseño)
   initialCss: 30, // CSS que enlaza index.html
   lazyJs: 5000, // resto del JS de la app (chunks diferidos)
   cssTotal: 60, // todo el CSS de la app (sin cesium/)
