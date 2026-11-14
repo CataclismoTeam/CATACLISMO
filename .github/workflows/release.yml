@@ -34,6 +34,18 @@ jobs:
         if: steps.release.outputs.prs_created == 'true'
         env:
           GH_TOKEN: ${{ github.token }}
-          BRANCH: ${{ fromJSON(steps.release.outputs.pr).headBranchName }}
+          # JSON en crudo: fromJSON() rompe la plantilla si la salida llega vacía
+          PR_JSON: ${{ steps.release.outputs.pr }}
           REPO: ${{ github.repository }}
-        run: gh workflow run deploy.yml --repo "$REPO" --ref "$BRANCH"
+        run: |
+          branch=$(jq -r '.headBranchName // empty' <<<"$PR_JSON" 2>/dev/null || true)
+          # Sin datos del PR en la salida: se busca el PR de release abierto por su etiqueta
+          if [ -z "$branch" ]; then
+            branch=$(gh pr list --repo "$REPO" --label 'autorelease: pending' --state open \
+              --json headRefName --jq '.[0].headRefName // empty')
+          fi
+          if [ -z "$branch" ]; then
+            echo "::warning::No se encontró la rama del PR de release; no se lanzan los controles"
+            exit 0
+          fi
+          gh workflow run deploy.yml --repo "$REPO" --ref "$branch"
