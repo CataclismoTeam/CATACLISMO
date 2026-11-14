@@ -10,15 +10,15 @@ Requiere TensorFlow >= 2.16 (Keras 3).
 
 from __future__ import annotations
 
-from collections.abc import Sequence
-from dataclasses import replace
 import logging
 import math
 import os
+from collections.abc import Sequence
+from dataclasses import replace
 
 import keras
-from keras import layers, ops
 import numpy as np
+from keras import layers, ops
 
 try:
     from . import config
@@ -142,7 +142,7 @@ def extract_model_config(model: keras.Model) -> ModelConfig:
 
     first = lstm_layers[0].get_config()
     kernel = first["kernel_size"]
-    kernel = int(kernel[0] if isinstance(kernel, (list, tuple)) else kernel)
+    kernel = int(kernel[0] if isinstance(kernel, list | tuple) else kernel)
 
     reg_cfg = first.get("kernel_regularizer") or {}
     l2 = float((reg_cfg.get("config") or {}).get("l2", 0.0)) if isinstance(reg_cfg, dict) else 0.0

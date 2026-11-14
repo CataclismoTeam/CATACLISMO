@@ -26,13 +26,13 @@ Fuentes de datos (`--data`):
 from __future__ import annotations
 
 import argparse
-from collections.abc import Sequence
-from dataclasses import asdict
 import json
 import logging
 import os
 import re
 import time
+from collections.abc import Sequence
+from dataclasses import asdict
 
 import keras
 import numpy as np
@@ -118,9 +118,7 @@ def normalize_contract_channels(raw: dict[str, np.ndarray], num_channels: int) -
     computed: dict[str, np.ndarray] = {
         "frp_sum_mw": np.clip(np.log1p(np.maximum(raw["frp_sum_mw"], 0.0)) / frp_scale, 0.0, 1.0),
         "frp_max_mw": np.clip(np.log1p(np.maximum(raw["frp_max_mw"], 0.0)) / frp_scale, 0.0, 1.0),
-        "frp_mean_mw": np.clip(
-            np.log1p(np.maximum(raw["frp_mean_mw"], 0.0)) / frp_scale, 0.0, 1.0
-        ),
+        "frp_mean_mw": np.clip(np.log1p(np.maximum(raw["frp_mean_mw"], 0.0)) / frp_scale, 0.0, 1.0),
         "frp_p50_mw": np.clip(np.log1p(np.maximum(raw["frp_p50_mw"], 0.0)) / frp_scale, 0.0, 1.0),
         "n_obs": np.clip(np.log1p(n_obs_raw) / obs_scale, 0.0, 1.0),
         "n_high_conf": np.clip(np.log1p(np.maximum(raw["n_high_conf"], 0.0)) / obs_scale, 0.0, 1.0),
@@ -180,7 +178,7 @@ def load_contract_cell_day(
         def _keep_flags(fl):
             if fl is None or (isinstance(fl, float) and np.isnan(fl)):
                 return True
-            s = set(fl) if isinstance(fl, (list, tuple, np.ndarray)) else set()
+            s = set(fl) if isinstance(fl, list | tuple | np.ndarray) else set()
             return "partial_period" not in s and "island_domain" not in s
 
         df = df[df["flags"].map(_keep_flags)]
@@ -220,7 +218,9 @@ def load_contract_cell_day(
     date_to_idx = {d: i for i, d in enumerate(dates)}
     n_days = len(dates)
     if n_days <= time_steps:
-        raise ValueError(f"Serie temporal insuficiente ({n_days} días) para time_steps={time_steps}")
+        raise ValueError(
+            f"Serie temporal insuficiente ({n_days} días) para time_steps={time_steps}"
+        )
 
     # Partición espacial por bloques de celdas (evita fuga entre train y val, §6)
     unique_cells = grouped[["iy", "ix"]].drop_duplicates().to_numpy()
@@ -411,9 +411,9 @@ class SyntheticContractGenerator:
                 ),
                 0.0,
             ).astype(np.float32)
-            frp_p50 = (
-                frp_mean * np.clip(self.rng.normal(0.82, 0.08, (n, n)), 0.5, 1.0)
-            ).astype(np.float32)
+            frp_p50 = (frp_mean * np.clip(self.rng.normal(0.82, 0.08, (n, n)), 0.5, 1.0)).astype(
+                np.float32
+            )
 
             high_frac = np.clip(0.2 + 0.65 * vigor + self.rng.normal(0, 0.1, (n, n)), 0.0, 1.0)
             n_high = np.minimum(n_obs, np.round(n_obs * high_frac)).astype(np.float32)
@@ -428,7 +428,10 @@ class SyntheticContractGenerator:
             footprint = np.where(
                 observed,
                 np.clip(
-                    0.5 + (1.0 - viirs_share) * 2.2 + 0.9 * vigor + self.rng.uniform(0, 0.6, (n, n)),
+                    0.5
+                    + (1.0 - viirs_share) * 2.2
+                    + 0.9 * vigor
+                    + self.rng.uniform(0, 0.6, (n, n)),
                     0.37,
                     4.8,
                 ),

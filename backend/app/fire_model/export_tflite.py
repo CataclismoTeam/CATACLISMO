@@ -12,13 +12,13 @@ Modos de cuantización:
 from __future__ import annotations
 
 import argparse
-from collections.abc import Callable, Iterable
 import logging
 import os
 import shutil
 import subprocess
 import sys
 import tempfile
+from collections.abc import Callable, Iterable
 
 import keras
 import numpy as np
