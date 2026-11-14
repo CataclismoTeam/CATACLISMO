@@ -97,16 +97,108 @@
   background-size: 48px 48px;
 }
 
-/* Cesium: sus créditos van en nuestro pie de atribuciones */
-.cesium-viewer-bottom {
+/* ── Símbolos operativos sobre el mapa (marcadores HTML de MapLibre) ── */
+.unit-marker {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 3px 8px 3px 3px;
+  border: 1px solid var(--color-line-strong);
+  border-left: 4px solid var(--status);
+  border-radius: var(--radius-md);
+  background: var(--color-surface);
+  color: var(--color-ink);
+  font: 600 0.8125rem/1.15 var(--font-sans);
+  cursor: pointer;
+  box-shadow: 0 2px 6px rgb(0 0 0 / 0.5);
+}
+
+.unit-marker:hover,
+.unit-marker:focus-visible {
+  background: var(--color-hover);
+}
+
+.unit-marker__icon {
+  display: grid;
+  place-items: center;
+  width: 28px;
+  height: 28px;
+  border-radius: var(--radius-sm);
+  background: var(--color-raised);
+}
+
+.unit-marker__text {
+  display: flex;
+  flex-direction: column;
+  text-align: left;
+}
+
+.unit-marker__status {
+  display: flex;
+  align-items: center;
+  gap: 3px;
+  font-weight: 500;
   font-size: 0.75rem;
-  opacity: 0.75;
+  color: var(--color-ink-muted);
 }
 
-.cesium-widget-credits {
-  color: var(--color-ink-muted) !important;
+.meeting-marker,
+.ignition-marker {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  padding: 3px 8px;
+  border-radius: var(--radius-sm);
+  font: 600 0.8125rem/1.2 var(--font-sans);
+  white-space: nowrap;
 }
 
-.cesium-viewer .cesium-widget-credits a {
-  color: var(--color-accent) !important;
+.meeting-marker {
+  background: #163d28;
+  color: #e6f6ec;
+  border: 1px solid #2f9e62;
+}
+
+.ignition-marker {
+  background: var(--color-surface);
+  color: var(--color-ink);
+  border: 1px solid #c2331f;
+}
+
+/* Controles de MapLibre en tema oscuro y legibles */
+.maplibregl-ctrl-group {
+  background: var(--color-surface) !important;
+  border: 1px solid var(--color-line-strong);
+}
+
+.maplibregl-ctrl-group button + button {
+  border-top-color: var(--color-line) !important;
+}
+
+.maplibregl-ctrl-group button .maplibregl-ctrl-icon {
+  filter: invert(1);
+}
+
+.maplibregl-ctrl-scale {
+  background: var(--color-surface) !important;
+  color: var(--color-ink) !important;
+  border-color: var(--color-ink-muted) !important;
+  font-size: 0.75rem !important;
+}
+
+.maplibregl-ctrl-attrib {
+  background: var(--color-surface) !important;
+  color: var(--color-ink-muted);
+  font-size: 0.75rem;
+}
+
+.maplibregl-ctrl-attrib a {
+  color: var(--color-ink) !important;
+}
+
+@media (pointer: coarse) {
+  .maplibregl-ctrl-group button {
+    width: 44px !important;
+    height: 44px !important;
+  }
 }

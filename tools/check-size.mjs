@@ -1,27 +1,25 @@
 // Presupuesto de peso del build: falla (exit 1) si el sitio engorda por encima de los límites.
 // Mide los ficheros de dist/ sin comprimir. Se ejecuta en el CI tras el build.
 //
-// Se separan tres grupos, porque pesan muy distinto y se cargan en momentos distintos:
+// Se separan dos grupos, porque se cargan en momentos distintos:
 //   - inicial: el JS y CSS que enlaza index.html (lo que paga cualquier visita)
-//   - diferido: los chunks que se cargan bajo demanda (p. ej. el globo con Cesium)
-//   - cesium/: workers, assets y widgets estáticos de Cesium (copiados tal cual)
+//   - diferido: los chunks que se cargan bajo demanda (el mapa con MapLibre, ECharts…)
 import { readdirSync, readFileSync, statSync } from 'node:fs';
 import { join, relative, extname } from 'node:path';
 
 const DIST = 'dist';
 const KB = 1024;
 
-// Límites (en KB). Valores de referencia al crearlos: inicial JS 270, diferido JS 4640,
-// CSS 24, cesium/ ~8000.
+// Límites (en KB). Referencia con MapLibre: inicial JS 276, diferido JS 1643, CSS total 98
+// (la hoja de MapLibre pesa unos 60 KB sin comprimir).
 const BUDGET = {
   initialJs: 300, // JS que enlaza index.html (React + shell, estado y sistema de diseño)
   initialCss: 30, // CSS que enlaza index.html
-  lazyJs: 5000, // resto del JS de la app (chunks diferidos)
-  cssTotal: 60, // todo el CSS de la app (sin cesium/)
+  lazyJs: 2500, // resto del JS de la app (chunks diferidos)
+  cssTotal: 120, // todo el CSS de la app
   htmlPage: 50, // cada página HTML
-  image: 300, // cada imagen de la app (sin cesium/)
+  image: 300, // cada imagen de la app
   font: 100, // cada fichero de fuente
-  cesium: 15 * KB, // todo cesium/
 };
 
 function walk(dir) {
@@ -36,8 +34,7 @@ const all = walk(DIST).map((path) => ({
   ext: extname(path).toLowerCase(),
   kb: statSync(path).size / KB,
 }));
-const isCesium = (f) => f.path.startsWith('cesium/');
-const app = all.filter((f) => !isCesium(f));
+const app = all;
 
 // Lo que enlaza index.html directamente (script de entrada, modulepreload y hojas de estilo)
 const indexHtml = readFileSync(join(DIST, 'index.html'), 'utf8');
@@ -51,7 +48,6 @@ const initialJs = total(app.filter((f) => isJs(f) && linked.has(f.path)));
 const lazyJs = total(app.filter((f) => isJs(f) && !linked.has(f.path)));
 const initialCss = total(app.filter((f) => f.ext === '.css' && linked.has(f.path)));
 const cssTotal = total(app.filter((f) => f.ext === '.css'));
-const cesium = total(all.filter(isCesium));
 
 const errors = [];
 const fmt = (n) => `${n.toFixed(1)} KB`;
@@ -65,7 +61,6 @@ const report = [
   check(initialCss, BUDGET.initialCss, 'CSS inicial'),
   check(lazyJs, BUDGET.lazyJs, 'JS diferido'),
   check(cssTotal, BUDGET.cssTotal, 'CSS total'),
-  check(cesium, BUDGET.cesium, 'cesium/'),
 ];
 
 const limits = [

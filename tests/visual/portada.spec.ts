@@ -6,6 +6,14 @@ import { test, expect } from '@playwright/test';
 test.describe('regresión visual', () => {
   test.skip(!process.env.CI && !process.env.VISUAL, 'solo en el CI (o con VISUAL=1)');
 
+  // Sin GPU (CI y navegador sin ventana) el relieve 3D se pinta por software y satura la página:
+  // las pruebas arrancan el mapa en 2D, salvo la que comprueba el cambio de modo.
+  test.beforeEach(async ({ page }) => {
+    await page.addInitScript(() =>
+      window.localStorage.setItem('cataclismo.mapa', JSON.stringify({ mode: '2d' })),
+    );
+  });
+
   test('portada', async ({ page }) => {
     await page.goto('./');
     await page.evaluate(() => document.fonts.ready);

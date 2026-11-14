@@ -1,4 +1,4 @@
-import { CalendarDays, Map as MapIcon } from 'lucide-react';
+import { ArrowRight } from 'lucide-react';
 import { useUi } from '../store/ui.ts';
 import { Button } from '../ui/Button.tsx';
 import { Dialog } from '../ui/Dialog.tsx';
@@ -8,8 +8,6 @@ import { Tag } from '../ui/Tag.tsx';
 export default function Briefing() {
   const open = useUi((s) => s.briefingOpen);
   const close = useUi((s) => s.closeBriefing);
-  const openMap = useUi((s) => s.openMap);
-  const setCalendarOpen = useUi((s) => s.setCalendarOpen);
 
   return (
     <Dialog
@@ -24,8 +22,12 @@ export default function Briefing() {
           científico.
         </li>
         <li>
-          <strong>Qué hace:</strong> elige un área y ve, mes a mes desde 2012, cuánto ha ardido y si
-          este mes se sale de lo normal.
+          <strong>Mapa de mando:</strong> incendio, propagación prevista, unidades y vías de escape
+          sobre el relieve (escenario simulado en Sierra Bermeja, Málaga).
+        </li>
+        <li>
+          <strong>Histórico:</strong> elige un área y ve, mes a mes desde 2012, cuánto ha ardido y
+          si este mes se sale de lo normal.
         </li>
         <li>
           <strong>Con qué datos:</strong> detecciones de fuego de los satélites MODIS y VIIRS,
@@ -34,29 +36,13 @@ export default function Briefing() {
       </ul>
       <div className="mt-4 flex flex-wrap gap-2">
         <Tag tone="real">Real · NASA FIRMS</Tag>
+        <Tag tone="simulado">Escenario simulado</Tag>
         <Tag>Demo · sin conexión a backend</Tag>
       </div>
       <div className="mt-6 flex flex-wrap gap-3">
-        <Button
-          variant="primary"
-          size="lg"
-          onClick={() => {
-            setCalendarOpen(true);
-            close();
-          }}
-        >
-          <CalendarDays size={20} strokeWidth={1.5} aria-hidden />
-          Ver el calendario de fuego
-        </Button>
-        <Button
-          size="lg"
-          onClick={() => {
-            openMap();
-            close();
-          }}
-        >
-          <MapIcon size={20} strokeWidth={1.5} aria-hidden />
-          Abrir el mapa
+        <Button variant="primary" size="lg" onClick={close}>
+          <ArrowRight size={20} strokeWidth={1.5} aria-hidden />
+          Empezar
         </Button>
       </div>
     </Dialog>

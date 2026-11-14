@@ -3,10 +3,25 @@
 import { readFile } from 'node:fs/promises';
 import { test, expect, type Page } from '@playwright/test';
 
+// Sin GPU (CI y navegador sin ventana) el relieve 3D se pinta por software y satura la página:
+// las pruebas arrancan el mapa en 2D, salvo la que comprueba el cambio de modo.
+test.beforeEach(async ({ page }) => {
+  await page.addInitScript(() =>
+    window.localStorage.setItem('cataclismo.mapa', JSON.stringify({ mode: '2d' })),
+  );
+});
+
+/** En pantallas estrechas el calendario empieza plegado: se despliega si hace falta. */
+async function openCalendar(page: Page) {
+  const toggle = page.getByRole('button', { name: 'Desplegar' });
+  if (await toggle.isVisible()) await toggle.click();
+  await expect(page.getByRole('table')).toBeVisible();
+}
+
 async function enter(page: Page) {
   await page.goto('./');
-  await page.getByRole('button', { name: 'Ver el calendario de fuego' }).click();
-  await expect(page.getByRole('table')).toBeVisible();
+  await page.getByRole('button', { name: 'Empezar' }).click();
+  await openCalendar(page);
 }
 
 test('el calendario muestra toda la serie y avisa del mes incompleto', async ({ page }) => {

@@ -1,5 +1,4 @@
 import { CircleHelp, Presentation, WifiOff } from 'lucide-react';
-import { motion } from 'framer-motion';
 import { useEffect, useState } from 'react';
 import { dataSource } from '../data/source.ts';
 import { useHistory } from '../store/history.ts';
@@ -7,6 +6,8 @@ import { useUi } from '../store/ui.ts';
 import { Button } from '../ui/Button.tsx';
 import { Tag } from '../ui/Tag.tsx';
 import { Logo } from './Logo.tsx';
+import { ModeSwitch } from './ModeSwitch.tsx';
+import { RadioButton, RadioPanel } from './RadioPanel.tsx';
 
 function UtcClock() {
   const [now, setNow] = useState(() => new Date());
@@ -19,7 +20,7 @@ function UtcClock() {
     <time
       dateTime={iso}
       data-dinamico
-      className="hidden font-mono text-sm text-ink-muted lg:block"
+      className="hidden font-mono text-sm text-ink-muted xl:block"
       title="Fecha y hora en tiempo universal coordinado"
     >
       {iso.slice(0, 10)} {iso.slice(11, 19)} UTC
@@ -34,34 +35,30 @@ export function TopBar() {
   const openBriefing = useUi((s) => s.openBriefing);
 
   return (
-    <motion.header
-      initial={{ opacity: 0, y: -8 }}
-      animate={{ opacity: 1, y: 0 }}
-      className="z-(--z-bar) flex h-14 shrink-0 items-center gap-4 border-b border-white/8 bg-[#0d1219]/95 px-4 backdrop-blur-md"
-    >
+    <header className="relative z-(--z-bar) flex h-14 shrink-0 items-center gap-3 border-b border-line bg-surface px-3">
       <Logo />
-      <div className="flex min-w-0 items-baseline gap-2.5">
-        <h1 className="m-0 text-sm font-bold tracking-[0.18em]">CATACLISMO</h1>
-        <p className="m-0 hidden truncate text-sm text-ink-muted md:block">
+      <div className="hidden min-w-0 flex-col leading-tight sm:flex">
+        <h1 className="m-0 text-base font-bold tracking-[0.14em]">CATACLISMO</h1>
+        <p className="m-0 hidden truncate text-xs text-ink-muted lg:block">
           Plataforma de mando para emergencias
         </p>
       </div>
+      <h1 className="sr-only sm:hidden">CATACLISMO</h1>
 
-      <div className="ml-auto flex items-center gap-2">
-        <span className="hidden items-center gap-2 rounded-full border border-ok/20 bg-ok/10 px-2.5 py-1 text-[10px] font-semibold uppercase tracking-wide text-ok lg:flex">
-          <span className="size-1.5 rounded-full bg-ok" />
-          Sistema operativo
-        </span>
+      <ModeSwitch />
+
+      <div className="ml-auto flex items-center gap-1.5">
         {lastDate && (
-          <Tag tone="real" className="hidden sm:inline-flex">
+          <Tag tone="real" className="hidden lg:inline-flex">
             Real · FIRMS · hasta {lastDate}
           </Tag>
         )}
-        <Tag className="hidden md:inline-flex">
+        <Tag className="hidden 2xl:inline-flex">
           <WifiOff size={14} strokeWidth={1.5} aria-hidden />
           {dataSource.label}
         </Tag>
         <UtcClock />
+        <RadioButton />
         <Button
           variant="ghost"
           size="icon"
@@ -82,6 +79,7 @@ export function TopBar() {
           <CircleHelp size={20} strokeWidth={1.5} aria-hidden />
         </Button>
       </div>
-    </motion.header>
+      <RadioPanel />
+    </header>
   );
 }

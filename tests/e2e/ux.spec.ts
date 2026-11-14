@@ -2,6 +2,21 @@
 // del flujo principal no puede verse texto de relleno ni errores técnicos.
 import { test, expect, type Page } from '@playwright/test';
 
+// Sin GPU (CI y navegador sin ventana) el relieve 3D se pinta por software y satura la página:
+// las pruebas arrancan el mapa en 2D, salvo la que comprueba el cambio de modo.
+test.beforeEach(async ({ page }) => {
+  await page.addInitScript(() =>
+    window.localStorage.setItem('cataclismo.mapa', JSON.stringify({ mode: '2d' })),
+  );
+});
+
+/** En pantallas estrechas el calendario empieza plegado: se despliega si hace falta. */
+async function openCalendar(page: Page) {
+  const toggle = page.getByRole('button', { name: 'Desplegar' });
+  if (await toggle.isVisible()) await toggle.click();
+  await expect(page.getByRole('table')).toBeVisible();
+}
+
 const FORBIDDEN = /undefined|NaN|lorem|Error 500|\[object Object\]|Título aquí|asdf/i;
 
 async function expectClean(page: Page, screen: string) {
@@ -16,8 +31,8 @@ test('ninguna pantalla del flujo principal muestra relleno ni errores técnicos'
   await expect(page.getByRole('dialog', { name: 'CATACLISMO' })).toBeVisible();
   await expectClean(page, 'briefing');
 
-  await page.getByRole('button', { name: 'Ver el calendario de fuego' }).click();
-  await expect(page.getByRole('table')).toBeVisible();
+  await page.getByRole('button', { name: 'Empezar' }).click();
+  await openCalendar(page);
   await expect(page.getByRole('img', { name: /Detecciones de/ })).toBeVisible();
   await expectClean(page, 'calendario de España');
 
@@ -43,8 +58,8 @@ test('ninguna pantalla del flujo principal muestra relleno ni errores técnicos'
 
 test('el texto principal no baja de 14 px y los botones se pueden pulsar', async ({ page }) => {
   await page.goto('./');
-  await page.getByRole('button', { name: 'Ver el calendario de fuego' }).click();
-  await expect(page.getByRole('table')).toBeVisible();
+  await page.getByRole('button', { name: 'Empezar' }).click();
+  await openCalendar(page);
   const bodySize = await page.evaluate(() => parseFloat(getComputedStyle(document.body).fontSize));
   expect(bodySize).toBeGreaterThanOrEqual(14);
   for (const name of ['Descargar CSV', 'Descargar PNG', 'Plegar']) {

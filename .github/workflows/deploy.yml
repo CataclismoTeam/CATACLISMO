@@ -197,6 +197,10 @@ jobs:
           node-version: 26
       - run: pnpm install --frozen-lockfile
       - name: Build
+        # Clave pública de MapTiler restringida por dominio (variable del repo, no secreto).
+        # Sin ella el mapa usa fuentes abiertas sin clave.
+        env:
+          VITE_MAPTILER_KEY: ${{ vars.VITE_MAPTILER_KEY }}
         run: pnpm build
       - name: Enlaces rotos y build completo
         run: pnpm check:links
