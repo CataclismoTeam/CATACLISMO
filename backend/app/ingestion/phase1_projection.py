@@ -4,7 +4,7 @@ Fase 1 — Proyección EPSG:3035 + Asignación a celdas L0–L3 (GENÉRICO)
 
 Lee archivos JSON de FIRMS (MODIS/VIIRS, SP/NRT), aplica tipos, proyecta a EPSG:3035,
 calcula celdas anidadas 2×2, añade control de calidad y trazabilidad,
-y escribe observations.parquet + observations.jsonl.
+y escribe observations.parquet + observations.json (array único).
 
 Uso:
     python phase1_projection.py \
@@ -14,7 +14,7 @@ Uso:
         --grid-prefix ES1K
 
 Entrada: archivos JSON (array de objetos) o directorios (recursivo)
-Salida: observations.parquet + observations.jsonl en --output
+Salida: observations.parquet + observations.json (array único) en --output
 """
 
 from __future__ import annotations
@@ -22,14 +22,26 @@ from __future__ import annotations
 import argparse
 import hashlib
 import json
+import logging
 import sys
 from datetime import datetime, timezone
 from pathlib import Path
-from typing import Any
+from typing import Any, Iterator
 
 import numpy as np
 import pandas as pd
 from pyproj import Transformer
+
+# ---------------------------------------------------------------------------
+# Configuración de logging
+# ---------------------------------------------------------------------------
+
+logging.basicConfig(
+    level=logging.INFO,
+    format="%(asctime)s %(levelname)s %(name)s: %(message)s",
+    handlers=[logging.StreamHandler(sys.stdout)]
+)
+logger = logging.getLogger("phase1_projection")
 
 # ---------------------------------------------------------------------------
 # Constantes y umbrales (configurables vía CLI)
@@ -49,6 +61,9 @@ CANARIAS_X_THRESHOLD = 2_500_000
 
 # Periodo incompleto (por defecto, configurable)
 DEFAULT_PARTIAL_PERIOD_START = "2026-09-01"
+
+# Tamaño de chunk para streaming JSON (registros por batch)
+STREAMING_CHUNK_SIZE = 10_000
 
 
 # ---------------------------------------------------------------------------
@@ -121,6 +136,195 @@ def infer_product_from_filename(fname: str) -> str:
     return "unknown"
 
 
+def iter_json_records(file_path: Path, chunk_size: int = STREAMING_CHUNK_SIZE) -> Iterator[list[dict]]:
+    """
+    Itera sobre registros JSON en chunks para streaming.
+    Soporta tanto array JSON como JSONL.
+    """
+    with file_path.open("r", encoding="utf-8") as f:
+        content = f.read().strip()
+        if not content:
+            return
+
+        # Detectar formato: array JSON vs JSONL
+        if content.startswith("["):
+            # Array JSON - parsear completo (archivos FIRMS son pequeños)
+            data = json.loads(content)
+            if isinstance(data, list):
+                for i in range(0, len(data), chunk_size):
+                    yield data[i:i + chunk_size]
+            else:
+                logger.warning(f"{file_path.name}: JSON root no es array, se omite")
+        else:
+            # JSONL - parsear línea a línea
+            chunk = []
+            for line in content.splitlines():
+                line = line.strip()
+                if not line:
+                    continue
+                try:
+                    chunk.append(json.loads(line))
+                    if len(chunk) >= chunk_size:
+                        yield chunk
+                        chunk = []
+                except json.JSONDecodeError as e:
+                    logger.warning(f"Línea JSON inválida en {file_path.name}: {e}")
+            if chunk:
+                yield chunk
+
+
+def collect_input_files(input_paths: list[Path]) -> list[Path]:
+    """Expande rutas de entrada (archivos o directorios) a lista de archivos JSON."""
+    files = []
+    for path in input_paths:
+        path = path.resolve()
+        if path.is_file() and path.suffix.lower() == ".json":
+            files.append(path)
+        elif path.is_dir():
+            files.extend(sorted(path.rglob("*.json")))
+        else:
+            logger.warning(f"{path} no existe o no es .json/.directorio, se omite")
+    return files
+
+
+def load_json_files(file_paths: list[Path]) -> pd.DataFrame:
+    """Carga múltiples JSON y devuelve DataFrame combinado con columnas src_*."""
+    all_records = []
+    file_hashes = {}
+
+    for fpath in file_paths:
+        file_hashes[fpath.name] = compute_file_hash(fpath)
+
+        # Streaming por chunks
+        for chunk in iter_json_records(fpath):
+            for idx, record in enumerate(chunk):
+                if not isinstance(record, dict):
+                    continue
+                rec = {
+                    "source_file": fpath.name,
+                    "source_row": idx,
+                }
+                for k, v in record.items():
+                    rec[f"src_{k}"] = v
+                all_records.append(rec)
+
+    if not all_records:
+        raise RuntimeError("No se cargaron registros de ningún archivo JSON")
+
+    df = pd.DataFrame(all_records)
+    logger.info(f"Cargados {len(df)} registros de {len(file_hashes)} archivos")
+    for fname, h in file_hashes.items():
+        logger.info(f"  {fname}: sha256={h[:16]}...")
+    return df
+
+
+def normalize_and_enrich(
+    df: pd.DataFrame,
+    cell_size: float,
+    grid_prefix: str,
+    partial_period_start: str,
+    file_paths: list[Path]
+) -> pd.DataFrame:
+    """Aplica tipos, proyección, celdas, ranks, flags, IDs."""
+    # --- Tipos básicos ---
+    df["latitude"] = pd.to_numeric(df.get("src_latitude"), errors="coerce")
+    df["longitude"] = pd.to_numeric(df.get("src_longitude"), errors="coerce")
+
+    df["acq_date"] = pd.to_datetime(df.get("src_acq_date"), errors="coerce").dt.date
+    df["acq_minute"] = df.get("src_acq_time").apply(parse_acq_time)
+
+    df["sensor"] = df.get("src_instrument").replace({"SNPP": "VIIRS"}).fillna(
+        df.get("src_sensor")
+    ).str.upper()
+    df["platform"] = df.get("src_satellite").fillna(df.get("src_platform")).str.title()
+    df["product"] = df["source_file"].apply(infer_product_from_filename)
+
+    df["frp"] = pd.to_numeric(df.get("src_frp"), errors="coerce")
+    df["brightness"] = pd.to_numeric(df.get("src_brightness"), errors="coerce")
+    df["bright_t31"] = pd.to_numeric(df.get("src_bright_t31"), errors="coerce")
+    df["scan"] = pd.to_numeric(df.get("src_scan"), errors="coerce")
+    df["track"] = pd.to_numeric(df.get("src_track"), errors="coerce")
+
+    df["confidence_raw"] = df.get("src_confidence").astype(str)
+    df["confidence_rank"] = df.apply(
+        lambda r: confidence_to_rank(r.get("sensor", ""), r.get("confidence_raw")),
+        axis=1
+    )
+
+    df["daynight"] = df.get("src_daynight").fillna("").str.upper()
+    df["type_code"] = pd.to_numeric(df.get("src_type"), errors="coerce").astype("Int8")
+    df["version"] = df.get("src_version").astype(str)
+
+    # --- Proyección EPSG:3035 ---
+    valid_coords = df["latitude"].notna() & df["longitude"].notna()
+    x_arr = np.full(len(df), np.nan, dtype=np.float64)
+    y_arr = np.full(len(df), np.nan, dtype=np.float64)
+    if valid_coords.any():
+        lon_vals = df.loc[valid_coords, "longitude"].to_numpy(float)
+        lat_vals = df.loc[valid_coords, "latitude"].to_numpy(float)
+        x_proj, y_proj = TRANSFORMER.transform(lon_vals, lat_vals)
+        x_arr[valid_coords.to_numpy()] = x_proj
+        y_arr[valid_coords.to_numpy()] = y_proj
+    df["x_3035"] = x_arr
+    df["y_3035"] = y_arr
+
+    # --- Celdas L0-L3 (anidamiento 2×2) ---
+    for level in range(4):
+        level_cell_size = cell_size * (2 ** level)
+        ix = np.floor(df["x_3035"] / level_cell_size).astype("Int64")
+        iy = np.floor(df["y_3035"] / level_cell_size).astype("Int64")
+        df[f"cell_id_L{level}"] = [
+            f"{grid_prefix}:L{level}:Y{int(iy_v):05d}:X{int(ix_v):05d}"
+            if pd.notna(iy_v) and pd.notna(ix_v) else None
+            for iy_v, ix_v in zip(iy, ix)
+        ]
+
+    # Parent_ids (basado en L0)
+    parent_ids = []
+    for _, row in df.iterrows():
+        cell_id_l0 = row.get("cell_id_L0")
+        if cell_id_l0 is None:
+            parent_ids.append(None)
+            continue
+        try:
+            parts = cell_id_l0.split(":")
+            iy_v = int(parts[2][1:])
+            ix_v = int(parts[3][1:])
+            parent_ids.append({
+                f"L{level}": f"{grid_prefix}:L{level}:Y{iy_v // (2**level):05d}:X{ix_v // (2**level):05d}"
+                for level in (1, 2, 3)
+            })
+        except Exception:
+            parent_ids.append(None)
+    df["parent_ids"] = parent_ids
+
+    # --- observation_id determinista ---
+    df["observation_id"] = (
+        df["sensor"] + ":" + df["source_file"] + ":" + df["source_row"].astype(str)
+    )
+
+    # --- ingest_run_id (mismo para toda la corrida) ---
+    run_timestamp = datetime.now(timezone.utc).strftime("%Y%m%dT%H%M%SZ")
+    # Usar el hash del primer archivo real, no el nombre
+    first_file_name = df["source_file"].iloc[0]
+    first_file_path = None
+    for fpath in file_paths:
+        if fpath.name == first_file_name:
+            first_file_path = fpath
+            break
+    first_hash = compute_file_hash(first_file_path)[:8] if first_file_path else hashlib.sha256(first_file_name.encode()).hexdigest()[:8]
+    ingest_run_id = f"{run_timestamp}-{first_hash}"
+    df["ingest_run_id"] = ingest_run_id
+
+    # --- flags ---
+    df["flags"] = df.apply(
+        lambda r: compute_flags(r, cell_size, partial_period_start),
+        axis=1
+    )
+
+    return df
+
+
 def compute_flags(row: pd.Series, cell_size: float, partial_period_start: str) -> list[str]:
     """Genera lista de flags según catálogo cerrado."""
     flags = []
@@ -181,7 +385,7 @@ def compute_flags(row: pd.Series, cell_size: float, partial_period_start: str) -
     # island_domain (Canarias)
     if x_3035 is not None:
         try:
-            if float(x_3035) < CANARIAS_X_THRESHOLD:
+            if float(x_3035) < 2_500_000:
                 flags.append("island_domain")
         except (ValueError, TypeError):
             pass
@@ -199,162 +403,8 @@ def compute_flags(row: pd.Series, cell_size: float, partial_period_start: str) -
 
 
 def format_cell_id(iy: int, ix: int, level: int, grid_prefix: str) -> str:
-    """Formatea cell_id: {grid_prefix}:L{level}:Y{iy}:X{ix} con zero-padding 5 dígitos con signo."""
+    """Formatea cell_id: {grid_prefix}:L{level}:Y{iy}:X{ix}."""
     return f"{grid_prefix}:L{level}:Y{iy:05d}:X{ix:05d}"
-
-
-def compute_parent_ids(iy: int, ix: int, grid_prefix: str) -> dict[str, str]:
-    """Calcula parent_ids para L1, L2, L3 (anidamiento 2×2)."""
-    parents = {}
-    for level in (1, 2, 3):
-        p_iy = iy // (2 ** level)
-        p_ix = ix // (2 ** level)
-        parents[f"L{level}"] = format_cell_id(p_iy, p_ix, level, grid_prefix)
-    return parents
-
-
-def collect_input_files(input_paths: list[Path]) -> list[Path]:
-    """Expande rutas de entrada (archivos o directorios) a lista de archivos JSON."""
-    files = []
-    for path in input_paths:
-        path = path.resolve()
-        if path.is_file() and path.suffix.lower() == ".json":
-            files.append(path)
-        elif path.is_dir():
-            files.extend(sorted(path.rglob("*.json")))
-        else:
-            print(f"ADVERTENCIA: {path} no existe o no es .json/.directorio, se omite", file=sys.stderr)
-    return files
-
-
-def load_json_files(file_paths: list[Path]) -> pd.DataFrame:
-    """Carga múltiples JSON y devuelve DataFrame combinado con columnas src_*."""
-    all_records = []
-    file_hashes = {}
-
-    for fpath in file_paths:
-        file_hashes[fpath.name] = compute_file_hash(fpath)
-
-        with fpath.open("r", encoding="utf-8") as f:
-            data = json.load(f)
-
-        if not isinstance(data, list):
-            print(f"ADVERTENCIA: {fpath.name} no es una lista, se omite", file=sys.stderr)
-            continue
-
-        for idx, record in enumerate(data):
-            if not isinstance(record, dict):
-                continue
-            rec = {
-                "source_file": fpath.name,
-                "source_row": idx,
-            }
-            for k, v in record.items():
-                rec[f"src_{k}"] = v
-            all_records.append(rec)
-
-    if not all_records:
-        raise RuntimeError("No se cargaron registros de ningún archivo JSON")
-
-    df = pd.DataFrame(all_records)
-    print(f"Cargados {len(df)} registros de {len(file_hashes)} archivos")
-    for fname, h in file_hashes.items():
-        print(f"  {fname}: sha256={h[:16]}...")
-    return df
-
-
-def normalize_and_enrich(df: pd.DataFrame, cell_size: float, grid_prefix: str, partial_period_start: str) -> pd.DataFrame:
-    """Aplica tipos, proyección, celdas, ranks, flags, IDs."""
-    # --- Tipos básicos ---
-    df["latitude"] = pd.to_numeric(df.get("src_latitude"), errors="coerce")
-    df["longitude"] = pd.to_numeric(df.get("src_longitude"), errors="coerce")
-
-    df["acq_date"] = pd.to_datetime(df.get("src_acq_date"), errors="coerce").dt.date
-    df["acq_minute"] = df.get("src_acq_time").apply(parse_acq_time)
-
-    df["sensor"] = df.get("src_instrument").replace({"SNPP": "VIIRS"}).fillna(
-        df.get("src_sensor")
-    ).str.upper()
-    df["platform"] = df.get("src_satellite").fillna(df.get("src_platform")).str.title()
-    df["product"] = df["source_file"].apply(infer_product_from_filename)
-
-    df["frp"] = pd.to_numeric(df.get("src_frp"), errors="coerce")
-    df["brightness"] = pd.to_numeric(df.get("src_brightness"), errors="coerce")
-    df["bright_t31"] = pd.to_numeric(df.get("src_bright_t31"), errors="coerce")
-    df["scan"] = pd.to_numeric(df.get("src_scan"), errors="coerce")
-    df["track"] = pd.to_numeric(df.get("src_track"), errors="coerce")
-
-    df["confidence_raw"] = df.get("src_confidence").astype(str)
-    df["confidence_rank"] = df.apply(
-        lambda r: confidence_to_rank(r.get("sensor", ""), r.get("confidence_raw")),
-        axis=1
-    )
-
-    df["daynight"] = df.get("src_daynight").fillna("").str.upper()
-    df["type_code"] = pd.to_numeric(df.get("src_type"), errors="coerce").astype("Int8")
-    df["version"] = df.get("src_version").astype(str)
-
-    # --- Proyección EPSG:3035 ---
-    valid_coords = df["latitude"].notna() & df["longitude"].notna()
-    x_arr = np.full(len(df), np.nan, dtype=np.float64)
-    y_arr = np.full(len(df), np.nan, dtype=np.float64)
-    if valid_coords.any():
-        lon_vals = df.loc[valid_coords, "longitude"].to_numpy(float)
-        lat_vals = df.loc[valid_coords, "latitude"].to_numpy(float)
-        x_proj, y_proj = TRANSFORMER.transform(lon_vals, lat_vals)
-        x_arr[valid_coords.to_numpy()] = x_proj
-        y_arr[valid_coords.to_numpy()] = y_proj
-    df["x_3035"] = x_arr
-    df["y_3035"] = y_arr
-
-    # --- Celdas L0-L3 (anidamiento 2×2) ---
-    # L0 = cell_size, L1 = 2*cell_size, L2 = 4*cell_size, L3 = 8*cell_size
-    for level in range(4):
-        level_cell_size = cell_size * (2 ** level)
-        ix = np.floor(df["x_3035"] / level_cell_size).astype("Int64")
-        iy = np.floor(df["y_3035"] / level_cell_size).astype("Int64")
-        df[f"cell_id_L{level}"] = [
-            format_cell_id(int(iy_v), int(ix_v), level, grid_prefix)
-            if pd.notna(iy_v) and pd.notna(ix_v) else None
-            for iy_v, ix_v in zip(iy, ix)
-        ]
-
-    # Parent_ids (basado en L0)
-    parent_ids = []
-    for _, row in df.iterrows():
-        cell_id_l0 = row.get("cell_id_L0")
-        if cell_id_l0 is None:
-            parent_ids.append(None)
-            continue
-        try:
-            parts = cell_id_l0.split(":")
-            iy_v = int(parts[2][1:])
-            ix_v = int(parts[3][1:])
-            parent_ids.append(compute_parent_ids(iy_v, ix_v, grid_prefix))
-        except Exception:
-            parent_ids.append(None)
-    df["parent_ids"] = parent_ids
-
-    # --- observation_id determinista ---
-    df["observation_id"] = (
-        df["sensor"] + ":" + df["source_file"] + ":" + df["source_row"].astype(str)
-    )
-
-    # --- ingest_run_id (mismo para toda la corrida) ---
-    run_timestamp = datetime.now(timezone.utc).strftime("%Y%m%dT%H%M%SZ")
-    # Hash del primer archivo como identificador de corrida
-    first_file = df["source_file"].iloc[0]
-    first_hash = hashlib.sha256(first_file.encode()).hexdigest()[:8]
-    ingest_run_id = f"{run_timestamp}-{first_hash}"
-    df["ingest_run_id"] = ingest_run_id
-
-    # --- flags ---
-    df["flags"] = df.apply(
-        lambda r: compute_flags(r, cell_size, partial_period_start),
-        axis=1
-    )
-
-    return df
 
 
 def select_output_columns(df: pd.DataFrame) -> pd.DataFrame:
@@ -402,34 +452,34 @@ def select_output_columns(df: pd.DataFrame) -> pd.DataFrame:
 
 def validate_output(df: pd.DataFrame) -> None:
     """Validaciones contractuales obligatorias."""
-    print("\n=== VALIDACIONES ===")
-    print(f"Filas totales: {len(df)}")
+    logger.info("\n=== VALIDACIONES ===")
+    logger.info(f"Filas totales: {len(df)}")
 
     dup_ids = df["observation_id"].duplicated().sum()
-    print(f"observation_id duplicados: {dup_ids}")
+    logger.info(f"observation_id duplicados: {dup_ids}")
     if dup_ids > 0:
         raise ValueError(f"Hay {dup_ids} observation_id duplicados")
 
     dates = pd.to_datetime(df["acq_date"], errors="coerce")
-    print(f"Rango fechas: {dates.min()} -> {dates.max()}")
+    logger.info(f"Rango fechas: {dates.min()} -> {dates.max()}")
 
     valid_coords = df["latitude"].notna() & df["longitude"].notna()
-    print(f"Coordenadas válidas: {valid_coords.sum()} / {len(df)}")
+    logger.info(f"Coordenadas válidas: {valid_coords.sum()} / {len(df)}")
 
     valid_proj = df["x_3035"].notna() & df["y_3035"].notna()
-    print(f"Proyección válida: {valid_proj.sum()} / {len(df)}")
+    logger.info(f"Proyección válida: {valid_proj.sum()} / {len(df)}")
 
     has_cell = df["cell_id_L0"].notna().sum()
-    print(f"Con cell_id_L0: {has_cell} / {len(df)}")
+    logger.info(f"Con cell_id_L0: {has_cell} / {len(df)}")
 
-    print("Por sensor:")
-    print(df["sensor"].value_counts().to_string())
+    logger.info("Por sensor:")
+    logger.info(df["sensor"].value_counts().to_string())
 
-    print("Por producto:")
-    print(df["product"].value_counts().to_string())
+    logger.info("Por producto:")
+    logger.info(df["product"].value_counts().to_string())
 
     frp_sum = pd.to_numeric(df["frp"], errors="coerce").sum()
-    print(f"FRP total: {frp_sum:.2f} MW")
+    logger.info(f"FRP total: {frp_sum:.2f} MW")
 
     all_flags = []
     for fl in df["flags"]:
@@ -438,19 +488,21 @@ def validate_output(df: pd.DataFrame) -> None:
     if all_flags:
         from collections import Counter
         flag_counts = Counter(all_flags)
-        print("Flags:")
+        logger.info("Flags:")
         for flag, count in flag_counts.most_common():
-            print(f"  {flag}: {count}")
+            logger.info(f"  {flag}: {count}")
 
-    print("=== FIN VALIDACIONES ===\n")
+    logger.info("=== FIN VALIDACIONES ===\n")
 
 
-def write_outputs(df: pd.DataFrame, parquet_path: Path, jsonl_path: Path) -> None:
-    """Escribe Parquet y JSONL."""
+def write_outputs(df: pd.DataFrame, parquet_path: Path, json_path: Path) -> None:
+    """Escribe Parquet y JSON (array único)."""
     df.to_parquet(parquet_path, compression="zstd", index=False)
-    print(f"Escrito Parquet: {parquet_path} ({parquet_path.stat().st_size / 1024:.1f} KB)")
+    logger.info(f"Escrito Parquet: {parquet_path} ({parquet_path.stat().st_size / 1024:.1f} KB)")
 
-    with jsonl_path.open("w", encoding="utf-8") as f:
+    from json_output import JSONArrayWriter
+
+    with JSONArrayWriter(json_path, indent=2) as w:
         for _, row in df.iterrows():
             rec = row.to_dict()
             for k, v in rec.items():
@@ -464,12 +516,12 @@ def write_outputs(df: pd.DataFrame, parquet_path: Path, jsonl_path: Path) -> Non
                     rec[k] = None
                 elif hasattr(v, 'isoformat'):
                     rec[k] = v.isoformat()
-            f.write(json.dumps(rec, ensure_ascii=False) + "\n")
-    print(f"Escrito JSONL: {jsonl_path} ({jsonl_path.stat().st_size / 1024:.1f} KB)")
+            w.write(rec)
+    logger.info(f"Escrito JSON: {json_path} ({json_path.stat().st_size / 1024:.1f} KB)")
 
 
 def build_arg_parser() -> argparse.ArgumentParser:
-    p = argparse.ArgumentParser(description="Fase 1: Proyección + Celdas (genérico)")
+    p = argparse.ArgumentParser(description="Fase 1: Proyección + Celdas (GENÉRICO)")
     p.add_argument("--input", nargs="+", type=Path, required=True,
                    help="Archivos JSON o directorios (recursivo)")
     p.add_argument("--output", type=Path, required=True,
@@ -480,6 +532,10 @@ def build_arg_parser() -> argparse.ArgumentParser:
                    help="Prefijo grid ID (default: ES{size}K, ej. ES5K para 5000, ES1K para 1000)")
     p.add_argument("--partial-period-start", type=str, default=DEFAULT_PARTIAL_PERIOD_START,
                    help=f"Inicio de periodo incompleto (default: {DEFAULT_PARTIAL_PERIOD_START})")
+    p.add_argument("--chunk-size", type=int, default=10000,
+                   help="Tamaño de chunk para streaming JSON (default: 10000)")
+    p.add_argument("--validate-only", action="store_true",
+                   help="Solo valida archivo existente sin reprocesar")
     return p
 
 
@@ -491,21 +547,27 @@ def main(argv: list[str] | None = None) -> int:
         size_km = args.cell_size // 1000
         args.grid_prefix = f"ES{size_km}K"
 
-    # Calcular tamaños de celda por nivel
-    cell_sizes = {level: args.cell_size * (2 ** level) for level in range(4)}
-
     output_dir = args.output.resolve()
     output_dir.mkdir(parents=True, exist_ok=True)
 
     parquet_path = output_dir / "observations.parquet"
-    jsonl_path = output_dir / "observations.jsonl"
+    json_path = output_dir / "observations.json"
 
     try:
-        print("=== FASE 1: Proyección + Celdas ===")
-        print(f"Cell size L0: {args.cell_size} m")
-        print(f"Grid prefix: {args.grid_prefix}")
-        print(f"Entradas: {[str(p) for p in args.input]}")
-        print(f"Salida: {output_dir}")
+        logger.info("=== FASE 1: Proyección + Celdas ===")
+        logger.info(f"Cell size L0: {args.cell_size} m")
+        logger.info(f"Grid prefix: {args.grid_prefix}")
+        logger.info(f"Entradas: {[str(p) for p in args.input]}")
+        logger.info(f"Salida: {output_dir}")
+
+        # Validación solo
+        if args.validate_only:
+            if not parquet_path.exists():
+                raise FileNotFoundError(f"No existe {parquet_path}")
+            df = pd.read_parquet(parquet_path)
+            validate_output(df)
+            logger.info("Validación OK")
+            return 0
 
         # 1. Recopilar archivos
         file_paths = collect_input_files(args.input)
@@ -516,7 +578,7 @@ def main(argv: list[str] | None = None) -> int:
         df = load_json_files(file_paths)
 
         # 3. Normalizar y enriquecer
-        df = normalize_and_enrich(df, args.cell_size, args.grid_prefix, args.partial_period_start)
+        df = normalize_and_enrich(df, args.cell_size, args.grid_prefix, args.partial_period_start, file_paths)
 
         # 4. Seleccionar columnas de output
         df = select_output_columns(df)
@@ -525,17 +587,18 @@ def main(argv: list[str] | None = None) -> int:
         validate_output(df)
 
         # 6. Escribir
-        write_outputs(df, parquet_path, jsonl_path)
+        write_outputs(df, parquet_path, json_path)
 
-        print("OK - FASE 1 completada correctamente")
+        logger.info("OK - FASE 1 completada correctamente")
         return 0
 
     except Exception as e:
-        print(f"ERROR: {e}", file=sys.stderr)
+        logger.error(f"ERROR: {e}")
         import traceback
         traceback.print_exc()
         return 1
 
 
 if __name__ == "__main__":
+    import sys
     sys.exit(main())
