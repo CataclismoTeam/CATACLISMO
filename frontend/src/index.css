@@ -249,13 +249,22 @@
   display: none;
 }
 
-/* Zoom medio: la placa se queda en el icono con el borde de estado; el texto, al pasar o enfocar */
-.map-mid .unit-marker {
+/* Zoom medio, o placa que se pisaría con otra: se queda en el icono con el borde de estado; el
+   texto, al pasar o enfocar */
+.map-mid .unit-marker,
+.unit-marker.is-compact {
   padding-right: 3px;
 }
 
-.map-mid .unit-marker:not(:hover, :focus-visible) .unit-marker__text {
+.map-mid .unit-marker:not(:hover, :focus-visible) .unit-marker__text,
+.unit-marker.is-compact:not(:hover, :focus-visible) .unit-marker__text {
   display: none;
+}
+
+/* La placa que se está mirando se superpone a las demás */
+.unit-marker:hover,
+.unit-marker:focus-visible {
+  z-index: 5;
 }
 
 /* Controles de MapLibre en tema oscuro y legibles */

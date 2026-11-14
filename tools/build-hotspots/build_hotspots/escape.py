@@ -9,6 +9,7 @@ Uso: `build-escape-routes --scenarios frontend/src/map/scenarios.json --out fron
 """
 
 import argparse
+import heapq
 import importlib.util
 import json
 import math
@@ -19,7 +20,7 @@ import urllib.request
 from pathlib import Path
 
 from shapely import STRtree, points
-from shapely.geometry import shape
+from shapely.geometry import LineString, shape
 
 from .export import write_json
 
@@ -40,7 +41,23 @@ HALF_DEG = 0.07  # ~15 km de lado
 MIN_PER_TURN = 12.0
 # Evacuación en vehículo a ~20 km/h: 4 km en 12 min → 40 celdas de 100 m por turno
 VEHICLE_CELLS_PER_TURN = 40.0
+VEHICLE_KMH = VEHICLE_CELLS_PER_TURN * CELL_M / 1000 * 60 / MIN_PER_TURN  # = 20 km/h
 ESCAPE_FILE = "escape-routes-v1.json"
+# La ruta de la rejilla (100 m) se pega a la carretera real dentro de este pasillo; si no hay
+# camino conectado se amplía, y como último recurso se conserva la de la rejilla.
+SNAP_CORRIDORS_M = (150.0, 300.0, 600.0, 1200.0, 2500.0)
+# Tolerancia al simplificar la línea final (a escala de calle no se nota y pesa mucho menos)
+SIMPLIFY_M = 4.0
+# En OSM dos vías pueden cruzarse sin compartir nodo (pasos, pistas que desembocan en la carretera):
+# la rejilla de 100 m sí las conecta (hasta ~1,5 celdas): se enlazan los tramos a menos de esto,
+# con un coste mayor que el de una intersección real.
+BRIDGE_M = 150.0
+BRIDGE_PENALTY = 2.0
+# Último recurso: un pueblo o una pista pueden quedar aislados en OSM (huecos de datos). Se admite
+# un único puente, el más corto, por cada par de zonas desconectadas, hasta esta distancia.
+GAP_M = 600.0
+# Pegar la ruta a la carretera no puede alargarla más de esto respecto a la del algoritmo
+MAX_SNAP_DETOUR = 1.6
 
 ROAD_CHAR = {
     "motorway": "=",
@@ -126,6 +143,175 @@ def _km(lon1: float, lat1: float, lon2: float, lat2: float) -> float:
     return math.hypot(dx, (lat2 - lat1) * 111.32)
 
 
+def _metric(lat0: float):
+    """Proyección plana local (metros) alrededor de una latitud: suficiente a ~15 km."""
+    kx = 111_320.0 * math.cos(math.radians(lat0))
+    return (lambda lon, lat: (lon * kx, lat * 111_320.0)), kx
+
+
+def _components(adjacency: dict) -> dict:
+    component: dict = {}
+    count = 0
+    for root in adjacency:
+        if root in component:
+            continue
+        count += 1
+        component[root] = count
+        stack = [root]
+        while stack:
+            for other, _ in adjacency[stack.pop()]:
+                if other not in component:
+                    component[other] = count
+                    stack.append(other)
+    return component
+
+
+def _bridge_gaps(adjacency: dict, metric: dict) -> None:
+    """Último recurso: un puente (el más corto, hasta GAP_M) por cada par de zonas aisladas."""
+    component = _components(adjacency)
+    if len(set(component.values())) == 1:
+        return
+    nodes = list(metric)
+    best: dict[tuple[int, int], tuple[float, tuple, tuple]] = {}
+    buckets: dict[tuple[int, int], list] = {}
+    for n in nodes:
+        buckets.setdefault((int(metric[n][0] // GAP_M), int(metric[n][1] // GAP_M)), []).append(n)
+    for n in nodes:
+        x, y = metric[n]
+        bx, by = int(x // GAP_M), int(y // GAP_M)
+        for dx in (-1, 0, 1):
+            for dy in (-1, 0, 1):
+                for m in buckets.get((bx + dx, by + dy), ()):
+                    if component[m] <= component[n]:
+                        continue
+                    d = math.hypot(metric[m][0] - x, metric[m][1] - y)
+                    pair = (component[n], component[m])
+                    if d <= GAP_M and (pair not in best or d < best[pair][0]):
+                        best[pair] = (d, n, m)
+    for d, a, b in best.values():
+        adjacency[a].append((b, d * BRIDGE_PENALTY))
+        adjacency[b].append((a, d * BRIDGE_PENALTY))
+
+
+def _bridge_components(adjacency: dict, metric: dict) -> None:
+    """Une con enlaces penalizados las componentes de la red que quedan a menos de BRIDGE_M."""
+    component = _components(adjacency)
+    if len(set(component.values())) == 1:
+        return
+    buckets: dict[tuple[int, int], list] = {}
+    for n, (x, y) in metric.items():
+        buckets.setdefault((int(x // BRIDGE_M), int(y // BRIDGE_M)), []).append(n)
+    # Cada nodo se enlaza con el nodo más cercano de cada otra componente (si está a < BRIDGE_M):
+    # hay puentes a lo largo de toda la red, no solo en el punto de mayor cercanía global
+    for n, (x, y) in metric.items():
+        bx, by = int(x // BRIDGE_M), int(y // BRIDGE_M)
+        nearest_in: dict[int, tuple[float, tuple]] = {}
+        for dx in (-1, 0, 1):
+            for dy in (-1, 0, 1):
+                for m in buckets.get((bx + dx, by + dy), ()):
+                    if component[m] == component[n]:
+                        continue
+                    d = math.hypot(metric[m][0] - x, metric[m][1] - y)
+                    c = component[m]
+                    if d <= BRIDGE_M and (c not in nearest_in or d < nearest_in[c][0]):
+                        nearest_in[c] = (d, m)
+        for d, m in nearest_in.values():
+            adjacency[n].append((m, d * BRIDGE_PENALTY))
+
+
+def snap_to_roads(
+    coords: list[tuple[float, float]], osm: dict, corridors_m: tuple[float, ...] = SNAP_CORRIDORS_M
+) -> list[tuple[float, float]]:
+    """Pega una ruta de rejilla a la geometría real de las carreteras de OpenStreetMap.
+
+    Busca el camino más corto por la red viaria que parte del punto de la carretera más cercano
+    al inicio y llega al más cercano al final, pero solo por vías dentro de un pasillo alrededor
+    de la ruta original: así mantiene su coherencia (mismo recorrido, mismo refugio) y deja de
+    tener los escalones y diagonales de la rejilla. Si no hay camino conectado devuelve la
+    original.
+    """
+    if len(coords) < 2:
+        return coords
+    to_m, _ = _metric(coords[0][1])
+    guide = LineString([to_m(lon, lat) for lon, lat in coords])
+    # Grafo por coordenadas: los nodos compartidos de OSM tienen coordenadas idénticas
+    key = lambda lon, lat: (round(lon, 6), round(lat, 6))  # noqa: E731
+    adjacency: dict[tuple[float, float], list[tuple[tuple[float, float], float]]] = {}
+    for el in osm.get("elements", []):
+        if el.get("type") != "way" or "geometry" not in el:
+            continue
+        if el.get("tags", {}).get("highway") not in ROAD_CHAR:
+            continue
+        pts = [key(p["lon"], p["lat"]) for p in el["geometry"]]
+        for a, b in zip(pts, pts[1:], strict=False):
+            if a == b:
+                continue
+            ax, ay = to_m(*a)
+            bx, by = to_m(*b)
+            w = math.hypot(bx - ax, by - ay)
+            adjacency.setdefault(a, []).append((b, w))
+            adjacency.setdefault(b, []).append((a, w))
+    if not adjacency:
+        return coords
+
+    nodes = list(adjacency)
+    metric = {n: to_m(*n) for n in nodes}
+    _bridge_components(adjacency, metric)
+    distance_to_guide = {n: guide.distance(points(*metric[n])) for n in nodes}
+
+    def nearest(point: tuple[float, float]) -> tuple[float, float]:
+        px, py = to_m(*point)
+        return min(nodes, key=lambda n: (metric[n][0] - px) ** 2 + (metric[n][1] - py) ** 2)
+
+    start, goal = nearest(coords[0]), nearest(coords[-1])
+    for with_gaps in (False, True):
+        if with_gaps:
+            _bridge_gaps(adjacency, metric)
+        result = _shortest(adjacency, metric, distance_to_guide, start, goal, corridors_m)
+        if result:
+            return result
+    return coords
+
+
+def _shortest(adjacency, metric, distance_to_guide, start, goal, corridors_m):
+    nodes = list(adjacency)
+    for corridor in corridors_m:
+        allowed = {n for n in nodes if distance_to_guide[n] <= corridor} | {start, goal}
+        best: dict[tuple[float, float], float] = {start: 0.0}
+        parent: dict[tuple[float, float], tuple[float, float]] = {}
+        queue = [(0.0, start)]
+        while queue:
+            cost, node = heapq.heappop(queue)
+            if node == goal:
+                break
+            if cost > best.get(node, math.inf):
+                continue
+            for other, w in adjacency[node]:
+                # Pesa más alejarse de la ruta guía: entre dos caminos, el más fiel a ella
+                step = w * (1 + distance_to_guide[other] / 300.0)
+                if other in allowed and cost + step < best.get(other, math.inf):
+                    best[other] = cost + step
+                    parent[other] = node
+                    heapq.heappush(queue, (cost + step, other))
+        if goal in best:
+            path = [goal]
+            while path[-1] != start:
+                path.append(parent[path[-1]])
+            path.reverse()
+            line = LineString([metric[n] for n in path]).simplify(SIMPLIFY_M)
+            kept = {metric[n]: n for n in path}
+            return [kept[(x, y)] for x, y in line.coords if (x, y) in kept]
+    return None
+
+
+def _length_km(line: list) -> float:
+    return sum(_km(a[0], a[1], b[0], b[1]) for a, b in zip(line, line[1:], strict=False))
+
+
+def exits_cells(refuges: list) -> list[tuple[int, int]]:
+    return [cell for _, cell in refuges]
+
+
 def routes_for(scenario: dict, team, land: Land, cache_dir: Path) -> dict:
     lon0, lat0 = scenario["ignition"]
     half_lon = HALF_DEG / math.cos(math.radians(lat0))
@@ -198,40 +384,66 @@ def routes_for(scenario: dict, team, land: Land, cache_dir: Path) -> dict:
         if n not in taken and d >= 4 and kind != "suburb" and t >= 2.5 * first
     ]
 
+    # Evacuación en vehículo: solo por carreteras y pistas. Con la rejilla completa el algoritmo
+    # (pensado a pie) atajaba por matorral y la ruta salía del asfalto. Si por un hueco de datos
+    # de OSM no hay camino, se usa la rejilla completa como último recurso.
+    road_grid = [["#" if ch not in "=R-" else ch for ch in row] for row in grid]
+    for r, c in [*[cell for _, _, cell in threatened], *exits_cells(refuges)]:
+        road_grid[r][c] = grid[r][c] if grid[r][c] in "=R-" else "R"
+
+    def search(search_grid, start, exits):
+        return team.encontrar_via_escape(
+            search_grid,
+            inicio=start,
+            salida=exits,
+            focos_incendio=[focus],
+            permitir_diagonales=True,
+            margen_seguridad=2.0,
+            peso_riesgo=0.8,
+            tiempo_fuego_previo=fire,
+            viento=wind,
+            velocidad_persona=VEHICLE_CELLS_PER_TURN,
+        )
+
     routes = []
-    exits = [cell for _, cell in refuges]
+    exits = exits_cells(refuges)
     if exits:
         for t_fire, name, start in threatened[:3]:
-            path, _ = team.encontrar_via_escape(
-                grid,
-                inicio=start,
-                salida=exits,
-                focos_incendio=[focus],
-                permitir_diagonales=True,
-                margen_seguridad=2.0,
-                peso_riesgo=0.8,
-                tiempo_fuego_previo=fire,
-                viento=wind,
-                velocidad_persona=VEHICLE_CELLS_PER_TURN,
-            )
+            path, _ = search(road_grid, start, exits)
+            if not path:
+                path, _ = search(grid, start, exits)
             if not path:
                 continue
             metrics = team.calcular_metricas_evacuacion(
                 path, fire, resolucion_metros=CELL_M, velocidad_persona=VEHICLE_CELLS_PER_TURN
             )
             line = team.ruta_a_geojson(path, None, geo_ref=geo)["features"][0]["geometry"]
+            raw = [tuple(c) for c in line["coordinates"]]
+            snapped = snap_to_roads(raw, osm)
+            length_km = _length_km(snapped)
+            # Coherencia: si pegarse a la carretera obliga a un rodeo muy distinto del recorrido
+            # que eligió el algoritmo, no se acepta (sus tiempos y márgenes ya no valdrían)
+            if length_km > MAX_SNAP_DETOUR * _length_km(raw):
+                snapped, length_km = raw, _length_km(raw)
             refuge = next(n for n, cell in refuges if cell == tuple(path[-1]))
             margin = metrics.get("margen_minimo_fuego")
+            minutes = round(length_km / VEHICLE_KMH * 60)
+            # La carretera real es más larga que el camino en diagonal de la rejilla: ese tiempo
+            # extra se resta del margen frente al fuego (si queda sin margen, la ruta no vale)
+            extra = max(0, minutes - metrics["tiempo_estimado"] * MIN_PER_TURN)
+            margin_min = None if margin is None else round(margin * MIN_PER_TURN - extra)
+            if margin_min is not None and margin_min <= 0:
+                continue
             routes.append(
                 {
                     "nombre": f"{name} → {refuge}",
                     "desde": name,
                     "refugio": refuge,
-                    "coords": [[round(x, 5), round(y, 5)] for x, y in line["coordinates"][::2]]
-                    + [[round(c, 5) for c in line["coordinates"][-1]]],
-                    "distanciaKm": round(metrics["distancia_metros"] / 1000, 1),
-                    "tiempoMin": round(metrics["tiempo_estimado"] * MIN_PER_TURN),
-                    "margenMin": round(margin * MIN_PER_TURN) if margin is not None else None,
+                    "coords": [[round(x, 5), round(y, 5)] for x, y in snapped],
+                    # Sobre la carretera real, no sobre la rejilla: distancia y tiempo coherentes
+                    "distanciaKm": round(length_km, 1),
+                    "tiempoMin": minutes,
+                    "margenMin": margin_min,
                     "llegadaFuegoMin": round(t_fire * MIN_PER_TURN),
                 }
             )

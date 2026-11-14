@@ -372,14 +372,22 @@ export function installOverlays(
       type: 'line',
       source: 'rutas',
       layout: { 'line-cap': 'round', 'line-join': 'round' },
-      paint: { 'line-color': '#0d1a12', 'line-width': 8 },
+      paint: {
+        'line-color': '#0d1a12',
+        'line-opacity': 0.85,
+        // Más fina de lejos y más ancha de cerca: sin churretón negro sobre el relieve
+        'line-width': ['interpolate', ['linear'], ['zoom'], 9, 3, 13, 6, 16, 10],
+      },
     });
     map.addLayer({
       id: 'ruta-line',
       type: 'line',
       source: 'rutas',
       layout: { 'line-cap': 'round', 'line-join': 'round' },
-      paint: { 'line-color': tokenColor('--color-route', ROUTE_COLOR), 'line-width': 4.5 },
+      paint: {
+        'line-color': tokenColor('--color-route', ROUTE_COLOR),
+        'line-width': ['interpolate', ['linear'], ['zoom'], 9, 1.5, 13, 3.5, 16, 6],
+      },
     });
   }
 

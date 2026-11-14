@@ -149,5 +149,10 @@ con carreteras y núcleos de OpenStreetMap (Overpass, caché en `data/raw/osm/`,
 fuera de las comunidades autónomas. Busca rutas desde los núcleos amenazados (el fuego llega en
 ≤ 8 h) hasta refugios a ≥ 4 km donde tarda ≥ 2,5 veces más. Calibración: un turno = 12 min
 (frente de ~2 km/h) y evacuación en vehículo a ~20 km/h. Escribe `escape-routes-v1.json` con
-distancia, tiempo y margen frente al fuego. Si Overpass falla en una zona, esa simulación queda
+distancia, tiempo y margen frente al fuego.
+La búsqueda va solo por carreteras y pistas (evacuación en vehículo) y la línea se pega después a la
+geometría real de OSM dentro de un pasillo alrededor del camino elegido, así que sigue el asfalto y no
+los escalones de la rejilla. La distancia y el tiempo son los de la carretera real y el tiempo extra
+respecto al camino de la rejilla se resta del margen; si no cabe en ≤ 1,6× el recorrido original, se
+conserva el de la rejilla. Si Overpass falla en una zona, esa simulación queda
 sin rutas y las demás siguen.

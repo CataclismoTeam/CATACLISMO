@@ -13,7 +13,7 @@ import { cn } from '../lib/cn.ts';
 import { useUi } from '../store/ui.ts';
 import { loadDetections, type Detections } from './detections.ts';
 import { LayersPanel } from './LayersPanel.tsx';
-import { ignitionElement, meetingElement, unitElement } from './markers.ts';
+import { declutterUnits, ignitionElement, meetingElement, unitElement } from './markers.ts';
 import { IncidentsPanel } from './IncidentsPanel.tsx';
 import { loadIncidents, type IncidentsFile } from './incidents.ts';
 import { applyVisibility, FAR_ZOOM, installOverlays, ROUTE_COLOR, tokenColor } from './overlays.ts';
@@ -324,6 +324,13 @@ export default function MapView() {
       }
     }
     if (layers.incendio) add(ignitionElement(), scenario.ignition, 'bottom');
+    // Las placas que se pisan se reducen a icono; depende del zoom, así que se repite al mover
+    const declutter = () => declutterUnits(markers.current.map((m) => m.getElement()));
+    declutter();
+    map.on('moveend', declutter);
+    return () => {
+      map.off('moveend', declutter);
+    };
   }, [scenario, routes, layers.unidades, layers.evacuacion, layers.incendio]);
 
   return (

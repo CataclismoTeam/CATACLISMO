@@ -61,6 +61,7 @@ export function unitElement(unit: Unit, onSelect: (unit: Unit) => void): HTMLEle
   const button = document.createElement('button');
   button.type = 'button';
   button.className = 'unit-marker';
+  button.dataset.status = unit.status;
   button.style.setProperty('--status', status.color);
   button.setAttribute(
     'aria-label',
@@ -97,4 +98,34 @@ export function ignitionElement(): HTMLElement {
   el.className = 'ignition-marker';
   el.append(icon(Flame, 16), document.createTextNode('Origen · SIMULADO'));
   return el;
+}
+
+/** Orden de prioridad al repartir el espacio: lo que está actuando manda sobre lo disponible. */
+const PRIORITY: UnitStatus[] = ['en intervencion', 'en ruta', 'disponible', 'no disponible'];
+
+/**
+ * Anti-solape de las placas de unidades: se colocan por prioridad y la que choca con otra ya
+ * colocada queda en solo icono (su texto sigue disponible al pasar o enfocar). Se llama al montar y
+ * al terminar cada movimiento de la cámara, porque el solape depende del zoom.
+ */
+export function declutterUnits(elements: HTMLElement[]): void {
+  const units = elements.filter((el) => el.classList.contains('unit-marker'));
+  for (const el of units) el.classList.remove('is-compact');
+  const ordered = [...units].sort(
+    (a, b) =>
+      PRIORITY.indexOf(a.dataset.status as UnitStatus) -
+      PRIORITY.indexOf(b.dataset.status as UnitStatus),
+  );
+  const placed: DOMRect[] = [];
+  const hit = (a: DOMRect, b: DOMRect) =>
+    a.left < b.right && a.right > b.left && a.top < b.bottom && a.bottom > b.top;
+  for (const el of ordered) {
+    if (el.offsetParent === null) continue; // oculto (vista lejana)
+    let rect = el.getBoundingClientRect();
+    if (placed.some((p) => hit(p, rect))) {
+      el.classList.add('is-compact');
+      rect = el.getBoundingClientRect();
+    }
+    placed.push(rect);
+  }
 }
