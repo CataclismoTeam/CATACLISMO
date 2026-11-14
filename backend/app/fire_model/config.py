@@ -12,15 +12,42 @@ import os
 from dataclasses import dataclass, field
 
 # ---------------------------------------------------------------------------
-# Rejilla espacial y ventana temporal (alineado con 11_ML_DATA_CONTRACT.md)
-# Grid ID: ES-LAEA-5K-v1 (EPSG:3035), celdas L0 = 5000 m, grano diario
+# Rejilla espacial táctica (1000 x 1000 m) y ventana temporal
+# Grid ID: ES-LAEA-1K-v1 (EPSG:3035), chunks de 1000 m x 1000 m (1 km²)
 # ---------------------------------------------------------------------------
-GRID_ID: str = "ES-LAEA-5K-v1"
+GRID_ID: str = "ES-LAEA-1K-v1"
+CELL_PREFIX: str = "ES1K"
 CRS: str = "EPSG:3035"
-GRID_LEVEL: int = 0  # Nivel L0 = 5 km (L1=10km, L2=20km, L3=40km)
-GRID_SIZE: int = 64  # Sub-grilla N x N celdas (ventana espacial)
-CHUNK_SIZE_M: float = 5000.0  # Tamaño de celda L0 en metros (5 km)
-TIME_STEPS: int = 5  # T: nº de pasos temporales (días) de entrada
+GRID_LEVEL: int = 0  # Nivel base L0 = 1000 m (1 km x 1 km)
+GRID_SIZE: int = 64  # Sub-grilla N x N celdas (64 x 64 km de cobertura)
+CHUNK_SIZE_M: float = 1000.0  # Tamaño de cuadrícula/chunk en metros (1000 x 1000 m)
+TIME_STEPS: int = 5  # T: nº de pasos temporales de historia de entrada
+
+# ---------------------------------------------------------------------------
+# Códigos y etiquetas de estado por cuadrante (Diferenciación Real vs Predicho)
+# Permiten al mapa web, First Responders y módulo de rutas distinguir claramente
+# qué está quemado/ardiendo de verdad (observado por satélite) frente a qué
+# cuadrantes son predicción futura de CATA.
+# ---------------------------------------------------------------------------
+QUADRANT_STATE_SAFE: int = 0  # Sin fuego observado ni predicho
+QUADRANT_STATE_PREDICTED: int = 1  # Predicho por CATA en t+1 (NO quemado aún de verdad)
+QUADRANT_STATE_BURNED_REAL: int = 2  # Quemado/activo confirmado de verdad (satélite <= t)
+QUADRANT_STATE_PERSISTENT: int = 3  # Quemado de verdad hoy y predicho que sigue ardiendo en t+1
+
+QUADRANT_LABELS: dict[int, str] = {
+    QUADRANT_STATE_SAFE: "SAFE",
+    QUADRANT_STATE_PREDICTED: "PREDICTED_FIRE",
+    QUADRANT_STATE_BURNED_REAL: "CONFIRMED_BURNED",
+    QUADRANT_STATE_PERSISTENT: "CONFIRMED_AND_CONTINUES",
+}
+
+# Símbolos compatibles con mapas de caracteres (ej. backend/search/main.py)
+QUADRANT_SYMBOLS: dict[int, str] = {
+    QUADRANT_STATE_SAFE: ".",  # Libre / seguro
+    QUADRANT_STATE_PREDICTED: "P",  # Cuadrante PREDICT (riesgo predicho en t+1)
+    QUADRANT_STATE_BURNED_REAL: "F",  # Fuego/quemado REAL confirmado
+    QUADRANT_STATE_PERSISTENT: "B",  # Quemado REAL que persiste activo en t+1
+}
 
 # ---------------------------------------------------------------------------
 # Registro ordenado de canales de entrada (100% basado en 11_ML_DATA_CONTRACT.md).

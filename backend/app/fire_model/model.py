@@ -460,7 +460,7 @@ def set_expansion_warmup(model: keras.Model, warmup: bool) -> None:
 
 
 # ===========================================================================
-# 4. Inferencia (Algoritmo CATA)
+# 4. Inferencia y marcado diferenciado de cuadrantes (Algoritmo CATA)
 # ===========================================================================
 def cata_predict(model: keras.Model, sequence: np.ndarray) -> np.ndarray:
     """Algoritmo CATA: predice la matriz de probabilidad de fuego en t+1.
@@ -478,6 +478,104 @@ def cata_predict(model: keras.Model, sequence: np.ndarray) -> np.ndarray:
         raise ValueError(f"Entrada {x.shape[1:]} no coincide con el modelo {expected}")
     probs = model.predict(x, verbose=0)[..., 0]
     return probs[0] if single else probs
+
+
+def classify_cata_quadrants(
+    sequence: np.ndarray,
+    probs_t1: np.ndarray,
+    threshold: float = config.PREDICTION_THRESHOLD,
+    include_history_burned: bool = True,
+) -> dict[str, np.ndarray | list[list[str]]]:
+    """Marca los cuadrantes PREDICT de forma distinta a lo quemado de verdad.
+
+    Distingue explícitamente sobre la cuadrícula de 1000x1000m:
+      - `0` (`SAFE` / `.`): Cuadrante seguro (ni quemado real ni predicho).
+      - `1` (`PREDICTED_FIRE` / `P`): Cuadrante NO quemado de verdad que CATA
+            predice que arderá en t+1 (`prob >= threshold`).
+      - `2` (`CONFIRMED_BURNED` / `F`): Cuadrante quemado/activo de verdad
+            observado por satélite (`canal 0 > 0`) que no supera el umbral en t+1.
+      - `3` (`CONFIRMED_AND_CONTINUES` / `B`): Cuadrante quemado de verdad y que
+            además CATA predice que continúa activo en t+1.
+
+    Parámetros:
+      - sequence: (T, H, W, C) o (B, T, H, W, C) historia observada.
+      - probs_t1: (H, W) o (B, H, W) probabilidades predichas por `cata_predict`.
+      - threshold: umbral de probabilidad para marcar predicción (`PREDICTED_FIRE`).
+      - include_history_burned: si True, considera quemado real cualquier celda
+        con actividad observada en la ventana `0..T-1`; si False, sólo en `T-1`.
+
+    Devuelve diccionario con:
+      - `state_matrix`: matriz int8 (H, W) o (B, H, W) con códigos 0, 1, 2, 3.
+      - `burned_real_mask`: máscara booleana de lo quemado de verdad (estados 2 y 3).
+      - `predicted_only_mask`: máscara booleana de nuevos cuadrantes predichos (estado 1).
+      - `predicted_all_mask`: máscara booleana de toda predicción en t+1 (estados 1 y 3).
+      - `probabilities`: matriz float32 de probabilidades en t+1.
+      - `symbol_grid`: cuadrícula de símbolos (`'.'`, `'P'`, `'F'`, `'B'`) lista
+        para visualización o el motor de rutas.
+    """
+    x = np.asarray(sequence, dtype=np.float32)
+    probs = np.asarray(probs_t1, dtype=np.float32)
+    single = x.ndim == 4
+    if single:
+        x = x[None]
+        if probs.ndim == 2:
+            probs = probs[None]
+
+    # El canal 0 (frp_sum_mw) > 0 indica detección térmica satelital real
+    if include_history_burned:
+        burned_real = np.any(x[..., 0] > 0.0, axis=1)
+    else:
+        burned_real = x[:, -1, :, :, 0] > 0.0
+
+    pred_fire = probs >= threshold
+
+    state = np.full(probs.shape, config.QUADRANT_STATE_SAFE, dtype=np.int8)
+    state[(~burned_real) & pred_fire] = config.QUADRANT_STATE_PREDICTED
+    state[burned_real & (~pred_fire)] = config.QUADRANT_STATE_BURNED_REAL
+    state[burned_real & pred_fire] = config.QUADRANT_STATE_PERSISTENT
+
+    predicted_only = state == config.QUADRANT_STATE_PREDICTED
+
+    def _to_symbols(mat_2d: np.ndarray) -> list[list[str]]:
+        return [
+            [config.QUADRANT_SYMBOLS[int(val)] for val in row]
+            for row in mat_2d
+        ]
+
+    if single:
+        return {
+            "state_matrix": state[0],
+            "burned_real_mask": burned_real[0],
+            "predicted_only_mask": predicted_only[0],
+            "predicted_all_mask": pred_fire[0],
+            "probabilities": probs[0],
+            "symbol_grid": _to_symbols(state[0]),
+        }
+
+    return {
+        "state_matrix": state,
+        "burned_real_mask": burned_real,
+        "predicted_only_mask": predicted_only,
+        "predicted_all_mask": pred_fire,
+        "probabilities": probs,
+        "symbol_grid": [_to_symbols(m) for m in state],
+    }
+
+
+def cata_predict_quadrants(
+    model: keras.Model,
+    sequence: np.ndarray,
+    threshold: float = config.PREDICTION_THRESHOLD,
+    include_history_burned: bool = True,
+) -> dict[str, np.ndarray | list[list[str]]]:
+    """Ejecuta `cata_predict` y devuelve los cuadrantes diferenciados (Real vs Predict)."""
+    probs = cata_predict(model, sequence)
+    return classify_cata_quadrants(
+        sequence=sequence,
+        probs_t1=probs,
+        threshold=threshold,
+        include_history_burned=include_history_burned,
+    )
 
 
 # Alias de compatibilidad

@@ -1,34 +1,36 @@
-# CATA (`fire_model`) — Algoritmo de predicción de propagación de fuego (`11_ML_DATA_CONTRACT.md`)
+# CATA (`fire_model`) — Algoritmo de predicción de propagación de fuego (1000 × 1000 m)
 
-Algoritmo **CATA** (ConvLSTM) ubicado en `backend/app/fire_model/`, alineado con el contrato de datos
-`11_ML_DATA_CONTRACT.md` (grilla `ES-LAEA-5K-v1`, EPSG:3035, celdas `ES5K:L0:Y{iy}:X{ix}` de 5 km).
-Predice exclusivamente con las variables existentes en `cell_day` (MODIS + VIIRS),
-sin depender de viento, pendiente ni variables externas, manteniendo arquitectura
-100% modular y expandible en canales.
+Algoritmo **CATA** (ConvLSTM) ubicado en `backend/app/fire_model/`, configurado con cuadrículas
+tácticas de **1000 × 1000 m** (`GRID_ID = "ES-LAEA-1K-v1"`, `CHUNK_SIZE_M = 1000.0`, celdas
+`ES1K:L0:Y{iy}:X{ix}` de 1 km²). Predice exclusivamente con las variables existentes en
+`cell_day` / `parsed_data.csv.gz` (MODIS + VIIRS), sin depender de variables externas, y
+**marca de forma diferenciada los cuadrantes predichos (`PREDICT`) frente a lo quemado de verdad**.
 
-- **Entrada:** `(B, T, H, W, C)` → últimos `T` pasos temporales de la grilla.
-- **Salida:** `(B, H, W, 1)` → probabilidad `[0, 1]` de celda activa en `t+1`.
+- **Entrada:** `(B, T, H, W, C)` → últimos `T` pasos temporales de la cuadrícula de 1000 × 1000 m.
+- **Salida:**
+  - `cata_predict`: `(B, H, W)` → probabilidad `[0, 1]` de celda activa en `t+1`.
+  - `cata_predict_quadrants`: diccionario con matrices y cuadrícula de símbolos que distinguen
+    explícitamente **lo quemado de verdad** de **los cuadrantes predichos (`predict`)**:
+    - `0` (`SAFE` / `.`): Cuadrante seguro.
+    - `1` (`PREDICTED_FIRE` / `P`): **Cuadrante PREDICT** (no quemado de verdad aún, predicho por CATA en `t+1`).
+    - `2` (`CONFIRMED_BURNED` / `F`): **Quemado de verdad** (confirmado por satélite en `<= t`).
+    - `3` (`CONFIRMED_AND_CONTINUES` / `B`): **Quemado de verdad** que además persiste ardiendo en `t+1`.
 
 | Archivo | Contenido |
 |---|---|
-| `config.py` | Hiperparámetros (`ALGORITHM_NAME = "cata"`), `ModelConfig`, `CHANNEL_REGISTRY` |
-| `model.py` | `build_cata_model`, pérdida BCE+Dice, `expand_model_channels`, `cata_predict` |
-| `train.py` | Modos `scratch` / `finetune` / `expand` / `demo`, lector `load_contract_cell_day` y `SyntheticContractGenerator` |
+| `config.py` | `CHUNK_SIZE_M = 1000.0`, `GRID_ID = "ES-LAEA-1K-v1"`, códigos/símbolos `QUADRANT_*`, `CHANNEL_REGISTRY` |
+| `model.py` | `build_cata_model`, `expand_model_channels`, `cata_predict`, `classify_cata_quadrants`, `cata_predict_quadrants` |
+| `train.py` | Modos `scratch` / `finetune` / `expand` / `demo`, soporte para `parsed_data.csv.gz` y `cell_day.parquet` a 1000 m |
 | `export_tflite.py` | Exportación `none` / `dynamic` / `float16` / `int8` + verificación |
 
-## Ejecución (desde `backend/app/fire_model/` o como paquete `app.fire_model`)
+## Ejecución
 
 ```bash
 cd backend/app/fire_model
 
-# Smoke test completo del algoritmo CATA: scratch (C=1) -> finetune -> expand (C=1 -> C=7)
+# Smoke test completo del algoritmo CATA (1000x1000m)
 ../../.venv/bin/python train.py --mode demo --grid 32
 
-# Entrenar con datos reales del contrato (cell_day.parquet o cell_day.jsonl)
-../../.venv/bin/python train.py --mode scratch --channels 1 --data /ruta/a/cell_day.parquet
-../../.venv/bin/python train.py --mode expand --checkpoint artifacts/models/cata_c1.keras \
-    --new-channels 7 --data /ruta/a/cell_day.parquet
-
-# Exportar a TensorFlow Lite
-../../.venv/bin/python export_tflite.py --model artifacts/models/demo/cata_c7.keras --quantization float16
+# Entrenar directamente desde los datos reales parseados a 1000x1000m
+../../.venv/bin/python train.py --mode scratch --channels 7 --data ../../parser/output/parsed_data.csv.gz
 ```

@@ -42,6 +42,7 @@ try:
     from . import config
     from .config import ModelConfig
     from .model import (
+        cata_predict_quadrants,
         compile_model,
         create_model,
         expand_model_channels,
@@ -53,6 +54,7 @@ except ImportError:
     import config
     from config import ModelConfig
     from model import (
+        cata_predict_quadrants,
         compile_model,
         create_model,
         expand_model_channels,
@@ -63,9 +65,9 @@ except ImportError:
 
 logger = logging.getLogger("fire_train")
 
-# 8-vecindad para difusión isotrópica en la rejilla ES5K
+# 8-vecindad para difusión isotrópica en la rejilla de 1000x1000m
 _NEIGHBORS = [(-1, -1), (-1, 0), (-1, 1), (0, -1), (0, 1), (1, -1), (1, 0), (1, 1)]
-_CELL_ID_RE = re.compile(r"^ES5K:L(\d+):Y(-?\d+):X(-?\d+)$")
+_CELL_ID_RE = re.compile(r"^ES(?:1K|5K):L(\d+):Y(-?\d+):X(-?\d+)$")
 
 
 def _shift(a: np.ndarray, dy: int, dx: int) -> np.ndarray:
@@ -79,19 +81,24 @@ def _shift(a: np.ndarray, dy: int, dx: int) -> np.ndarray:
 
 
 # ===========================================================================
-# 1. Utilidades del contrato de datos (`11_ML_DATA_CONTRACT.md`)
+# 1. Utilidades del contrato de datos (rejilla 1000x1000m, `ES1K:L0:Y{iy}:X{ix}`)
 # ===========================================================================
 def parse_cell_id(cell_id: str) -> tuple[int, int, int]:
-    """Parsea `ES5K:L{level}:Y{iy}:X{ix}` -> (level, iy, ix)."""
+    """Parsea `ES1K:L{level}:Y{iy}:X{ix}` (o `ES5K:...`) -> (level, iy, ix)."""
     m = _CELL_ID_RE.match(str(cell_id).strip())
     if not m:
-        raise ValueError(f"cell_id inválido según contrato ES5K: {cell_id!r}")
+        raise ValueError(f"cell_id inválido según contrato ES1K/ES5K: {cell_id!r}")
     return int(m.group(1)), int(m.group(2)), int(m.group(3))
 
 
-def format_cell_id(iy: int, ix: int, level: int = config.GRID_LEVEL) -> str:
-    """Formatea coordenadas de grilla a `ES5K:L{level}:Y{iy}:X{ix}`."""
-    return f"ES5K:L{level}:Y{iy}:X{ix}"
+def format_cell_id(
+    iy: int,
+    ix: int,
+    level: int = config.GRID_LEVEL,
+    prefix: str = config.CELL_PREFIX,
+) -> str:
+    """Formatea coordenadas de cuadrícula de 1000x1000m a `ES1K:L{level}:Y{iy}:X{ix}`."""
+    return f"{prefix}:L{level}:Y{iy}:X{ix}"
 
 
 def normalize_contract_channels(raw: dict[str, np.ndarray], num_channels: int) -> np.ndarray:
@@ -140,8 +147,103 @@ def normalize_contract_channels(raw: dict[str, np.ndarray], num_channels: int) -
 
 
 # ===========================================================================
-# 2. Lector de artefactos reales (`cell_day.parquet` / `cell_day.jsonl`)
+# 2. Lector de artefactos reales (`cell_day.parquet` / `.jsonl` y `parsed_data.csv*`)
 # ===========================================================================
+def load_parsed_csv_1km(
+    path: str,
+    grid_size: int = config.GRID_SIZE,
+    time_steps: int = config.TIME_STEPS,
+    num_channels: int = config.NUM_CHANNELS,
+    chunk_size_m: float = config.CHUNK_SIZE_M,
+    val_split: float = config.VALIDATION_SPLIT,
+    seed: int = config.SEED,
+) -> tuple[np.ndarray, np.ndarray, np.ndarray, np.ndarray]:
+    """Construye la rejilla 1000x1000m directamente desde `parsed_data.csv` / `.csv.gz`."""
+    import pandas as pd
+
+    df = pd.read_csv(path)
+    lat = pd.to_numeric(df["latitude"], errors="coerce")
+    lon = pd.to_numeric(df["longitude"], errors="coerce")
+    valid = lat.notna() & lon.notna() & df["acquisition_date"].notna()
+    df = df[valid].copy()
+    lat, lon = lat[valid], lon[valid]
+
+    # Proyección métrica local a cuadrículas de `chunk_size_m` (1000 x 1000 m)
+    mean_lat_rad = np.radians(float(lat.mean()))
+    y_m = lat.to_numpy(np.float64) * 111139.0
+    x_m = lon.to_numpy(np.float64) * 111139.0 * np.cos(mean_lat_rad)
+    iy = np.floor(y_m / chunk_size_m).astype(int)
+    ix = np.floor(x_m / chunk_size_m).astype(int)
+
+    frp = pd.to_numeric(df.get("frp", 0.0), errors="coerce").fillna(0.0).clip(lower=0.0)
+    scan = pd.to_numeric(df.get("src_scan", 1.0), errors="coerce").fillna(1.0)
+    track = pd.to_numeric(df.get("src_track", 1.0), errors="coerce").fillna(1.0)
+    footprint = np.maximum(scan, track)
+
+    conf_str = df.get("confidence", "").astype(str).str.strip().str.lower()
+    conf_num = pd.to_numeric(conf_str, errors="coerce")
+    conf_rank = np.where(
+        (conf_str == "h") | (conf_num >= 80),
+        2,
+        np.where((conf_str == "l") | (conf_num < 30), 0, 1),
+    )
+
+    dn = df.get("src_daynight", "D").astype(str).str.upper()
+    sensor = df.get("sensor", "VIIRS").astype(str).str.upper()
+    prod = df.get("source_product", "SP").astype(str).str.upper()
+
+    work = pd.DataFrame(
+        {
+            "iy": iy,
+            "ix": ix,
+            "date": df["acquisition_date"].astype(str),
+            "sensor": sensor,
+            "frp": frp,
+            "footprint": footprint,
+            "conf_rank": conf_rank,
+            "is_high": (conf_rank == 2).astype(int),
+            "is_day": (dn == "D").astype(int),
+            "is_night": (dn == "N").astype(int),
+            "is_nrt": (prod == "NRT").astype(float),
+            "plat": df.get("satellite", sensor).astype(str),
+        }
+    )
+
+    cell_rows = []
+    for (cy, cx, d, s), g in work.groupby(["iy", "ix", "date", "sensor"]):
+        cell_rows.append(
+            {
+                "cell_id": format_cell_id(int(cy), int(cx)),
+                "level": config.GRID_LEVEL,
+                "date": d,
+                "year_month": d[:7],
+                "sensor": s,
+                "n_obs": len(g),
+                "n_day": int(g["is_day"].sum()),
+                "n_night": int(g["is_night"].sum()),
+                "n_platforms": int(g["plat"].nunique()),
+                "n_high_conf": int(g["is_high"].sum()),
+                "confidence_rank_max": int(g["conf_rank"].max()),
+                "frp_sum_mw": float(g["frp"].sum()),
+                "frp_mean_mw": float(g["frp"].mean()),
+                "frp_max_mw": float(g["frp"].max()),
+                "frp_p50_mw": float(g["frp"].median()),
+                "footprint_max_km": float(g["footprint"].max()),
+                "product_mix": float(g["is_nrt"].mean()),
+                "flags": [],
+            }
+        )
+    return _build_patches_from_cell_day_df(
+        pd.DataFrame(cell_rows),
+        grid_size=grid_size,
+        time_steps=time_steps,
+        num_channels=num_channels,
+        invalid_periods=("2026-09",),
+        val_split=val_split,
+        seed=seed,
+    )
+
+
 def load_contract_cell_day(
     path: str,
     grid_size: int = config.GRID_SIZE,
@@ -151,25 +253,46 @@ def load_contract_cell_day(
     val_split: float = config.VALIDATION_SPLIT,
     seed: int = config.SEED,
 ) -> tuple[np.ndarray, np.ndarray, np.ndarray, np.ndarray]:
-    """Carga `cell_day.parquet` o `cell_day.jsonl` según `11_ML_DATA_CONTRACT.md`.
-
-    - Excluye meses en `invalid_periods` (por defecto `2026-09` según `manifest.json`)
-      y filas con flag `partial_period` o `island_domain`.
-    - Agrega MODIS y VIIRS por `(cell_id, date)`.
-    - Construye parches espaciales `grid_size x grid_size` centrados en clusters
-      activos y divide train/val **por `cell_id` de región** (cumpliendo §6:
-      nunca mezclar la misma celda entre train y test).
-
-    Devuelve `(X_train, Y_train, X_val, Y_val)`.
-    """
+    """Carga `cell_day.parquet` / `.jsonl` o `parsed_data.csv` / `.csv.gz` en rejilla 1000x1000m."""
     import pandas as pd
 
+    if path.endswith(".csv") or path.endswith(".csv.gz"):
+        return load_parsed_csv_1km(
+            path,
+            grid_size=grid_size,
+            time_steps=time_steps,
+            num_channels=num_channels,
+            val_split=val_split,
+            seed=seed,
+        )
     if path.endswith(".parquet"):
         df = pd.read_parquet(path)
     elif path.endswith(".jsonl") or path.endswith(".json"):
         df = pd.read_json(path, lines=path.endswith(".jsonl"))
     else:
-        raise ValueError(f"Formato no soportado: {path} (use .parquet, .jsonl o .npz)")
+        raise ValueError(f"Formato no soportado: {path} (use .parquet, .jsonl, .csv.gz o .npz)")
+
+    return _build_patches_from_cell_day_df(
+        df,
+        grid_size=grid_size,
+        time_steps=time_steps,
+        num_channels=num_channels,
+        invalid_periods=invalid_periods,
+        val_split=val_split,
+        seed=seed,
+    )
+
+
+def _build_patches_from_cell_day_df(
+    df,
+    grid_size: int,
+    time_steps: int,
+    num_channels: int,
+    invalid_periods: Sequence[str],
+    val_split: float,
+    seed: int,
+) -> tuple[np.ndarray, np.ndarray, np.ndarray, np.ndarray]:
+    import pandas as pd
 
     if "level" in df.columns:
         df = df[df["level"] == config.GRID_LEVEL]
@@ -640,6 +763,8 @@ def save_metadata(
         "crs": config.CRS,
         "grid_level": config.GRID_LEVEL,
         "cell_size_m": config.CHUNK_SIZE_M,
+        "quadrant_states": config.QUADRANT_LABELS,
+        "quadrant_symbols": config.QUADRANT_SYMBOLS,
         "model_path": os.path.abspath(model_path),
         "mode": mode,
         "parent_checkpoint": parent,
@@ -767,7 +892,25 @@ def run_demo(args) -> None:
     args.checkpoint = args.output
     args.new_channels = args.new_channels or config.EXPANDED_NUM_CHANNELS
     args.output = os.path.join(demo_dir, f"cata_c{args.new_channels}.keras")
-    run_expand(args)
+    expanded_path = run_expand(args)
+
+    # Demostración del marcado diferenciado de cuadrantes (1000x1000m):
+    # Quemado real (F/B) vs Predicción pura en t+1 (P)
+    model_exp = load_fire_model(expanded_path, compile_model_flag=False)
+    sample_x, _ = SyntheticContractGenerator(
+        args.grid, args.time_steps, args.new_channels, seed=args.seed + 99
+    ).generate(1)
+    q_res = cata_predict_quadrants(model_exp, sample_x[0])
+    n_real = int(q_res["burned_real_mask"].sum())
+    n_pred_only = int(q_res["predicted_only_mask"].sum())
+    n_pers = int((q_res["state_matrix"] == config.QUADRANT_STATE_PERSISTENT).sum())
+    logger.info(
+        "Cuadrantes CATA (1000x1000m) -> Quemado REAL (F/B)=%d (persistente=%d) | "
+        "Nuevos PREDICT (P)=%d",
+        n_real,
+        n_pers,
+        n_pred_only,
+    )
     logger.info("DEMO CATA OK — artefactos en %s", demo_dir)
 
 
