@@ -307,6 +307,13 @@ jobs:
         run: |
           uv export --frozen --format requirements.txt --no-emit-project -o "$RUNNER_TEMP/requirements.txt"
           uv run --frozen pip-audit --strict --disable-pip -r "$RUNNER_TEMP/requirements.txt"
+      # Preproceso de datos del reto (tools/build-hotspots): mismas comprobaciones
+      - name: Preproceso de datos (ruff y pytest)
+        working-directory: tools/build-hotspots
+        run: |
+          uv sync --frozen
+          uv run --frozen ruff check . && uv run --frozen ruff format --check .
+          uv run --frozen pytest -q
 
   # ─── Empaquetado: solo si TODOS los módulos pasan, y solo desde main ──────
   empaquetar:

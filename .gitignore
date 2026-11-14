@@ -70,6 +70,11 @@ service-account*.json
 *.secrets
 
 # ── Datos y volcados ─────────────────────────────────────────────────────────
+# Descargas en bruto de FIRMS (hasta 100 MB) e intermedios: solo se publican los
+# agregados de frontend/public/data/ (ver tools/build-hotspots/README.md)
+data/raw/
+data/interim/
+DL_FIRE_*/
 *.sql
 *.sqlite
 *.sqlite3

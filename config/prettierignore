@@ -4,3 +4,5 @@ backend/
 # Generados por release-please (su formato, no se editan a mano)
 CHANGELOG.md
 release-please-manifest.json
+# Agregados generados por tools/build-hotspots (JSON compacto)
+**/public/data/**

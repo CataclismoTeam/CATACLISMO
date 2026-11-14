@@ -1,0 +1,120 @@
+# build-hotspots
+
+Preproceso reproducible del reto **Harmonization of MODIS and VIIRS Hot Spots**. Lee las
+detecciones de fuego activo de NASA FIRMS, las filtra, calibra VIIRS respecto a MODIS y escribe
+los agregados mensuales por celda que lee la web. La web no armoniza nada: solo suma celdas.
+
+## Uso
+
+Desde la raíz del repo:
+
+```bash
+uv run --project tools/build-hotspots build-hotspots \
+  --in data/raw --out frontend/public/data --interim data/interim
+```
+
+| Argumento                     | Por defecto     | Qué hace                                                |
+| ----------------------------- | --------------- | ------------------------------------------------------- |
+| `--in`                        | (obligatorio)   | Carpeta con los JSON de FIRMS (se busca en subcarpetas) |
+| `--out`                       | (obligatorio)   | Carpeta de los agregados publicados                     |
+| `--bbox OESTE SUR ESTE NORTE` | España completa | Área en grados                                          |
+| `--cell-deg` / `--cell-km`    | `0.05` (~5 km)  | Lado de la celda                                        |
+| `--types`                     | `0`             | Tipos FIRMS que cuentan (0 vegetación, 1 volcán, 2, 3)  |
+| `--modis-min-confidence`      | `30`            | Confianza mínima de MODIS (0-100)                       |
+| `--keep-viirs-low`            | no              | Conserva las detecciones VIIRS de confianza `l`         |
+| `--recent-days`               | `90`            | Días de detecciones individuales para la capa del mapa  |
+| `--interim`                   | no se escribe   | Carpeta para la tabla normalizada en Parquet            |
+| `--seed`                      | `20261114`      | Semilla del intervalo bootstrap de los factores         |
+
+Pruebas y lint: `uv run pytest` y `uv run ruff check .` dentro de `tools/build-hotspots/`.
+
+## Datos de entrada
+
+Descarga de archivo de [FIRMS](https://firms.modaps.eosdis.nasa.gov/download/) en JSON, de
+**MODIS Collection 6.1** y **VIIRS S-NPP 375 m Collection 2**, con sus ficheros `fire_archive_*`
+(procesado estándar) y `fire_nrt_*` (casi tiempo real). Van en `data/raw/`, que **no se
+versiona**: el de VIIRS pasa de 100 MB. El sensor y la calidad se leen de los campos
+`instrument` y `version` de cada registro, no del nombre del fichero.
+
+Para ampliar la serie (por ejemplo, MODIS 2000-2011) basta con añadir los JSON a `data/raw/` y
+volver a ejecutar: el año inicial sale de los datos y la web lo lee del manifiesto.
+
+## Qué hace, en orden
+
+1. **Valida** cada registro (campos, rango de coordenadas, fecha ISO, hora, confianza, FRP).
+2. **Recorta** al área.
+3. **Quita duplicados** exactos (misma posición, fecha, hora y satélite).
+4. **Empalma archivo y NRT**: el NRT solo cuenta desde el día siguiente al último del archivo
+   de su sensor. Los meses con NRT quedan marcados como **provisionales**.
+5. **Filtra por tipo**. El NRT no trae `type`, así que se descartan sus detecciones en los
+   puntos (0,01°) donde el archivo ya registró 3 o más detecciones de tipos excluidos.
+6. **Filtra por confianza** con una regla común: MODIS < 30 y VIIRS `l` son "baja" en FIRMS.
+7. **Agrega** por celda, mes y sensor (conteo y suma de FRP).
+8. **Calibra y armoniza** (ver abajo).
+9. **Escribe** el manifiesto, los binarios por año y las detecciones recientes.
+
+Cada descarte queda contado por paso y sensor en la salida y en `registros.detalle` del
+manifiesto.
+
+## Método de armonización
+
+VIIRS (375 m) detecta unas 3,3 veces más puntos calientes que MODIS (1 km) sobre los mismos
+incendios, así que los conteos no se pueden sumar. Se usa un **estimador de razón por mes del
+año**:
+
+- Con los meses completos en que ambos sensores funcionan y el dato es estándar, se calcula
+  `k = Σ MODIS / Σ VIIRS` sobre toda el área para cada mes del año (12 factores).
+- El conteo armonizado se expresa en **detecciones equivalentes MODIS**:
+  solo MODIS → `M`; solo VIIRS → `k·V`; ambos → `(M + k·V) / 2`.
+
+Por qué así:
+
+- **Estacional y no único**: la proporción de fuegos pequeños, que solo ve VIIRS, cambia entre
+  el invierno (quemas agrícolas) y el verano (grandes incendios).
+- **Sobre toda el área y no por celda**: a 5 km casi todas las celdas tienen muy pocas
+  detecciones al mes y una razón local sería ruido.
+- **Equivalentes MODIS**: MODIS es la serie larga (desde 2000); VIIRS es la que continúa.
+- Un mes del año con menos de 100 detecciones VIIRS de calibración usa el factor global.
+
+El manifiesto incluye el intervalo del 95 % de cada factor (bootstrap remuestreando años, con
+semilla fija) y un diagnóstico: correlación mensual entre MODIS y `k·VIIRS`, error relativo
+mediano y la razón de cada año.
+
+### Limitaciones
+
+- Resolución (1 km frente a 375 m) y horas de paso distintas: un fuego corto puede verlo solo
+  uno de los dos.
+- El factor es una media del área; en una zona concreta la razón real puede diferir.
+- Los meses con NRT cambian cuando FIRMS publica el procesado estándar.
+- El filtro de tipo del NRT es una aproximación por máscara.
+- Quedan falsos positivos (superficies calientes, reflejos) que el filtro de confianza no quita.
+
+## Salida (`frontend/public/data/`)
+
+| Fichero                      | Contenido                                                        |
+| ---------------------------- | ---------------------------------------------------------------- |
+| `hotspots-manifest-v1.json`  | Rejilla, tiempo, método, factores, filtros, descartes, checksums |
+| `hotspots-cells-v1.bin`      | `Uint32[]`: identificador global de cada celda con datos         |
+| `hotspots-grid-v1-<año>.bin` | Conteos mensuales por celda de ese año                           |
+| `detections-recent-v1.json`  | Detecciones individuales de los últimos 90 días (columnas)       |
+
+Identificador de celda: `fila * columnas + columna`, con la fila 0 al sur y la columna 0 al
+oeste. Cada binario anual es una estructura de arrays en little-endian, sin cabecera, con `n`
+entradas (`anios[].entradas` del manifiesto):
+
+| Array   | Tipo         | Significado                                        |
+| ------- | ------------ | -------------------------------------------------- |
+| `h`     | `Float32[n]` | Conteo armonizado (detecciones equivalentes MODIS) |
+| `frpM`  | `Float32[n]` | Suma de FRP de MODIS (MW)                          |
+| `frpV`  | `Float32[n]` | Suma de FRP de VIIRS (MW)                          |
+| `cell`  | `Uint16[n]`  | Índice en `hotspots-cells-v1.bin`                  |
+| `m`     | `Uint16[n]`  | Detecciones MODIS tras los filtros                 |
+| `v`     | `Uint16[n]`  | Detecciones VIIRS tras los filtros                 |
+| `month` | `Uint8[n]`   | Mes del año, 0-11                                  |
+
+Ningún fichero puede pasar de 1024 KB (límite del guardián del repo); el script falla si ocurre.
+
+## Atribución
+
+NASA FIRMS / LANCE: MODIS Collection 6.1 (Terra y Aqua) y VIIRS S-NPP 375 m Collection 2.
+Datos de acceso libre; NASA no avala este producto.
