@@ -1,17 +1,25 @@
 #!/usr/bin/env python3
 """
-Fase 1 — Proyección EPSG:3035 + Asignación a celdas L0–L3
+Fase 1 — Proyección EPSG:3035 + Asignación a celdas L0–L3 (GENÉRICO)
 
-Lee los 4 JSON originales de FIRMS, aplica tipos, proyecta a EPSG:3035,
-calcula celdas (L0=5km, L1=10km, L2=20km, L3=40km), añade control de calidad
-y trazabilidad, y escribe observations.parquet + observations.jsonl.
+Lee archivos JSON de FIRMS (MODIS/VIIRS, SP/NRT), aplica tipos, proyecta a EPSG:3035,
+calcula celdas anidadas 2×2, añade control de calidad y trazabilidad,
+y escribe observations.parquet + observations.jsonl.
 
-Entrada: 4 JSON en C:/Users/Gabriel/Documents/nasa space apps/DL_FIRE_*/
-Salida: backend/app/ingestion/output/observations.parquet + .jsonl
+Uso:
+    python phase1_projection.py \
+        --input /ruta/a/json1.json /ruta/a/directorio/ \
+        --output ./output \
+        --cell-size 1000 \
+        --grid-prefix ES1K
+
+Entrada: archivos JSON (array de objetos) o directorios (recursivo)
+Salida: observations.parquet + observations.jsonl en --output
 """
 
 from __future__ import annotations
 
+import argparse
 import hashlib
 import json
 import sys
@@ -24,33 +32,11 @@ import pandas as pd
 from pyproj import Transformer
 
 # ---------------------------------------------------------------------------
-# Configuración
+# Constantes y umbrales (configurables vía CLI)
 # ---------------------------------------------------------------------------
-
-DATA_ROOT = Path(r"C:\Users\Gabriel\Documents\nasa space apps")
-SOURCE_DIRS = [
-    DATA_ROOT / "DL_FIRE_M-C61_847836",
-    DATA_ROOT / "DL_FIRE_SV-C2_847837",
-]
-
-SOURCE_FILES = [
-    "fire_archive_M-C61_847836.json",
-    "fire_nrt_M-C61_847836.json",
-    "fire_archive_SV-C2_847837.json",
-    "fire_nrt_SV-C2_847837.json",
-]
-
-OUTPUT_DIR = Path(__file__).parent / "output"
-OUTPUT_DIR.mkdir(parents=True, exist_ok=True)
-
-PARQUET_PATH = OUTPUT_DIR / "observations.parquet"
-JSONL_PATH = OUTPUT_DIR / "observations.jsonl"
 
 # Proyección EPSG:4326 (WGS84) -> EPSG:3035 (ETRS89-LAEA Europe, metros)
 TRANSFORMER = Transformer.from_crs("EPSG:4326", "EPSG:3035", always_xy=True)
-
-# Tamaños de celda por nivel (metros)
-CELL_SIZES = {0: 5000, 1: 10000, 2: 20000, 3: 40000}
 
 # Umbrales de saturación por sensor
 SATURATION_THRESHOLDS = {
@@ -58,11 +44,11 @@ SATURATION_THRESHOLDS = {
     "MODIS": {"brightness_max": 500.0},
 }
 
-# Canarias: x_3035 < 2_500_000 metros
+# Canarias: x_3035 < 2_500_000 metros (en EPSG:3035)
 CANARIAS_X_THRESHOLD = 2_500_000
 
-# Periodo incompleto
-PARTIAL_PERIOD_START = "2026-09-01"
+# Periodo incompleto (por defecto, configurable)
+DEFAULT_PARTIAL_PERIOD_START = "2026-09-01"
 
 
 # ---------------------------------------------------------------------------
@@ -125,7 +111,17 @@ def confidence_to_rank(sensor: str, confidence_raw: Any) -> int | None:
     return None
 
 
-def compute_flags(row: pd.Series) -> list[str]:
+def infer_product_from_filename(fname: str) -> str:
+    """Deriva SP/NRT del nombre del archivo."""
+    fname_lower = fname.lower()
+    if "archive" in fname_lower:
+        return "SP"
+    elif "nrt" in fname_lower:
+        return "NRT"
+    return "unknown"
+
+
+def compute_flags(row: pd.Series, cell_size: float, partial_period_start: str) -> list[str]:
     """Genera lista de flags según catálogo cerrado."""
     flags = []
     sensor = row.get("sensor", "").upper()
@@ -144,7 +140,6 @@ def compute_flags(row: pd.Series) -> list[str]:
     if brightness is not None:
         try:
             b = float(brightness)
-            thresh = SATURATION_THRESHOLDS.get(sensor, {})
             if sensor == "VIIRS" and (b == 367.0 or b == 208.0):
                 flags.append("brightness_saturated")
             elif sensor == "MODIS" and b >= 500.0:
@@ -153,14 +148,10 @@ def compute_flags(row: pd.Series) -> list[str]:
             pass
 
     # nrt
-    if row.get("source_product") == "NRT":
+    if row.get("product") == "NRT":
         flags.append("nrt")
 
-    # sp_nrt_hybrid (se evalúa luego en agregación, pero marcamos si 0.05 < mix < 0.95)
-    # Aquí no tenemos product_mix aún; se añade en cell_day
-
     # boundary_crossing: footprint toca otra celda
-    # Cota superior: cuadrado de lado max(scan, track) centrado en el punto
     scan = row.get("scan")
     track = row.get("track")
     x_3035 = row.get("x_3035")
@@ -171,8 +162,6 @@ def compute_flags(row: pd.Series) -> list[str]:
             track_km = float(track)
             max_dim_m = max(scan_km, track_km) * 1000.0  # metros
             half = max_dim_m / 2.0
-            # Si el footprint se sale de la celda de 5km en x o y
-            cell_size = 5000.0
             ix = np.floor(x_3035 / cell_size)
             iy = np.floor(y_3035 / cell_size)
             x_min_cell = ix * cell_size
@@ -201,7 +190,7 @@ def compute_flags(row: pd.Series) -> list[str]:
     acq_date = row.get("acq_date")
     if acq_date is not None:
         try:
-            if str(acq_date) >= PARTIAL_PERIOD_START:
+            if str(acq_date) >= partial_period_start:
                 flags.append("partial_period")
         except (ValueError, TypeError):
             pass
@@ -209,57 +198,60 @@ def compute_flags(row: pd.Series) -> list[str]:
     return flags
 
 
-def format_cell_id(iy: int, ix: int, level: int) -> str:
-    """Formatea cell_id: ES5K:L{level}:Y{iy}:X{ix} con zero-padding 5 dígitos con signo."""
-    return f"ES5K:L{level}:Y{iy:05d}:X{ix:05d}"
+def format_cell_id(iy: int, ix: int, level: int, grid_prefix: str) -> str:
+    """Formatea cell_id: {grid_prefix}:L{level}:Y{iy}:X{ix} con zero-padding 5 dígitos con signo."""
+    return f"{grid_prefix}:L{level}:Y{iy:05d}:X{ix:05d}"
 
 
-def compute_parent_ids(iy: int, ix: int) -> dict[str, str]:
-    """Calcula parent_ids para L1, L2, L3."""
+def compute_parent_ids(iy: int, ix: int, grid_prefix: str) -> dict[str, str]:
+    """Calcula parent_ids para L1, L2, L3 (anidamiento 2×2)."""
     parents = {}
     for level in (1, 2, 3):
         p_iy = iy // (2 ** level)
         p_ix = ix // (2 ** level)
-        parents[f"L{level}"] = format_cell_id(p_iy, p_ix, level)
+        parents[f"L{level}"] = format_cell_id(p_iy, p_ix, level, grid_prefix)
     return parents
 
 
-# ---------------------------------------------------------------------------
-# Pipeline principal
-# ---------------------------------------------------------------------------
+def collect_input_files(input_paths: list[Path]) -> list[Path]:
+    """Expande rutas de entrada (archivos o directorios) a lista de archivos JSON."""
+    files = []
+    for path in input_paths:
+        path = path.resolve()
+        if path.is_file() and path.suffix.lower() == ".json":
+            files.append(path)
+        elif path.is_dir():
+            files.extend(sorted(path.rglob("*.json")))
+        else:
+            print(f"ADVERTENCIA: {path} no existe o no es .json/.directorio, se omite", file=sys.stderr)
+    return files
 
-def load_json_files() -> pd.DataFrame:
-    """Carga los 4 JSON y devuelve DataFrame combinado con columnas src_*."""
+
+def load_json_files(file_paths: list[Path]) -> pd.DataFrame:
+    """Carga múltiples JSON y devuelve DataFrame combinado con columnas src_*."""
     all_records = []
     file_hashes = {}
 
-    for src_dir in SOURCE_DIRS:
-        for fname in SOURCE_FILES:
-            fpath = src_dir / fname
-            if not fpath.exists():
+    for fpath in file_paths:
+        file_hashes[fpath.name] = compute_file_hash(fpath)
+
+        with fpath.open("r", encoding="utf-8") as f:
+            data = json.load(f)
+
+        if not isinstance(data, list):
+            print(f"ADVERTENCIA: {fpath.name} no es una lista, se omite", file=sys.stderr)
+            continue
+
+        for idx, record in enumerate(data):
+            if not isinstance(record, dict):
                 continue
-
-            file_hashes[fname] = compute_file_hash(fpath)
-
-            with fpath.open("r", encoding="utf-8") as f:
-                data = json.load(f)
-
-            if not isinstance(data, list):
-                print(f"ADVERTENCIA: {fname} no es una lista, se omite", file=sys.stderr)
-                continue
-
-            for idx, record in enumerate(data):
-                if not isinstance(record, dict):
-                    continue
-                # Añadir metadatos de origen
-                rec = {
-                    "source_file": fname,
-                    "source_row": idx,
-                }
-                # Copia literal de todos los campos originales con prefijo src_
-                for k, v in record.items():
-                    rec[f"src_{k}"] = v
-                all_records.append(rec)
+            rec = {
+                "source_file": fpath.name,
+                "source_row": idx,
+            }
+            for k, v in record.items():
+                rec[f"src_{k}"] = v
+            all_records.append(rec)
 
     if not all_records:
         raise RuntimeError("No se cargaron registros de ningún archivo JSON")
@@ -271,55 +263,35 @@ def load_json_files() -> pd.DataFrame:
     return df
 
 
-def normalize_and_enrich(df: pd.DataFrame) -> pd.DataFrame:
+def normalize_and_enrich(df: pd.DataFrame, cell_size: float, grid_prefix: str, partial_period_start: str) -> pd.DataFrame:
     """Aplica tipos, proyección, celdas, ranks, flags, IDs."""
     # --- Tipos básicos ---
-    # Coordenadas
     df["latitude"] = pd.to_numeric(df.get("src_latitude"), errors="coerce")
     df["longitude"] = pd.to_numeric(df.get("src_longitude"), errors="coerce")
 
-    # Fecha y hora
     df["acq_date"] = pd.to_datetime(df.get("src_acq_date"), errors="coerce").dt.date
     df["acq_minute"] = df.get("src_acq_time").apply(parse_acq_time)
 
-    # Sensor y plataforma
     df["sensor"] = df.get("src_instrument").replace({"SNPP": "VIIRS"}).fillna(
         df.get("src_sensor")
     ).str.upper()
     df["platform"] = df.get("src_satellite").fillna(df.get("src_platform")).str.title()
+    df["product"] = df["source_file"].apply(infer_product_from_filename)
 
-    # Product (SP/NRT) se deriva del nombre del archivo, no del JSON
-    def infer_product(fname: str) -> str:
-        fname_lower = fname.lower()
-        if "archive" in fname_lower:
-            return "SP"
-        elif "nrt" in fname_lower:
-            return "NRT"
-        return "unknown"
-
-    df["product"] = df["source_file"].apply(infer_product)
-
-    # FRP y temperaturas
     df["frp"] = pd.to_numeric(df.get("src_frp"), errors="coerce")
     df["brightness"] = pd.to_numeric(df.get("src_brightness"), errors="coerce")
     df["bright_t31"] = pd.to_numeric(df.get("src_bright_t31"), errors="coerce")
     df["scan"] = pd.to_numeric(df.get("src_scan"), errors="coerce")
     df["track"] = pd.to_numeric(df.get("src_track"), errors="coerce")
 
-    # Confidence
     df["confidence_raw"] = df.get("src_confidence").astype(str)
     df["confidence_rank"] = df.apply(
         lambda r: confidence_to_rank(r.get("sensor", ""), r.get("confidence_raw")),
         axis=1
     )
 
-    # Day/night
     df["daynight"] = df.get("src_daynight").fillna("").str.upper()
-
-    # Type code (solo en SP)
     df["type_code"] = pd.to_numeric(df.get("src_type"), errors="coerce").astype("Int8")
-
-    # Version
     df["version"] = df.get("src_version").astype(str)
 
     # --- Proyección EPSG:3035 ---
@@ -335,12 +307,14 @@ def normalize_and_enrich(df: pd.DataFrame) -> pd.DataFrame:
     df["x_3035"] = x_arr
     df["y_3035"] = y_arr
 
-    # --- Celdas L0-L3 ---
-    for level, cell_size in CELL_SIZES.items():
-        ix = np.floor(df["x_3035"] / cell_size).astype("Int64")
-        iy = np.floor(df["y_3035"] / cell_size).astype("Int64")
+    # --- Celdas L0-L3 (anidamiento 2×2) ---
+    # L0 = cell_size, L1 = 2*cell_size, L2 = 4*cell_size, L3 = 8*cell_size
+    for level in range(4):
+        level_cell_size = cell_size * (2 ** level)
+        ix = np.floor(df["x_3035"] / level_cell_size).astype("Int64")
+        iy = np.floor(df["y_3035"] / level_cell_size).astype("Int64")
         df[f"cell_id_L{level}"] = [
-            format_cell_id(int(iy_v), int(ix_v), level)
+            format_cell_id(int(iy_v), int(ix_v), level, grid_prefix)
             if pd.notna(iy_v) and pd.notna(ix_v) else None
             for iy_v, ix_v in zip(iy, ix)
         ]
@@ -348,17 +322,15 @@ def normalize_and_enrich(df: pd.DataFrame) -> pd.DataFrame:
     # Parent_ids (basado en L0)
     parent_ids = []
     for _, row in df.iterrows():
-        iy = row.get("cell_id_L0")
-        if iy is None:
+        cell_id_l0 = row.get("cell_id_L0")
+        if cell_id_l0 is None:
             parent_ids.append(None)
             continue
-        # Extraer iy, ix del cell_id_L0
-        # formato: ES5K:L0:Y{iy}:X{ix}
         try:
-            parts = iy.split(":")
-            iy_v = int(parts[2][1:])  # quita 'Y'
-            ix_v = int(parts[3][1:])  # quita 'X'
-            parent_ids.append(compute_parent_ids(iy_v, ix_v))
+            parts = cell_id_l0.split(":")
+            iy_v = int(parts[2][1:])
+            ix_v = int(parts[3][1:])
+            parent_ids.append(compute_parent_ids(iy_v, ix_v, grid_prefix))
         except Exception:
             parent_ids.append(None)
     df["parent_ids"] = parent_ids
@@ -370,22 +342,23 @@ def normalize_and_enrich(df: pd.DataFrame) -> pd.DataFrame:
 
     # --- ingest_run_id (mismo para toda la corrida) ---
     run_timestamp = datetime.now(timezone.utc).strftime("%Y%m%dT%H%M%SZ")
-    first_hash = compute_file_hash(SOURCE_DIRS[0] / SOURCE_FILES[0])[:8]
+    # Hash del primer archivo como identificador de corrida
+    first_file = df["source_file"].iloc[0]
+    first_hash = hashlib.sha256(first_file.encode()).hexdigest()[:8]
     ingest_run_id = f"{run_timestamp}-{first_hash}"
     df["ingest_run_id"] = ingest_run_id
 
     # --- flags ---
-    df["flags"] = df.apply(compute_flags, axis=1)
-
-    # --- source_product (SP/NRT) ---
-    df["source_product"] = df["product"].replace({"SP": "SP", "NRT": "NRT"}).fillna("unknown")
+    df["flags"] = df.apply(
+        lambda r: compute_flags(r, cell_size, partial_period_start),
+        axis=1
+    )
 
     return df
 
 
 def select_output_columns(df: pd.DataFrame) -> pd.DataFrame:
     """Selecciona y ordena columnas para el output contractual."""
-    # Columnas core del contrato (orden según especificación)
     core_cols = [
         "observation_id",
         "sensor",
@@ -416,18 +389,13 @@ def select_output_columns(df: pd.DataFrame) -> pd.DataFrame:
         "ingest_run_id",
     ]
 
-    # Columnas src_* (todas las originales conservadas)
     src_cols = sorted([c for c in df.columns if c.startswith("src_")])
-
-    # Columnas auxiliares internas (no van al output)
     internal = {"source_file", "source_row"}
 
-    # Verificar que todas las core existen
     missing = [c for c in core_cols if c not in df.columns]
     if missing:
         raise ValueError(f"Faltan columnas core en DataFrame: {missing}")
 
-    # Orden final: core + src_*
     final_cols = core_cols + src_cols
     return df[final_cols]
 
@@ -435,45 +403,34 @@ def select_output_columns(df: pd.DataFrame) -> pd.DataFrame:
 def validate_output(df: pd.DataFrame) -> None:
     """Validaciones contractuales obligatorias."""
     print("\n=== VALIDACIONES ===")
-
-    # 1. Contabilidad
     print(f"Filas totales: {len(df)}")
 
-    # 2. observation_id único
     dup_ids = df["observation_id"].duplicated().sum()
     print(f"observation_id duplicados: {dup_ids}")
     if dup_ids > 0:
         raise ValueError(f"Hay {dup_ids} observation_id duplicados")
 
-    # 3. Fechas en rango
     dates = pd.to_datetime(df["acq_date"], errors="coerce")
     print(f"Rango fechas: {dates.min()} -> {dates.max()}")
 
-    # 4. Coordenadas válidas
     valid_coords = df["latitude"].notna() & df["longitude"].notna()
     print(f"Coordenadas válidas: {valid_coords.sum()} / {len(df)}")
 
-    # 5. Proyección válida
     valid_proj = df["x_3035"].notna() & df["y_3035"].notna()
     print(f"Proyección válida: {valid_proj.sum()} / {len(df)}")
 
-    # 6. Cell IDs L0
     has_cell = df["cell_id_L0"].notna().sum()
     print(f"Con cell_id_L0: {has_cell} / {len(df)}")
 
-    # 7. Conteo por sensor
     print("Por sensor:")
     print(df["sensor"].value_counts().to_string())
 
-    # 8. Conteo por producto
     print("Por producto:")
     print(df["product"].value_counts().to_string())
 
-    # 9. FRP suma (sanity check)
     frp_sum = pd.to_numeric(df["frp"], errors="coerce").sum()
     print(f"FRP total: {frp_sum:.2f} MW")
 
-    # 10. Flags distribution
     all_flags = []
     for fl in df["flags"]:
         if isinstance(fl, list):
@@ -488,18 +445,14 @@ def validate_output(df: pd.DataFrame) -> None:
     print("=== FIN VALIDACIONES ===\n")
 
 
-def write_outputs(df: pd.DataFrame) -> None:
+def write_outputs(df: pd.DataFrame, parquet_path: Path, jsonl_path: Path) -> None:
     """Escribe Parquet y JSONL."""
-    # Parquet con compresión zstd
-    df.to_parquet(PARQUET_PATH, compression="zstd", index=False)
-    print(f"Escrito Parquet: {PARQUET_PATH} ({PARQUET_PATH.stat().st_size / 1024:.1f} KB)")
+    df.to_parquet(parquet_path, compression="zstd", index=False)
+    print(f"Escrito Parquet: {parquet_path} ({parquet_path.stat().st_size / 1024:.1f} KB)")
 
-    # JSONL (una línea por observación)
-    with JSONL_PATH.open("w", encoding="utf-8") as f:
+    with jsonl_path.open("w", encoding="utf-8") as f:
         for _, row in df.iterrows():
-            # Convertir a dict serializable
             rec = row.to_dict()
-            # Manejar tipos no serializables
             for k, v in rec.items():
                 if isinstance(v, (np.integer, np.floating)):
                     rec[k] = v.item() if not np.isnan(v) else None
@@ -509,37 +462,76 @@ def write_outputs(df: pd.DataFrame) -> None:
                     rec[k] = v.isoformat() if not pd.isna(v) else None
                 elif isinstance(v, type(pd.NaT)):
                     rec[k] = None
-                elif hasattr(v, 'isoformat'):  # date, datetime
+                elif hasattr(v, 'isoformat'):
                     rec[k] = v.isoformat()
             f.write(json.dumps(rec, ensure_ascii=False) + "\n")
-    print(f"Escrito JSONL: {JSONL_PATH} ({JSONL_PATH.stat().st_size / 1024:.1f} KB)")
+    print(f"Escrito JSONL: {jsonl_path} ({jsonl_path.stat().st_size / 1024:.1f} KB)")
 
 
-def main() -> int:
+def build_arg_parser() -> argparse.ArgumentParser:
+    p = argparse.ArgumentParser(description="Fase 1: Proyección + Celdas (genérico)")
+    p.add_argument("--input", nargs="+", type=Path, required=True,
+                   help="Archivos JSON o directorios (recursivo)")
+    p.add_argument("--output", type=Path, required=True,
+                   help="Directorio de salida")
+    p.add_argument("--cell-size", type=int, default=5000,
+                   help="Tamaño de celda L0 en metros (default: 5000)")
+    p.add_argument("--grid-prefix", type=str, default=None,
+                   help="Prefijo grid ID (default: ES{size}K, ej. ES5K para 5000, ES1K para 1000)")
+    p.add_argument("--partial-period-start", type=str, default=DEFAULT_PARTIAL_PERIOD_START,
+                   help=f"Inicio de periodo incompleto (default: {DEFAULT_PARTIAL_PERIOD_START})")
+    return p
+
+
+def main(argv: list[str] | None = None) -> int:
+    args = build_arg_parser().parse_args(argv)
+
+    # Derivar grid_prefix si no se da
+    if args.grid_prefix is None:
+        size_km = args.cell_size // 1000
+        args.grid_prefix = f"ES{size_km}K"
+
+    # Calcular tamaños de celda por nivel
+    cell_sizes = {level: args.cell_size * (2 ** level) for level in range(4)}
+
+    output_dir = args.output.resolve()
+    output_dir.mkdir(parents=True, exist_ok=True)
+
+    parquet_path = output_dir / "observations.parquet"
+    jsonl_path = output_dir / "observations.jsonl"
+
     try:
         print("=== FASE 1: Proyección + Celdas ===")
-        print(f"Directorio de salida: {OUTPUT_DIR}")
+        print(f"Cell size L0: {args.cell_size} m")
+        print(f"Grid prefix: {args.grid_prefix}")
+        print(f"Entradas: {[str(p) for p in args.input]}")
+        print(f"Salida: {output_dir}")
 
-        # 1. Cargar JSONs
-        df = load_json_files()
+        # 1. Recopilar archivos
+        file_paths = collect_input_files(args.input)
+        if not file_paths:
+            raise RuntimeError("No se encontraron archivos JSON válidos")
 
-        # 2. Normalizar y enriquecer
-        df = normalize_and_enrich(df)
+        # 2. Cargar JSONs
+        df = load_json_files(file_paths)
 
-        # 3. Seleccionar columnas de output
+        # 3. Normalizar y enriquecer
+        df = normalize_and_enrich(df, args.cell_size, args.grid_prefix, args.partial_period_start)
+
+        # 4. Seleccionar columnas de output
         df = select_output_columns(df)
 
-        # 4. Validar
+        # 5. Validar
         validate_output(df)
 
-        # 5. Escribir
-        write_outputs(df)
+        # 6. Escribir
+        write_outputs(df, parquet_path, jsonl_path)
 
         print("OK - FASE 1 completada correctamente")
         return 0
 
     except Exception as e:
-        print(f"❌ ERROR: {e}", file=sys.stderr)
+        print(f"ERROR: {e}", file=sys.stderr)
         import traceback
         traceback.print_exc()
         return 1
