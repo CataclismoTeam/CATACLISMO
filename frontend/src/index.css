@@ -24,6 +24,12 @@
   --color-warn: #ffb833;
   --color-ok: #4cc98c;
   --color-water: #3fc8de;
+  /* Estados de las unidades y rutas: cambian con el modo para daltonismo */
+  --color-st-disponible: #3fb57a;
+  --color-st-ruta: #5aa2f0;
+  --color-st-intervencion: #e0703a;
+  --color-st-no: #9aa4b2;
+  --color-route: #2f9e62;
 
   --radius-sm: 4px;
   --radius-md: 6px;
@@ -40,9 +46,80 @@
   --ease-ui: cubic-bezier(0.2, 0, 0, 1);
 }
 
+/* ── Tema claro (Ajustes → Tema). El oscuro es el de @theme ─────────────── */
+:root[data-theme='claro'] {
+  color-scheme: light;
+  --color-canvas: #eef1f5;
+  --color-surface: #ffffff;
+  --color-raised: #f2f4f7;
+  --color-hover: #e4e9f0;
+  --color-line: #d7dde5;
+  --color-line-strong: #aeb9c6;
+  --color-ink: #111827;
+  --color-ink-muted: #4a5565;
+  --color-accent: #1d5fcc;
+  --color-accent-hover: #164ea8;
+  --color-on-accent: #ffffff;
+  --color-fire: #b93a0f;
+  --color-warn: #8a5a00;
+  --color-ok: #17733f;
+  --color-water: #0b6b80;
+  --color-st-disponible: #17733f;
+  --color-st-ruta: #1d5fcc;
+  --color-st-intervencion: #b93a0f;
+  --color-st-no: #5b6676;
+  --shadow-panel: 0 6px 20px rgb(15 23 42 / 0.15);
+}
+
+/* ── Accesibilidad: daltonismo (Ajustes → Accesibilidad) ───────────────────
+   Paleta Okabe-Ito: se distinguen los estados, lo real de lo simulado y las rutas. */
+:root[data-cvd='protanopia'],
+:root[data-cvd='deuteranopia'] {
+  --color-ok: #56b4e9;
+  --color-warn: #f0e442;
+  --color-fire: #e69f00;
+  --color-water: #cc79a7;
+  --color-st-disponible: #56b4e9;
+  --color-st-ruta: #cc79a7;
+  --color-st-intervencion: #e69f00;
+  --color-st-no: #9aa4b2;
+  --color-route: #56b4e9;
+}
+
+:root[data-cvd='tritanopia'] {
+  --color-ok: #009e73;
+  --color-warn: #cc79a7;
+  --color-fire: #d55e00;
+  --color-water: #e69f00;
+  --color-st-disponible: #009e73;
+  --color-st-ruta: #cc79a7;
+  --color-st-intervencion: #d55e00;
+  --color-st-no: #9aa4b2;
+  --color-route: #009e73;
+}
+
+:root[data-theme='claro'][data-cvd='protanopia'],
+:root[data-theme='claro'][data-cvd='deuteranopia'] {
+  --color-ok: #0072b2;
+  --color-warn: #7a5a00;
+  --color-fire: #b35900;
+  --color-st-disponible: #0072b2;
+  --color-st-intervencion: #b35900;
+  --color-route: #0072b2;
+}
+
+:root[data-theme='claro'][data-cvd='tritanopia'] {
+  --color-ok: #00704f;
+  --color-warn: #9c3d7a;
+  --color-fire: #a83f00;
+  --color-st-disponible: #00704f;
+  --color-st-intervencion: #a83f00;
+  --color-route: #00704f;
+}
+
 @layer base {
   html {
-    color-scheme: dark;
+    color-scheme: dark light;
     background: var(--color-canvas);
     color: var(--color-ink);
     font-family: var(--font-sans);
@@ -154,9 +231,9 @@
 }
 
 .meeting-marker {
-  background: #163d28;
-  color: #e6f6ec;
-  border: 1px solid #2f9e62;
+  background: var(--color-surface);
+  color: var(--color-ink);
+  border: 2px solid var(--color-route);
 }
 
 .ignition-marker {
@@ -172,6 +249,15 @@
   display: none;
 }
 
+/* Zoom medio: la placa se queda en el icono con el borde de estado; el texto, al pasar o enfocar */
+.map-mid .unit-marker {
+  padding-right: 3px;
+}
+
+.map-mid .unit-marker:not(:hover, :focus-visible) .unit-marker__text {
+  display: none;
+}
+
 /* Controles de MapLibre en tema oscuro y legibles */
 .maplibregl-ctrl-group {
   background: var(--color-surface) !important;
@@ -182,7 +268,7 @@
   border-top-color: var(--color-line) !important;
 }
 
-.maplibregl-ctrl-group button .maplibregl-ctrl-icon {
+:root:not([data-theme='claro']) .maplibregl-ctrl-group button .maplibregl-ctrl-icon {
   filter: invert(1);
 }
 

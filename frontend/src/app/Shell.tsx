@@ -26,6 +26,23 @@ export function Shell() {
     document.documentElement.dataset.projection = String(projection);
   }, [projection]);
 
+  // Tema: "sistema" sigue la preferencia del sistema operativo y cambia en vivo
+  const theme = useUi((s) => s.theme);
+  const cvd = useUi((s) => s.cvd);
+  useEffect(() => {
+    const media = window.matchMedia('(prefers-color-scheme: light)');
+    const apply = () => {
+      const light = theme === 'claro' || (theme === 'sistema' && media.matches);
+      document.documentElement.dataset.theme = light ? 'claro' : 'oscuro';
+    };
+    apply();
+    media.addEventListener('change', apply);
+    return () => media.removeEventListener('change', apply);
+  }, [theme]);
+  useEffect(() => {
+    document.documentElement.dataset.cvd = cvd;
+  }, [cvd]);
+
   return (
     <div className="flex h-dvh flex-col overflow-hidden">
       <TopBar />

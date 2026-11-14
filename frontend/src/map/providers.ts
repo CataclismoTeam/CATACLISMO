@@ -21,7 +21,7 @@ const maptiler = (key: string): Provider => ({
   id: 'maptiler',
   label: 'MapTiler',
   style: (basemap) =>
-    `${MT}/maps/${{ satelite: 'hybrid', topografico: 'topo-v2', oscuro: 'dataviz-dark' }[basemap]}/style.json?key=${key}`,
+    `${MT}/maps/${{ satelite: 'hybrid', topografico: 'topo-v2' }[basemap]}/style.json?key=${key}`,
   dem: {
     type: 'raster-dem',
     url: `${MT}/tiles/terrain-rgb-v2/tiles.json?key=${key}`,
@@ -51,16 +51,11 @@ const open: Provider = {
           ],
           'Esri, Maxar, Earthstar Geographics',
         )
-      : basemap === 'topografico'
-        ? rasterStyle(
-            ['https://tile.opentopomap.org/{z}/{x}/{y}.png'],
-            '© OpenTopoMap (CC-BY-SA) · © OpenStreetMap',
-            17,
-          )
-        : rasterStyle(
-            ['https://basemaps.cartocdn.com/dark_all/{z}/{x}/{y}.png'],
-            '© CARTO · © OpenStreetMap',
-          ),
+      : rasterStyle(
+          ['https://tile.opentopomap.org/{z}/{x}/{y}.png'],
+          '© OpenTopoMap (CC-BY-SA) · © OpenStreetMap',
+          17,
+        ),
   dem: {
     type: 'raster-dem',
     tiles: ['https://s3.amazonaws.com/elevation-tiles-prod/terrarium/{z}/{x}/{y}.png'],
@@ -69,7 +64,7 @@ const open: Provider = {
     encoding: 'terrarium',
     attribution: 'Mapzen Terrain Tiles',
   },
-  attribution: 'Esri · OpenTopoMap · CARTO · OpenStreetMap',
+  attribution: 'Esri · OpenTopoMap · OpenStreetMap',
 };
 
 export const provider: Provider = KEY ? maptiler(KEY) : open;

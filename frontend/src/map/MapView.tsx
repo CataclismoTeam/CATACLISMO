@@ -16,9 +16,17 @@ import { LayersPanel } from './LayersPanel.tsx';
 import { ignitionElement, meetingElement, unitElement } from './markers.ts';
 import { IncidentsPanel } from './IncidentsPanel.tsx';
 import { loadIncidents, type IncidentsFile } from './incidents.ts';
-import { applyVisibility, FAR_ZOOM, installOverlays } from './overlays.ts';
+import { applyVisibility, FAR_ZOOM, installOverlays, ROUTE_COLOR, tokenColor } from './overlays.ts';
 import { provider } from './providers.ts';
-import { SCENARIOS, type Unit } from './scenario.ts';
+import {
+  DEFAULT_SCENARIO,
+  loadEscapeRoutes,
+  SCENARIOS,
+  type EscapeRoutes,
+  type Route,
+} from './scenario.ts';
+import { LeftToolbar } from './LeftToolbar.tsx';
+import { UnitsPanel } from './UnitsPanel.tsx';
 import {
   CoordinatesBar,
   FireCard,
@@ -30,7 +38,10 @@ import {
 setWorkerUrl(workerUrl);
 
 const PITCH_3D = 60;
+/** A partir de este zoom las placas de las unidades muestran indicativo y estado */
+const LABEL_ZOOM = 13;
 const SIMULATIONS = Object.values(SCENARIOS);
+const NO_ROUTES: Route[] = [];
 
 /** Mapa de mando: un único MapLibre que cambia de estilo, relieve y cámara sin recrearse. */
 export default function MapView() {
@@ -39,11 +50,11 @@ export default function MapView() {
   const markers = useRef<Marker[]>([]);
   const [ready, setReady] = useState(false);
   const [detections, setDetections] = useState<Detections>();
-  const [selected, setSelected] = useState<Unit>();
   const [selectedFire, setSelectedFire] = useState<FireObservation>();
   const [tileError, setTileError] = useState(false);
   const [incidents, setIncidents] = useState<IncidentsFile>();
   const [far, setFar] = useState(false);
+  const [mid, setMid] = useState(false);
   const selectedIncidentId = useUi((s) => s.selectedIncident);
   const focusIncident = useUi((s) => s.focusIncident);
   const flyTarget = useUi((s) => s.flyTarget);
@@ -54,11 +65,16 @@ export default function MapView() {
   const basemap = useUi((s) => s.basemap);
   const scenarioId = useUi((s) => s.scenario);
   const layers = useUi((s) => s.layers);
-  const scenario = SCENARIOS[scenarioId];
+  const scenario = SCENARIOS[scenarioId] ?? SCENARIOS[DEFAULT_SCENARIO];
+  const selectedUnitId = useUi((s) => s.selectedUnit);
+  const selected = scenario.units.find((u) => u.id === selectedUnitId);
+  const [escape, setEscape] = useState<EscapeRoutes>();
+  const routes = escape?.escenarios[scenario.id]?.rutas ?? NO_ROUTES;
 
   // Estado vivo para los manejadores de MapLibre (se registran una sola vez)
   const live = useRef({
     scenario,
+    routes,
     simulations: SIMULATIONS,
     detections,
     incidents,
@@ -69,6 +85,7 @@ export default function MapView() {
   useEffect(() => {
     live.current = {
       scenario,
+      routes,
       simulations: SIMULATIONS,
       detections,
       incidents,
@@ -97,7 +114,15 @@ export default function MapView() {
 
     map.on('style.load', () => {
       const s = live.current;
-      installOverlays(map, s.scenario, s.simulations, s.detections, s.incidents, s.layers);
+      installOverlays(
+        map,
+        s.scenario,
+        s.routes,
+        s.simulations,
+        s.detections,
+        s.incidents,
+        s.layers,
+      );
       map.setTerrain(s.mode === '3d' ? { source: 'dem', exaggeration: s.exaggeration } : null);
       map.on('click', 'inc-fill', (event) => {
         const feature = event.features?.[0];
@@ -112,7 +137,7 @@ export default function MapView() {
           flameHeight: Number(properties.altura ?? 0),
           arrivalHours: Number(properties.horas ?? 0),
         });
-        setSelected(undefined);
+        useUi.getState().focusUnit(undefined);
       });
       setReady(true);
     });
@@ -126,7 +151,7 @@ export default function MapView() {
       });
       if (!hits.length) {
         useUi.getState().focusIncident(undefined);
-        setSelected(undefined);
+        useUi.getState().focusUnit(undefined);
         setSelectedFire(undefined);
       }
     });
@@ -137,9 +162,17 @@ export default function MapView() {
     loadIncidents()
       .then(setIncidents)
       .catch(() => setIncidents(undefined));
+    loadEscapeRoutes()
+      .then(setEscape)
+      .catch(() => setEscape(undefined));
 
     // Vista lejana: fuera rótulos y marcadores, solo un icono por incendio
-    const onZoom = () => setFar(map.getZoom() < FAR_ZOOM);
+    const onZoom = () => {
+      const z = map.getZoom();
+      setFar(z < FAR_ZOOM);
+      // Zoom medio: placas compactas (solo icono y estado) para que no se amontonen
+      setMid(z >= FAR_ZOOM && z < LABEL_ZOOM);
+    };
     map.on('zoom', onZoom);
     onZoom();
     map.on('click', 'real-fill', (e) => {
@@ -153,7 +186,7 @@ export default function MapView() {
         if (!feature || feature.geometry.type !== 'Point') return;
         const id = feature.properties?.id;
         if (layer === 'real-icon' && typeof id === 'string') useUi.getState().focusIncident(id);
-        if (layer === 'sim-icon' && (id === 'forestal' || id === 'urbano')) {
+        if (layer === 'sim-icon' && typeof id === 'string') {
           useUi.getState().setScenario(id);
         }
         map.flyTo({ center: feature.geometry.coordinates as [number, number], zoom: 11.5 });
@@ -210,8 +243,8 @@ export default function MapView() {
   useEffect(() => {
     const map = mapRef.current;
     if (!map || !ready) return;
-    installOverlays(map, scenario, SIMULATIONS, detections, incidents, live.current.layers);
-  }, [scenario, detections, incidents, ready]);
+    installOverlays(map, scenario, routes, SIMULATIONS, detections, incidents, live.current.layers);
+  }, [scenario, routes, detections, incidents, ready]);
 
   useEffect(() => {
     const map = mapRef.current;
@@ -224,14 +257,26 @@ export default function MapView() {
       pitch: live.current.mode === '3d' ? camera.pitch : 0,
       duration: 1200,
     });
-    setSelected(undefined);
+    useUi.getState().focusUnit(undefined);
   }, [scenario]);
+
+  // Tema o daltonismo: las rutas toman el color del token (los marcadores ya usan variables CSS)
+  const cvd = useUi((s) => s.cvd);
+  const theme = useUi((s) => s.theme);
+  useEffect(() => {
+    const map = mapRef.current;
+    if (!map || !ready || !map.getLayer('ruta-line')) return;
+    // Espera a que el shell aplique los atributos del tema al documento
+    requestAnimationFrame(() =>
+      map.setPaintProperty('ruta-line', 'line-color', tokenColor('--color-route', ROUTE_COLOR)),
+    );
+  }, [cvd, theme, ready]);
 
   // Esc cierra cualquier ficha abierta
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
       if (e.key !== 'Escape') return;
-      setSelected(undefined);
+      useUi.getState().focusUnit(undefined);
       setSelectedFire(undefined);
       useUi.getState().focusIncident(undefined);
     };
@@ -264,18 +309,26 @@ export default function MapView() {
       anchor: 'center' | 'bottom' = 'center',
     ) => markers.current.push(new Marker({ element: el, anchor }).setLngLat(lngLat).addTo(map));
     if (layers.unidades) {
-      for (const unit of scenario.units) add(unitElement(unit, setSelected), [unit.lon, unit.lat]);
+      for (const unit of scenario.units)
+        add(
+          unitElement(unit, (u) => useUi.getState().focusUnit(u.id)),
+          [unit.lon, unit.lat],
+        );
     }
     if (layers.evacuacion) {
-      for (const route of scenario.routes) {
-        add(meetingElement(route.meeting), route.coords.at(-1) ?? route.coords[0], 'bottom');
+      for (const route of routes) {
+        add(
+          meetingElement(`Refugio ${route.refugio}`),
+          route.coords.at(-1) ?? route.coords[0],
+          'bottom',
+        );
       }
     }
     if (layers.incendio) add(ignitionElement(), scenario.ignition, 'bottom');
-  }, [scenario, layers.unidades, layers.evacuacion, layers.incendio]);
+  }, [scenario, routes, layers.unidades, layers.evacuacion, layers.incendio]);
 
   return (
-    <div className={cn('absolute inset-0', far && 'map-far')}>
+    <div className={cn('absolute inset-0', far && 'map-far', mid && 'map-mid')}>
       {/* Estilo en línea: la hoja de MapLibre (sin capa) pondría position: relative */}
       <div ref={container} style={{ position: 'absolute', inset: 0 }} data-testid="mapa" />
       {!ready && (
@@ -283,12 +336,16 @@ export default function MapView() {
           <span className="rounded-sm bg-canvas px-3 py-1.5">Cargando el mapa…</span>
         </p>
       )}
-      <IncidentsPanel incidents={incidents} />
+      <LeftToolbar />
+      <IncidentsPanel incidents={incidents} routes={routes} />
+      <UnitsPanel />
       <LayersPanel detections={detections} />
       {selectedIncident && (
         <IncidentCard incident={selectedIncident} onClose={() => focusIncident(undefined)} />
       )}
-      {selected && <UnitCard unit={selected} onClose={() => setSelected(undefined)} />}
+      {selected && (
+        <UnitCard unit={selected} onClose={() => useUi.getState().focusUnit(undefined)} />
+      )}
       {selectedFire && (
         <FireCard observation={selectedFire} onClose={() => setSelectedFire(undefined)} />
       )}

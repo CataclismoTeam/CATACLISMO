@@ -1,4 +1,4 @@
-import { CircleHelp, Presentation, WifiOff } from 'lucide-react';
+import { CircleHelp, WifiOff } from 'lucide-react';
 import { useEffect, useState } from 'react';
 import { dataSource } from '../data/source.ts';
 import { useHistory } from '../store/history.ts';
@@ -8,6 +8,7 @@ import { Tag } from '../ui/Tag.tsx';
 import { Logo } from './Logo.tsx';
 import { ModeSwitch } from './ModeSwitch.tsx';
 import { RadioButton, RadioPanel } from './RadioPanel.tsx';
+import { SettingsButton, SettingsPanel } from './SettingsPanel.tsx';
 
 function UtcClock() {
   const [now, setNow] = useState(() => new Date());
@@ -30,8 +31,6 @@ function UtcClock() {
 
 export function TopBar() {
   const lastDate = useHistory((s) => s.manifest?.tiempo.ultimoDato);
-  const projection = useUi((s) => s.projection);
-  const toggleProjection = useUi((s) => s.toggleProjection);
   const openBriefing = useUi((s) => s.openBriefing);
 
   return (
@@ -59,16 +58,7 @@ export function TopBar() {
         </Tag>
         <UtcClock />
         <RadioButton />
-        <Button
-          variant="ghost"
-          size="icon"
-          aria-pressed={projection}
-          aria-label="Modo proyección: texto grande"
-          title="Modo proyección: texto grande"
-          onClick={toggleProjection}
-        >
-          <Presentation size={20} strokeWidth={1.5} aria-hidden />
-        </Button>
+        <SettingsButton />
         <Button
           variant="ghost"
           size="icon"
@@ -80,6 +70,7 @@ export function TopBar() {
         </Button>
       </div>
       <RadioPanel />
+      <SettingsPanel />
     </header>
   );
 }

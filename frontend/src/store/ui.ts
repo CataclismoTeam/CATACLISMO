@@ -1,9 +1,14 @@
 import { create } from 'zustand';
 import { readStored, writeStored } from '../lib/storage.ts';
+import { DEFAULT_SCENARIO } from '../map/scenario.ts';
 
 export type MapMode = '2d' | '3d';
-export type Basemap = 'satelite' | 'topografico' | 'oscuro';
-export type ScenarioId = 'forestal' | 'urbano';
+export type Basemap = 'satelite' | 'topografico';
+/** Identificador de una simulación de scenarios.json */
+export type ScenarioId = string;
+export type Theme = 'sistema' | 'claro' | 'oscuro';
+export type Cvd = 'ninguno' | 'protanopia' | 'deuteranopia' | 'tritanopia';
+export type LeftPanel = 'incendios' | 'unidades' | null;
 export type LayerId =
   'detecciones' | 'incendio' | 'prediccion' | 'unidades' | 'evacuacion' | 'curvas' | 'sombreado';
 
@@ -28,10 +33,16 @@ interface UiState {
   calendarOpen: boolean;
   methodOpen: boolean;
   projection: boolean;
+  theme: Theme;
+  /** Modo para daltonismo (deficiencia de visión del color) */
+  cvd: Cvd;
+  settingsOpen: boolean;
   radioOpen: boolean;
   layersOpen: boolean;
-  incidentsOpen: boolean;
+  /** Panel izquierdo abierto: solo uno a la vez para no tapar el mapa */
+  leftPanel: LeftPanel;
   selectedIncident?: string;
+  selectedUnit?: string;
   flyTarget?: FlyTarget;
   mapMode: MapMode;
   /** Exageración del relieve en 3D: 1 = real; con más inclinación da la vista 2.5D */
@@ -45,9 +56,13 @@ interface UiState {
   setMethodOpen: (open: boolean) => void;
   setRadioOpen: (open: boolean) => void;
   setLayersOpen: (open: boolean) => void;
-  setIncidentsOpen: (open: boolean) => void;
+  setLeftPanel: (panel: LeftPanel) => void;
   focusIncident: (id: string | undefined, bbox?: [number, number, number, number]) => void;
+  focusUnit: (id: string | undefined, at?: [number, number]) => void;
   toggleProjection: () => void;
+  setTheme: (theme: Theme) => void;
+  setCvd: (cvd: Cvd) => void;
+  setSettingsOpen: (open: boolean) => void;
   setMapMode: (mode: MapMode) => void;
   setExaggeration: (value: number) => void;
   setBasemap: (basemap: Basemap) => void;
@@ -58,6 +73,8 @@ interface UiState {
 const BRIEFING_KEY = 'cataclismo.briefing-visto';
 const PROJECTION_KEY = 'cataclismo.proyeccion';
 const MAP_KEY = 'cataclismo.mapa';
+const THEME_KEY = 'cataclismo.tema';
+const CVD_KEY = 'cataclismo.daltonismo';
 
 const narrow = () => typeof window !== 'undefined' && window.innerWidth < 768;
 const storedMap = readStored<{ mode?: MapMode; basemap?: Basemap }>(MAP_KEY, {});
@@ -68,14 +85,17 @@ export const useUi = create<UiState>((set, get) => ({
   calendarOpen: !narrow(),
   methodOpen: false,
   projection: readStored(PROJECTION_KEY, false),
+  theme: readStored<Theme>(THEME_KEY, 'oscuro'),
+  cvd: readStored<Cvd>(CVD_KEY, 'ninguno'),
+  settingsOpen: false,
   radioOpen: false,
   // Capas plegado de inicio: el mapa necesita el espacio; se abre con su botón
   layersOpen: false,
-  incidentsOpen: !narrow(),
+  leftPanel: narrow() ? null : 'incendios',
   mapMode: storedMap.mode === '2d' ? '2d' : '3d',
   exaggeration: 1.2,
-  basemap: storedMap.basemap ?? 'satelite',
-  scenario: 'forestal',
+  basemap: storedMap.basemap === 'topografico' ? 'topografico' : 'satelite',
+  scenario: DEFAULT_SCENARIO,
   layers: DEFAULT_LAYERS,
   closeBriefing: () => {
     writeStored(BRIEFING_KEY, true);
@@ -86,19 +106,39 @@ export const useUi = create<UiState>((set, get) => ({
   setMethodOpen: (methodOpen) => set({ methodOpen }),
   setRadioOpen: (radioOpen) => set({ radioOpen }),
   setLayersOpen: (layersOpen) => set({ layersOpen }),
-  setIncidentsOpen: (incidentsOpen) => set({ incidentsOpen }),
+  setLeftPanel: (leftPanel) => set({ leftPanel }),
+  focusUnit: (selectedUnit, at) =>
+    set({
+      selectedUnit,
+      ...(at && {
+        flyTarget: {
+          bbox: [at[0] - 0.01, at[1] - 0.01, at[0] + 0.01, at[1] + 0.01],
+          at: Date.now(),
+        },
+      }),
+      ...(selectedUnit && narrow() && { leftPanel: null }),
+    }),
   focusIncident: (selectedIncident, bbox) =>
     set({
       selectedIncident,
       ...(bbox && { flyTarget: { bbox, at: Date.now() } }),
       // En móvil la lista ocupa media pantalla: se pliega para ver el incendio y su ficha
-      ...(selectedIncident && narrow() && { incidentsOpen: false }),
+      ...(selectedIncident && narrow() && { leftPanel: null }),
     }),
   toggleProjection: () => {
     const projection = !get().projection;
     writeStored(PROJECTION_KEY, projection);
     set({ projection });
   },
+  setTheme: (theme) => {
+    writeStored(THEME_KEY, theme);
+    set({ theme });
+  },
+  setCvd: (cvd) => {
+    writeStored(CVD_KEY, cvd);
+    set({ cvd });
+  },
+  setSettingsOpen: (settingsOpen) => set({ settingsOpen }),
   setMapMode: (mapMode) => {
     writeStored(MAP_KEY, { mode: mapMode, basemap: get().basemap });
     set({ mapMode });
@@ -112,6 +152,6 @@ export const useUi = create<UiState>((set, get) => ({
       layers: { ...get().layers, curvas: basemap === 'topografico' || get().layers.curvas },
     });
   },
-  setScenario: (scenario) => set({ scenario }),
+  setScenario: (scenario) => set({ scenario, selectedUnit: undefined }),
   toggleLayer: (id) => set({ layers: { ...get().layers, [id]: !get().layers[id] } }),
 }));

@@ -1,0 +1,210 @@
+[
+  {
+    "id": "bermeja",
+    "kind": "forestal",
+    "name": "Sierra Bermeja",
+    "comunidad": "Andalucía",
+    "provincia": "Málaga",
+    "description": "Fuego en ladera de pinar con poniente; avanza hacia el este, hacia la costa.",
+    "ignition": [-5.205, 36.505],
+    "windFrom": 280,
+    "windKmh": 25,
+    "camera": {
+      "center": [-5.19, 36.5],
+      "zoom": 11.6,
+      "bearing": -15,
+      "pitch": 50
+    },
+    "sea": [-5.13, 36.405]
+  },
+  {
+    "id": "estepona",
+    "kind": "urbano",
+    "name": "Interfaz urbano-forestal de Estepona",
+    "comunidad": "Andalucía",
+    "provincia": "Málaga",
+    "description": "Fuego en el monte junto a urbanizaciones; el levante lo empuja hacia las casas.",
+    "ignition": [-5.162, 36.462],
+    "windFrom": 75,
+    "windKmh": 30,
+    "camera": {
+      "center": [-5.165, 36.45],
+      "zoom": 12.4,
+      "bearing": 20,
+      "pitch": 50
+    },
+    "sea": [-5.15, 36.41]
+  },
+  {
+    "id": "cazorla",
+    "kind": "forestal",
+    "name": "Sierra de Cazorla",
+    "comunidad": "Andalucía",
+    "provincia": "Jaén",
+    "description": "Pinar de alta montaña con viento de componente oeste y fuerte pendiente.",
+    "ignition": [-2.9, 37.95],
+    "windFrom": 260,
+    "windKmh": 20,
+    "camera": {
+      "center": [-2.88, 37.94],
+      "zoom": 11.5,
+      "bearing": 10,
+      "pitch": 55
+    }
+  },
+  {
+    "id": "culebra",
+    "kind": "forestal",
+    "name": "Sierra de la Culebra",
+    "comunidad": "Castilla y León",
+    "provincia": "Zamora",
+    "description": "Matorral y pinar con viento del suroeste en una tarde de ola de calor.",
+    "ignition": [-6.3, 41.9],
+    "windFrom": 225,
+    "windKmh": 30,
+    "camera": {
+      "center": [-6.27, 41.92],
+      "zoom": 11.3,
+      "bearing": 0,
+      "pitch": 50
+    }
+  },
+  {
+    "id": "gredos",
+    "kind": "forestal",
+    "name": "Sierra de Gredos",
+    "comunidad": "Castilla y León",
+    "provincia": "Ávila",
+    "description": "Fuego de ladera sur con viento del sur que lo sube hacia las cumbres.",
+    "ignition": [-5.05, 40.3],
+    "windFrom": 190,
+    "windKmh": 18,
+    "camera": {
+      "center": [-5.05, 40.32],
+      "zoom": 11.5,
+      "bearing": 0,
+      "pitch": 55
+    }
+  },
+  {
+    "id": "gata",
+    "kind": "forestal",
+    "name": "Sierra de Gata",
+    "comunidad": "Extremadura",
+    "provincia": "Cáceres",
+    "description": "Pinar y castaño con viento del noreste que lo lleva hacia los valles del sur.",
+    "ignition": [-6.6, 40.25],
+    "windFrom": 45,
+    "windKmh": 22,
+    "camera": {
+      "center": [-6.62, 40.23],
+      "zoom": 11.5,
+      "bearing": 200,
+      "pitch": 50
+    }
+  },
+  {
+    "id": "ourense",
+    "kind": "forestal",
+    "name": "Montes de Ourense",
+    "comunidad": "Galicia",
+    "provincia": "Ourense",
+    "description": "Monte bajo y repoblación con viento del este muy seco.",
+    "ignition": [-7.25, 42.1],
+    "windFrom": 90,
+    "windKmh": 28,
+    "camera": {
+      "center": [-7.28, 42.1],
+      "zoom": 11.5,
+      "bearing": 270,
+      "pitch": 50
+    }
+  },
+  {
+    "id": "huesca",
+    "kind": "forestal",
+    "name": "Prepirineo de Huesca",
+    "comunidad": "Aragón",
+    "provincia": "Huesca",
+    "description": "Pinar y matorral con cierzo: el fuego avanza hacia el sureste.",
+    "ignition": [-0.3, 42.35],
+    "windFrom": 315,
+    "windKmh": 35,
+    "camera": {
+      "center": [-0.27, 42.33],
+      "zoom": 11.5,
+      "bearing": 135,
+      "pitch": 50
+    }
+  },
+  {
+    "id": "toledo",
+    "kind": "forestal",
+    "name": "Montes de Toledo",
+    "comunidad": "Castilla-La Mancha",
+    "provincia": "Toledo",
+    "description": "Monte mediterráneo entre pueblos de la sierra, con viento del oeste en campaña de verano.",
+    "ignition": [-4.05, 39.55],
+    "windFrom": 270,
+    "windKmh": 20,
+    "camera": {
+      "center": [-4.02, 39.55],
+      "zoom": 11.5,
+      "bearing": 90,
+      "pitch": 50
+    }
+  },
+  {
+    "id": "calderona",
+    "kind": "urbano",
+    "name": "Serra Calderona",
+    "comunidad": "Comunitat Valenciana",
+    "provincia": "València",
+    "description": "Pinar junto a urbanizaciones con poniente que empuja el fuego hacia la costa.",
+    "ignition": [-0.45, 39.7],
+    "windFrom": 290,
+    "windKmh": 30,
+    "camera": {
+      "center": [-0.43, 39.69],
+      "zoom": 11.8,
+      "bearing": 100,
+      "pitch": 50
+    }
+  },
+  {
+    "id": "collserola",
+    "kind": "urbano",
+    "name": "Collserola",
+    "comunidad": "Cataluña",
+    "provincia": "Barcelona",
+    "description": "Parque natural rodeado de ciudad; el mestral lleva el fuego hacia las casas.",
+    "ignition": [2.1, 41.43],
+    "windFrom": 315,
+    "windKmh": 25,
+    "camera": {
+      "center": [2.11, 41.42],
+      "zoom": 12.3,
+      "bearing": 135,
+      "pitch": 50
+    },
+    "sea": [2.22, 41.37]
+  },
+  {
+    "id": "tenerife",
+    "kind": "forestal",
+    "name": "Monte de Arafo",
+    "comunidad": "Canarias",
+    "provincia": "Santa Cruz de Tenerife",
+    "description": "Pinar canario en ladera con viento del noroeste y humedad muy baja.",
+    "ignition": [-16.43, 28.36],
+    "windFrom": 320,
+    "windKmh": 30,
+    "camera": {
+      "center": [-16.42, 28.35],
+      "zoom": 11.8,
+      "bearing": 140,
+      "pitch": 55
+    },
+    "sea": [-16.36, 28.33]
+  }
+]

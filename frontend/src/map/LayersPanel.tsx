@@ -4,13 +4,12 @@ import { cn } from '../lib/cn.ts';
 import { useUi, type Basemap, type LayerId } from '../store/ui.ts';
 import { Button } from '../ui/Button.tsx';
 import type { Detections } from './detections.ts';
-import { ACTIVE_COLOR, FIRE_INTENSITY_RAMP, PREDICTION_BANDS, ROUTE_COLOR } from './overlays.ts';
+import { ACTIVE_COLOR, FIRE_INTENSITY_RAMP, PREDICTION_BANDS } from './overlays.ts';
 import { provider } from './providers.ts';
 
 const BASEMAPS: [Basemap, string][] = [
   ['satelite', 'Satélite'],
   ['topografico', 'Topográfico'],
-  ['oscuro', 'Oscuro'],
 ];
 
 type Origin = 'real' | 'simulado' | 'modelo';
@@ -136,7 +135,7 @@ export function LayersPanel({ detections }: { detections?: Detections }) {
         <h3 className="m-0 mb-1.5 text-xs font-semibold tracking-wide text-ink-muted uppercase">
           Mapa base
         </h3>
-        <div role="radiogroup" aria-label="Mapa base" className="grid grid-cols-3 gap-1">
+        <div role="radiogroup" aria-label="Mapa base" className="grid grid-cols-2 gap-1">
           {BASEMAPS.map(([id, label]) => (
             <Button
               key={id}
@@ -276,7 +275,15 @@ export function LayersPanel({ detections }: { detections?: Detections }) {
           id="evacuacion"
           label="Vías de escape"
           origin="simulado"
-          legend={<Swatch fill={ROUTE_COLOR}>Ruta y punto de reunión</Swatch>}
+          legend={
+            <div className="flex flex-col gap-1">
+              <Swatch fill="var(--color-route)">Ruta hasta el refugio</Swatch>
+              <span className="text-xs text-ink-muted">
+                Calculadas con el algoritmo de evacuación del equipo sobre carreteras de
+                OpenStreetMap, teniendo en cuenta cómo avanzaría el fuego.
+              </span>
+            </div>
+          }
         />
       </Group>
 

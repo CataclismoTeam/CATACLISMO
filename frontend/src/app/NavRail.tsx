@@ -7,20 +7,20 @@ interface Module {
   label: string;
   icon: LucideIcon;
   /** Si existe, el botón abre y cierra su panel; si no, el módulo aún no está construido */
-  panel?: 'incendios';
+  panel?: 'incendios' | 'unidades';
 }
 
 // Registro de módulos. Los que aún no están construidos se ven desactivados y dicen por qué.
 const MODULES: Module[] = [
   { id: 'incendios', label: 'Incendios', icon: Flame, panel: 'incendios' },
-  { id: 'unidades', label: 'Unidades', icon: Truck },
+  { id: 'unidades', label: 'Unidades', icon: Truck, panel: 'unidades' },
   { id: 'entorno', label: 'Entorno', icon: Wind },
   { id: 'terreno', label: 'Terreno', icon: Mountain },
 ];
 
 export function NavRail() {
-  const incidentsOpen = useUi((s) => s.incidentsOpen);
-  const setIncidentsOpen = useUi((s) => s.setIncidentsOpen);
+  const leftPanel = useUi((s) => s.leftPanel);
+  const setLeftPanel = useUi((s) => s.setLeftPanel);
 
   return (
     <nav
@@ -28,7 +28,7 @@ export function NavRail() {
       className="hidden w-21 shrink-0 flex-col gap-1 border-r border-line bg-surface p-1.5 lg:flex"
     >
       {MODULES.map(({ id, label, icon: Icon, panel }) => {
-        const open = panel === 'incendios' && incidentsOpen;
+        const open = !!panel && leftPanel === panel;
         return (
           <button
             key={id}
@@ -40,7 +40,7 @@ export function NavRail() {
                 ? `${open ? 'Cerrar' : 'Abrir'} ${label.toLowerCase()}`
                 : `${label}: disponible en una próxima versión`
             }
-            onClick={panel ? () => setIncidentsOpen(!incidentsOpen) : undefined}
+            onClick={panel ? () => setLeftPanel(open ? null : panel) : undefined}
             className={cn(
               'flex h-14 flex-col items-center justify-center gap-1 rounded-md border text-xs',
               panel

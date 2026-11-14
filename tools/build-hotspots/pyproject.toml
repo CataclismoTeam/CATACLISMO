@@ -11,6 +11,7 @@ dependencies = [
 
 [project.scripts]
 build-hotspots = "build_hotspots.cli:main"
+build-escape-routes = "build_hotspots.escape:main"
 
 [dependency-groups]
 dev = [

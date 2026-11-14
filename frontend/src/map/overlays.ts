@@ -6,7 +6,7 @@ import { Flame } from 'lucide';
 import type { Detections } from './detections.ts';
 import { incidentPoints, outlines, type IncidentsFile } from './incidents.ts';
 import { provider } from './providers.ts';
-import { routesGeoJson, spread, type Scenario } from './scenario.ts';
+import { routesGeoJson, spread, type Route, type Scenario } from './scenario.ts';
 
 // Rampas sobrias (sin neones): fuego real en tintas sólidas, predicción en tramas.
 export const FRP_RAMP: [number, string][] = [
@@ -29,6 +29,12 @@ export const PREDICTION_BANDS: [hours: number, color: string, label: string][] =
 ];
 export const ACTIVE_COLOR = '#c2331f';
 export const ROUTE_COLOR = '#2f9e62';
+
+/** Color de un token CSS (cambia con el tema y el modo de daltonismo). */
+export function tokenColor(name: string, fallback: string): string {
+  const value = getComputedStyle(document.documentElement).getPropertyValue(name).trim();
+  return value || fallback;
+}
 
 /** Capas de MapLibre que controla cada interruptor del panel. */
 export const LAYER_IDS: Record<LayerId, string[]> = {
@@ -146,6 +152,7 @@ const firstSymbol = (map: MapLibre) => map.getStyle().layers.find((l) => l.type 
 export function installOverlays(
   map: MapLibre,
   scenario: Scenario,
+  routes: Route[],
   simulations: Scenario[],
   detections: Detections | undefined,
   incidents: IncidentsFile | undefined,
@@ -436,7 +443,7 @@ export function installOverlays(
   }
 
   // Vías de escape (SIMULADO)
-  upsertSource(map, 'rutas', routesGeoJson(scenario));
+  upsertSource(map, 'rutas', routesGeoJson(routes));
   if (!map.getLayer('ruta-line')) {
     map.addLayer({
       id: 'ruta-casing',
@@ -450,7 +457,7 @@ export function installOverlays(
       type: 'line',
       source: 'rutas',
       layout: { 'line-cap': 'round', 'line-join': 'round' },
-      paint: { 'line-color': ROUTE_COLOR, 'line-width': 4.5 },
+      paint: { 'line-color': tokenColor('--color-route', ROUTE_COLOR), 'line-width': 4.5 },
     });
   }
 

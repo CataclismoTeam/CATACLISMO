@@ -3,7 +3,9 @@ import { ErrorBoundary } from './ErrorBoundary.tsx';
 
 // MapLibre va en un chunk aparte para que la primera pintura del shell sea ligera,
 // pero se carga siempre: el mapa es la aplicación.
-const MapView = lazy(() => import('../map/MapView.tsx'));
+// La descarga empieza al cargar este módulo, en paralelo al primer render del shell
+const mapModule = import('../map/MapView.tsx');
+const MapView = lazy(() => mapModule);
 
 export function MapStage() {
   return (

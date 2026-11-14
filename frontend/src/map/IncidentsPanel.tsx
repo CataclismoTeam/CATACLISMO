@@ -1,4 +1,4 @@
-import { ArrowUp, ChevronRight, Flame, X } from 'lucide-react';
+import { ArrowUp, ChevronRight, X } from 'lucide-react';
 import { useMemo, useState } from 'react';
 import { cn } from '../lib/cn.ts';
 import { formatCount } from '../lib/format.ts';
@@ -6,7 +6,7 @@ import { useUi } from '../store/ui.ts';
 import { Button } from '../ui/Button.tsx';
 import { Tag } from '../ui/Tag.tsx';
 import { byRegion, type Incident, type IncidentsFile } from './incidents.ts';
-import { SCENARIOS } from './scenario.ts';
+import { SCENARIO_LIST, type Route } from './scenario.ts';
 
 const COMPASS = ['N', 'NE', 'E', 'SE', 'S', 'SO', 'O', 'NO'];
 const ALL = 'todas';
@@ -71,9 +71,16 @@ function IncidentRow({ incident }: { incident: Incident }) {
 }
 
 /** Panel izquierdo: simulaciones y todos los incendios detectados, por comunidad autónoma. */
-export function IncidentsPanel({ incidents }: { incidents?: IncidentsFile }) {
-  const open = useUi((s) => s.incidentsOpen);
-  const setOpen = useUi((s) => s.setIncidentsOpen);
+export function IncidentsPanel({
+  incidents,
+  routes,
+}: {
+  incidents?: IncidentsFile;
+  routes: Route[];
+}) {
+  const open = useUi((s) => s.leftPanel === 'incendios');
+  const setLeftPanel = useUi((s) => s.setLeftPanel);
+  const setOpen = (next: boolean) => setLeftPanel(next ? 'incendios' : null);
   const scenarioId = useUi((s) => s.scenario);
   const setScenario = useUi((s) => s.setScenario);
   const [region, setRegion] = useState(ALL);
@@ -91,14 +98,7 @@ export function IncidentsPanel({ incidents }: { incidents?: IncidentsFile }) {
   }, [incidents, region, onlyActive]);
   const shown = groups.reduce((n, [, list]) => n + list.length, 0);
 
-  if (!open) {
-    return (
-      <Button className="absolute top-3 left-3" onClick={() => setOpen(true)}>
-        <Flame size={16} strokeWidth={1.5} aria-hidden />
-        Incendios
-      </Button>
-    );
-  }
+  if (!open) return null;
 
   return (
     <aside
@@ -126,7 +126,7 @@ export function IncidentsPanel({ incidents }: { incidents?: IncidentsFile }) {
             <Tag tone="simulado">Simulado</Tag>
           </div>
           <ul className="m-0 flex list-none flex-col gap-1 p-0">
-            {Object.values(SCENARIOS).map((s) => {
+            {SCENARIO_LIST.map((s) => {
               const active = s.id === scenarioId;
               return (
                 <li key={s.id}>
@@ -139,7 +139,15 @@ export function IncidentsPanel({ incidents }: { incidents?: IncidentsFile }) {
                       active ? 'border-warn bg-hover' : 'border-transparent hover:bg-hover',
                     )}
                   >
-                    <strong>{s.name}</strong>
+                    <span className="flex items-baseline justify-between gap-2">
+                      <strong>{s.name}</strong>
+                      <span className="shrink-0 text-xs text-ink-muted">
+                        {s.kind === 'urbano' ? 'Urbano-forestal' : 'Forestal'}
+                      </span>
+                    </span>
+                    <span className="text-xs text-ink-muted">
+                      {s.provincia} · {s.comunidad}
+                    </span>
                     {active && (
                       <>
                         <span className="text-ink-muted">{s.description}</span>
@@ -152,6 +160,27 @@ export function IncidentsPanel({ incidents }: { incidents?: IncidentsFile }) {
                           />
                           Viento del {COMPASS[Math.round(s.windFrom / 45) % 8]}, {s.windKmh} km/h
                         </span>
+                        {routes.length === 0 && (
+                          <span className="mt-1 border-t border-line pt-1.5 text-xs text-ink-muted">
+                            Sin vías de escape calculadas: el algoritmo no encontró núcleos de
+                            población amenazados en el área analizada.
+                          </span>
+                        )}
+                        {routes.length > 0 && (
+                          <span className="mt-1 flex flex-col gap-1 border-t border-line pt-1.5">
+                            <span className="text-xs font-semibold">Vías de escape</span>
+                            {routes.map((r) => (
+                              <span key={r.nombre} className="text-xs">
+                                <span className="text-ink">{r.nombre}</span>
+                                <span className="block text-ink-muted">
+                                  {r.distanciaKm.toLocaleString('es-ES')} km · {r.tiempoMin} min
+                                  {r.margenMin !== null &&
+                                    ` · margen con el fuego ${r.margenMin} min`}
+                                </span>
+                              </span>
+                            ))}
+                          </span>
+                        )}
                       </>
                     )}
                   </button>

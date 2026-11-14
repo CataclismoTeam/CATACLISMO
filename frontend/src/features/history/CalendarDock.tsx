@@ -54,11 +54,11 @@ export function CalendarDock() {
     <section
       aria-labelledby="calendario-titulo"
       className={cn(
-        'z-(--z-panel) flex shrink-0 flex-col border-t border-white/8 bg-[#10161e]',
+        'z-(--z-panel) flex shrink-0 flex-col border-t border-line bg-surface',
         open && 'h-[76dvh] md:h-[min(72dvh,43rem)]',
       )}
     >
-      <header className="flex min-h-14 shrink-0 items-center gap-3 border-b border-white/8 px-4">
+      <header className="flex min-h-14 shrink-0 items-center gap-3 border-b border-line px-4">
         <div className="min-w-0">
           <p className="m-0 text-[10px] font-semibold uppercase tracking-[0.18em] text-accent">
             Análisis histórico

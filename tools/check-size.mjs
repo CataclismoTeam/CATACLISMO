@@ -14,7 +14,7 @@ const KB = 1024;
 // (la hoja de MapLibre pesa unos 60 KB sin comprimir).
 const BUDGET = {
   initialJs: 300, // JS que enlaza index.html (React + shell, estado y sistema de diseño)
-  initialCss: 30, // CSS que enlaza index.html
+  initialCss: 36, // CSS que enlaza index.html (incluye tema claro y paletas para daltonismo)
   lazyJs: 2500, // resto del JS de la app (chunks diferidos)
   cssTotal: 120, // todo el CSS de la app
   htmlPage: 50, // cada página HTML

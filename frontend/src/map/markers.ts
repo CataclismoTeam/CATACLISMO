@@ -9,7 +9,11 @@ import {
   Flag,
   Flame,
   Helicopter,
+  Fuel,
   Navigation,
+  Plane,
+  Ship,
+  Tractor,
   ShieldUser,
   Truck,
   Users,
@@ -24,20 +28,29 @@ export const KIND: Record<UnitKind, { icon: IconNode; label: string }> = {
   mando: { icon: ShieldUser, label: 'Puesto de mando' },
   ambulancia: { icon: Ambulance, label: 'Ambulancia' },
   brigada: { icon: Users, label: 'Brigada' },
+  nodriza: { icon: Fuel, label: 'Nodriza' },
+  maquinaria: { icon: Tractor, label: 'Maquinaria pesada' },
+  avion: { icon: Plane, label: 'Avión' },
+  embarcacion: { icon: Ship, label: 'Embarcación' },
 };
 
 export const STATUS: Record<UnitStatus, { icon: IconNode; label: string; color: string }> = {
-  disponible: { icon: CircleCheck, label: 'Disponible', color: '#3fb57a' },
-  'en ruta': { icon: Navigation, label: 'En ruta', color: '#5aa2f0' },
-  'en intervencion': { icon: Flame, label: 'En intervención', color: '#e0703a' },
-  'no disponible': { icon: CircleSlash, label: 'No disponible', color: '#9aa4b2' },
+  disponible: { icon: CircleCheck, label: 'Disponible', color: 'var(--color-st-disponible)' },
+  'en ruta': { icon: Navigation, label: 'En ruta', color: 'var(--color-st-ruta)' },
+  'en intervencion': {
+    icon: Flame,
+    label: 'En intervención',
+    color: 'var(--color-st-intervencion)',
+  },
+  'no disponible': { icon: CircleSlash, label: 'No disponible', color: 'var(--color-st-no)' },
 };
 
 function icon(node: IconNode, size: number, color = 'currentColor'): SVGElement {
   const el = createElement(node);
   el.setAttribute('width', String(size));
   el.setAttribute('height', String(size));
-  el.setAttribute('stroke', color);
+  // style y no atributo: los colores de estado son variables CSS (cambian con tema y daltonismo)
+  el.style.stroke = color;
   el.setAttribute('stroke-width', '1.75');
   el.setAttribute('aria-hidden', 'true');
   return el;

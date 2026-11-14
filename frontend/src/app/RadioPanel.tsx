@@ -4,34 +4,9 @@ import { cn } from '../lib/cn.ts';
 import { useUi } from '../store/ui.ts';
 import { Button } from '../ui/Button.tsx';
 import { Tag } from '../ui/Tag.tsx';
+import { channelsFor, DOMAIN_LABEL, SCENARIOS, type Domain } from '../map/scenario.ts';
 
-// Canales de la demo (SIMULADOS). La voz real llegará con el backend (WebSocket /ws).
-const CHANNELS = [
-  {
-    id: 'mando',
-    name: 'Mando y control',
-    freq: 'TETRA · GSSI 4101',
-    last: 'PMA-1: sector norte estabilizado',
-  },
-  {
-    id: 'tactico',
-    name: 'Táctico extinción',
-    freq: 'TETRA · GSSI 4102',
-    last: 'AB-EST-12: abastecimiento en Los Reales',
-  },
-  {
-    id: 'aereo',
-    name: 'Coordinación aérea',
-    freq: 'VHF 123,450 MHz',
-    last: 'BRIF-RO-1: descarga en cabeza del fuego',
-  },
-  {
-    id: 'sanitario',
-    name: 'Sanitario',
-    freq: 'TETRA · GSSI 4105',
-    last: 'SVA-EST: sin incidencias',
-  },
-];
+// Canales de la simulación activa (SIMULADOS). La voz real llegará con el backend (WebSocket /ws).
 
 export function RadioButton() {
   const open = useUi((s) => s.radioOpen);
@@ -42,7 +17,10 @@ export function RadioButton() {
       aria-pressed={open}
       aria-label="Radio"
       title="Radio: canales del operativo"
-      onClick={() => setOpen(!open)}
+      onClick={() => {
+        useUi.getState().setSettingsOpen(false);
+        setOpen(!open);
+      }}
       className="px-2.5"
     >
       <Radio size={20} strokeWidth={1.5} aria-hidden />
@@ -55,7 +33,10 @@ export function RadioButton() {
 export function RadioPanel() {
   const open = useUi((s) => s.radioOpen);
   const setOpen = useUi((s) => s.setRadioOpen);
-  const [channel, setChannel] = useState(CHANNELS[0].id);
+  const scenario = SCENARIOS[useUi((s) => s.scenario)];
+  const channels = scenario ? channelsFor(scenario) : [];
+  const [picked, setChannel] = useState('tierra-general');
+  const channel = channels.some((c) => c.id === picked) ? picked : channels[0]?.id;
   if (!open) return null;
   return (
     <aside
@@ -78,28 +59,43 @@ export function RadioPanel() {
           </Button>
         </div>
       </header>
-      <ul role="radiogroup" aria-label="Canal" className="m-0 flex list-none flex-col gap-1 p-2">
-        {CHANNELS.map((c) => (
-          <li key={c.id}>
-            <button
-              type="button"
-              role="radio"
-              aria-checked={channel === c.id}
-              onClick={() => setChannel(c.id)}
-              className={cn(
-                'flex w-full cursor-pointer flex-col gap-0.5 rounded-md border px-3 py-2 text-left text-sm',
-                channel === c.id ? 'border-accent bg-hover' : 'border-transparent hover:bg-hover',
-              )}
-            >
-              <span className="flex justify-between gap-2 font-semibold">
-                {c.name}
-                <span className="font-mono text-xs font-normal text-ink-muted">{c.freq}</span>
-              </span>
-              <span className="text-ink-muted">{c.last}</span>
-            </button>
-          </li>
-        ))}
-      </ul>
+      <div role="radiogroup" aria-label="Canal" className="max-h-[60dvh] overflow-y-auto p-2">
+        {(['aire', 'tierra', 'mar'] as Domain[]).map((domain) => {
+          const list = channels.filter((c) => c.domain === domain);
+          if (!list.length) return null;
+          return (
+            <section key={domain} className="mb-1">
+              <h3 className="m-0 px-2 py-1 text-xs font-semibold tracking-wide text-ink-muted uppercase">
+                {DOMAIN_LABEL[domain]}
+              </h3>
+              {list.map((c) => (
+                <button
+                  key={c.id}
+                  type="button"
+                  role="radio"
+                  aria-checked={channel === c.id}
+                  onClick={() => setChannel(c.id)}
+                  className={cn(
+                    'flex w-full cursor-pointer flex-col gap-0.5 rounded-md border px-3 py-2 text-left text-sm',
+                    channel === c.id
+                      ? 'border-accent bg-hover'
+                      : 'border-transparent hover:bg-hover',
+                    c.id.startsWith('tierra-') && c.id !== 'tierra-general' && 'pl-6',
+                  )}
+                >
+                  <span className="flex justify-between gap-2 font-semibold">
+                    {c.name}
+                    <span className="text-xs font-normal text-ink-muted">
+                      {c.members.length} {c.members.length === 1 ? 'medio' : 'medios'}
+                    </span>
+                  </span>
+                  <span className="text-ink-muted">{c.last}</span>
+                </button>
+              ))}
+            </section>
+          );
+        })}
+      </div>
       <footer className="flex items-center gap-3 border-t border-line px-4 py-3">
         <Button disabled aria-describedby="radio-motivo">
           <Mic size={16} strokeWidth={1.5} aria-hidden />

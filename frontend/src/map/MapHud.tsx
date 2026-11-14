@@ -7,7 +7,7 @@ import { Button } from '../ui/Button.tsx';
 import { Tag } from '../ui/Tag.tsx';
 import { KIND, STATUS } from './markers.ts';
 import type { Incident } from './incidents.ts';
-import type { Unit } from './scenario.ts';
+import { DOMAIN_LABEL, type Unit } from './scenario.ts';
 
 const panel = 'rounded-md border border-line-strong bg-surface shadow-panel';
 
@@ -92,6 +92,11 @@ export function UnitCard({ unit, onClose }: { unit: Unit; onClose: () => void })
         <dt className="text-ink-muted">Estado</dt>
         <dd className="m-0 font-semibold" style={{ color: status.color }}>
           {status.label}
+        </dd>
+        <dt className="text-ink-muted">Medio</dt>
+        <dd className="m-0">
+          {DOMAIN_LABEL[unit.domain]}
+          {unit.group ? ` · ${unit.group}` : ''}
         </dd>
         <dt className="text-ink-muted">Dotación</dt>
         <dd className="m-0">{unit.crew} personas</dd>
