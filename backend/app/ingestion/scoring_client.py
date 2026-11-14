@@ -8,7 +8,8 @@ Combina:
 - Vegetación (WorldCover + IFN3: inflamabilidad)
 - Lluvia (NASA POWER: días sin lluvia, precipitación, rachas secas)
 
-Salida: `validated_cell_day.parquet` con decisión ACEPTA/RECHAZA/REVISAR_MANUAL.
+Salida: `validated_cell_day.parquet` + `validated_cell_day.json` (array único)
+con decisión ACEPTA / REVISAR_MANUAL / RECHAZA.
 """
 
 from __future__ import annotations
@@ -104,8 +105,6 @@ def extract_features(row: pd.Series) -> dict[str, float]:
     features = {}
 
     # 1. Sensor count (1=MODIS, 2=VIIRS, 3=ambos)
-    # En cell_day original vienen separados; aquí asumimos columna 'sensors_present'
-    # que sería 'MODIS', 'VIIRS' o 'BOTH'
     sensors = row.get("sensors_present", "UNKNOWN")
     if sensors == "BOTH":
         sensor_count = 3
@@ -114,7 +113,6 @@ def extract_features(row: pd.Series) -> dict[str, float]:
     elif sensors == "MODIS":
         sensor_count = 1
     else:
-        # Inferir de n_obs por sensor si existe
         sensor_count = 1
     features["sensor_count"] = normalize_value(sensor_count, NORMALIZATION["sensor_count"])
 
@@ -208,11 +206,22 @@ def decide(score: float, thresholds: dict = None) -> str:
 # ---------------------------------------------------------------------------
 
 def load_enrichment_file(path: Path) -> pd.DataFrame:
-    """Carga JSONL de enriquecimiento (meteo, veg, lluvia)."""
+    """Carga JSON/JSONL de enriquecimiento (meteo, veg, lluvia)."""
     records = []
     with path.open("r", encoding="utf-8") as f:
-        for line in f:
-            records.append(json.loads(line))
+        content = f.read().strip()
+        if not content:
+            return pd.DataFrame()
+        # Try JSON array first
+        try:
+            records = json.loads(content)
+            if not isinstance(records, list):
+                records = [records]
+        except json.JSONDecodeError:
+            # Try JSONL
+            for line in content.splitlines():
+                if line.strip():
+                    records.append(json.loads(line))
     return pd.DataFrame(records)
 
 
@@ -225,17 +234,9 @@ def merge_enrichments(
     """Une cell_day con archivos de enriquecimiento."""
     df = cell_day.copy()
 
-    # Meteo
-    if meteo_path and meteo_path.exists():
-        meteo = load_enrichment_file(meteo_path)
-        # meteo tiene cell_id, date, parameters...
-        # Para simplificar, asumimos que ya vienen aplanados
-        pass
-
     # Vegetación
     if veg_path and veg_path.exists():
         veg = load_enrichment_file(veg_path)
-        # veg: cell_id, worldcover, ifn3, combined_flammability
         veg_lookup = {}
         for _, r in veg.iterrows():
             cid = r.get("cell_id")
@@ -256,7 +257,6 @@ def merge_enrichments(
         for _, r in rain.iterrows():
             key = (r.get("cell_id"), r.get("reference_date") or r.get("date"))
             rain_lookup[key] = r
-        # Merge por cell_id + date
         def get_rain(row):
             key = (row["cell_id"], str(row["date"]))
             return rain_lookup.get(key, {})
@@ -265,6 +265,27 @@ def merge_enrichments(
                     "precip_7d_mm", "precip_30d_mm", "precip_90d_mm",
                     "dry_spell_max_days", "rain_days_30d"]:
             df[col] = rain_data.apply(lambda x: x.get(col))
+
+    # Meteorología
+    if meteo_path and meteo_path.exists():
+        meteo = load_enrichment_file(meteo_path)
+        meteo_lookup = {}
+        for _, r in meteo.iterrows():
+            key = (r.get("cell_id"), r.get("date"))
+            meteo_lookup[key] = r
+        def get_meteo(row):
+            key = (row["cell_id"], str(row["date"]))
+            return meteo_lookup.get(key, {})
+        meteo_data = df.apply(get_meteo, axis=1)
+        for param in ["t_2m:C", "wind_speed_10m:ms", "wind_gusts_10m_1h:ms",
+                      "relative_humidity_2m:p", "fire_weather_index:idx",
+                      "haines_index:idx", "fosberg_index:idx",
+                      "precip_1h:mm", "precip_24h:mm",
+                      "soil_moisture_0_10cm:m3/m3", "soil_temp_0_10cm:C"]:
+            df[param.replace(":", "_").replace(".", "_")] = meteo_data.apply(
+                lambda x: x.get("parameters", {}).get(param, {}).get("dates", [{}])[0].get("value")
+                if x.get("parameters", {}).get(param, {}).get("dates") else None
+            )
 
     return df
 
@@ -277,6 +298,7 @@ def run_scoring(
     rain_path: Path | None = None,
     weights: dict = None,
     thresholds: dict = None,
+    json_output: Path | None = None,
 ) -> pd.DataFrame:
     """Ejecuta scoring completo sobre cell_day."""
     cell_day = pd.read_parquet(cell_day_path)
@@ -286,7 +308,6 @@ def run_scoring(
     df = merge_enrichments(cell_day, meteo_path, veg_path, rain_path)
 
     # Para sensors_present, necesitamos saber qué sensores hay en cada cell_id+date
-    # cell_day ya está separado por sensor; creamos columna combinada
     sensor_map = df.groupby(["cell_id", "date"])["sensor"].apply(
         lambda x: "BOTH" if set(x) == {"MODIS", "VIIRS"} else list(x)[0]
     ).reset_index(name="sensors_present")
@@ -319,10 +340,18 @@ def run_scoring(
     print(f"Score mean: {results_df['score'].mean():.4f}")
     print(f"Score std: {results_df['score'].std():.4f}")
 
-    # Guardar
+    # Guardar Parquet
     output_path.parent.mkdir(parents=True, exist_ok=True)
     results_df.to_parquet(output_path, compression="zstd", index=False)
-    print(f"Guardado: {output_path}")
+    print(f"Guardado Parquet: {output_path}")
+
+    # Guardar JSON (array único) si se solicita
+    if json_output:
+        from json_output import JSONArrayWriter
+        with JSONArrayWriter(json_output, indent=2) as w:
+            for _, row in results_df.iterrows():
+                w.write(row.to_dict())
+        print(f"Guardado JSON: {json_output}")
 
     return results_df
 
@@ -332,13 +361,13 @@ def run_scoring(
 # ---------------------------------------------------------------------------
 
 def build_arg_parser():
-    import argparse
     p = argparse.ArgumentParser(description="Scoring Multi-fuente Fase 3b")
     p.add_argument("--cell-day", type=Path, required=True, help="cell_day.parquet")
     p.add_argument("--output", type=Path, required=True, help="validated_cell_day.parquet")
-    p.add_argument("--meteo", type=Path, help="cell_day_meteo.jsonl")
-    p.add_argument("--veg", type=Path, help="cell_day_vegetation.jsonl")
-    p.add_argument("--rain", type=Path, help="cell_day_rainfall.jsonl")
+    p.add_argument("--json-output", type=Path, help="validated_cell_day.json (array único)")
+    p.add_argument("--meteo", type=Path, help="cell_day_meteo.json")
+    p.add_argument("--veg", type=Path, help="cell_day_vegetation.json")
+    p.add_argument("--rain", type=Path, help="cell_day_rainfall.json")
     p.add_argument("--weights", type=str, help="JSON string con pesos personalizados")
     p.add_argument("--accept-threshold", type=float, default=0.70)
     p.add_argument("--review-threshold", type=float, default=0.30)
@@ -365,6 +394,7 @@ def main(argv: list[str] | None = None) -> int:
         rain_path=args.rain,
         weights=weights,
         thresholds=thresholds,
+        json_output=args.json_output,
     )
     return 0
 
