@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """
-Fase 2 ÔÇö Agregaci├│n cell_day (grano: cell_id + date + sensor)
+Fase 2 — Agregación cell_day (grano: cell_id + date + sensor)
 
 Lee observations.parquet (Fase 1), agrupa por (cell_id_L0, date, sensor)
 y genera cell_day.parquet + cell_day.jsonl con 15 campos contractuales.
@@ -48,7 +48,7 @@ def parse_cell_id(cell_id: str) -> tuple[int, int, int] | None:
 
 
 def cell_centroid_lonlat(iy: int, ix: int, cell_size: float) -> list[float]:
-    """Centro geom├®trico de la celda en lon/lat (WGS84)."""
+    """Centro geométrico de la celda en lon/lat (WGS84)."""
     # Centro en metros EPSG:3035
     x_center = (ix + 0.5) * cell_size
     y_center = (iy + 0.5) * cell_size
@@ -63,7 +63,7 @@ def format_cell_id(iy: int, ix: int, level: int, grid_prefix: str) -> str:
 
 
 def compute_parent_ids(iy: int, ix: int, grid_prefix: str) -> dict[str, str]:
-    """Calcula parent_ids para L1, L2, L3 (anidamiento 2├ù2)."""
+    """Calcula parent_ids para L1, L2, L3 (anidamiento 2×2)."""
     parents = {}
     for level in (1, 2, 3):
         p_iy = iy // (2 ** level)
@@ -110,10 +110,10 @@ def aggregate_cell_day(df: pd.DataFrame, cell_size: float, grid_prefix: str) -> 
     for key, group in grouped:
         cell_id, date_str, sensor = key.split("|", 2)
 
-        # Parsear cell_id para geometr├¡a
+        # Parsear cell_id para geometría
         parsed = parse_cell_id(cell_id)
         if parsed is None:
-            print(f"ADVERTENCIA: cell_id inv├ílido {cell_id}, se omite", file=sys.stderr)
+            print(f"ADVERTENCIA: cell_id inválido {cell_id}, se omite", file=sys.stderr)
             continue
         level, iy, ix = parsed
 
@@ -144,7 +144,7 @@ def aggregate_cell_day(df: pd.DataFrame, cell_size: float, grid_prefix: str) -> 
         n_nrt = int((group["product"] == "NRT").sum())
         product_mix = n_nrt / n_obs if n_obs > 0 else 0.0
 
-        # Flags (├║nicos del grupo)
+        # Flags (únicos del grupo)
         all_flags = set()
         for fl in group["flags"]:
             if isinstance(fl, (list, np.ndarray)):
@@ -154,7 +154,7 @@ def aggregate_cell_day(df: pd.DataFrame, cell_size: float, grid_prefix: str) -> 
             all_flags.add("sp_nrt_hybrid")
         flags = sorted(all_flags)
 
-        # Geometr├¡a
+        # Geometría
         centroid = cell_centroid_lonlat(iy, ix, cell_size)
         parent_ids = compute_parent_ids(iy, ix, grid_prefix)
         cell_area_km2 = (cell_size / 1000.0) ** 2  # 1.0 para 1km
@@ -206,20 +206,20 @@ def validate_cell_day(cell_day: pd.DataFrame, observations: pd.DataFrame) -> Non
     print(f"Filas totales: {len(cell_day)}")
     print(f"Por sensor:\n{cell_day['sensor'].value_counts().to_string()}")
 
-    # 1. Reconciliaci├│n n_obs
+    # 1. Reconciliación n_obs
     for sensor in ["MODIS", "VIIRS"]:
         obs_count = len(observations[observations["sensor"] == sensor])
         cd_sum = int(cell_day[cell_day["sensor"] == sensor]["n_obs"].sum())
         print(f"  {sensor}: observations={obs_count}, cell_day.n_obs.sum()={cd_sum} {'OK' if obs_count == cd_sum else 'MISMATCH'}")
 
-    # 2. row_id ├║nico
+    # 2. row_id único
     dup = cell_day["row_id"].duplicated().sum()
     print(f"row_id duplicados: {dup}")
     if dup > 0:
         raise ValueError(f"Hay {dup} row_id duplicados")
 
     # 3. cell_area_km2
-    print(f"cell_area_km2 ├║nico: {cell_day['cell_area_km2'].unique()}")
+    print(f"cell_area_km2 único: {cell_day['cell_area_km2'].unique()}")
 
     # 4. Fechas
     dates = pd.to_datetime(cell_day["date"], errors="coerce")
@@ -247,16 +247,14 @@ def validate_cell_day(cell_day: pd.DataFrame, observations: pd.DataFrame) -> Non
 
 
 def write_outputs(cell_day: pd.DataFrame, output_dir: Path) -> None:
-    """Escribe Parquet y JSON (array único)."""
+    """Escribe Parquet y JSONL."""
     parquet_path = output_dir / "cell_day.parquet"
-    json_path = output_dir / "cell_day.json"
+    jsonl_path = output_dir / "cell_day.jsonl"
 
     cell_day.to_parquet(parquet_path, compression="zstd", index=False)
     print(f"Escrito Parquet: {parquet_path} ({parquet_path.stat().st_size / 1024:.1f} KB)")
 
-    from json_output import JSONArrayWriter
-
-    with JSONArrayWriter(json_path, indent=2) as w:
+    with jsonl_path.open("w", encoding="utf-8") as f:
         for _, row in cell_day.iterrows():
             rec = row.to_dict()
             for k, v in rec.items():
@@ -268,18 +266,18 @@ def write_outputs(cell_day: pd.DataFrame, output_dir: Path) -> None:
                     rec[k] = v.isoformat() if not pd.isna(v) else None
                 elif hasattr(v, 'isoformat'):
                     rec[k] = v.isoformat()
-            w.write(rec)
-    print(f"Escrito JSON: {json_path} ({json_path.stat().st_size / 1024:.1f} KB)")
+            f.write(json.dumps(rec, ensure_ascii=False) + "\n")
+    print(f"Escrito JSONL: {jsonl_path} ({jsonl_path.stat().st_size / 1024:.1f} KB)")
 
 
 def build_arg_parser() -> argparse.ArgumentParser:
-    p = argparse.ArgumentParser(description="Fase 2: Agregaci├│n cell_day")
+    p = argparse.ArgumentParser(description="Fase 2: Agregación cell_day")
     p.add_argument("--input", type=Path, required=True,
                    help="observations.parquet de Fase 1")
     p.add_argument("--output", type=Path, required=True,
                    help="Directorio de salida")
     p.add_argument("--cell-size", type=int, default=1000,
-                   help="Tama├▒o de celda L0 en metros (default: 1000)")
+                   help="Tamaño de celda L0 en metros (default: 1000)")
     return p
 
 
@@ -291,7 +289,7 @@ def main(argv: list[str] | None = None) -> int:
     output_dir.mkdir(parents=True, exist_ok=True)
 
     try:
-        print("=== FASE 2: Agregaci├│n cell_day ===")
+        print("=== FASE 2: Agregación cell_day ===")
         print(f"Cell size: {args.cell_size} m ({grid_prefix})")
         print(f"Entrada: {args.input}")
         print(f"Salida: {output_dir}")
