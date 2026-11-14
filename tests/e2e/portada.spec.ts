@@ -112,9 +112,10 @@ test('el botón Incendios del rail abre y cierra su panel', async ({ page }) => 
   await page.goto('./');
   await page.getByRole('button', { name: 'Empezar' }).click();
   const rail = page.getByRole('navigation', { name: 'Módulos' });
-  test.skip(!(await rail.isVisible()), 'el rail solo se muestra en pantallas anchas');
   const button = rail.getByRole('button', { name: 'Incendios' });
   const panel = page.getByRole('complementary', { name: 'Incendios' });
+  // En escritorio el panel empieza abierto; en móvil, cerrado
+  if ((await button.getAttribute('aria-pressed')) !== 'true') await button.click();
   await expect(button).toHaveAttribute('aria-pressed', 'true');
   await expect(panel).toBeVisible();
   await button.click();
