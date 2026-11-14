@@ -30,11 +30,32 @@ app.add_middleware(
 )
 
 
-class LuciaRouteRequest(BaseModel):
-    """Petición interactiva desde el Frontend para calcular ruta segura desde un punto GPS."""
+class LuciaMeetingPointInput(BaseModel):
+    """Punto de Encuentro explícito enviado por el usuario/operador o por el Frontend."""
 
-    lon: float = Field(..., description="Longitud WGS84 (ej. -6.541)")
-    lat: float = Field(..., description="Latitud WGS84 (ej. 37.452)")
+    id: str | None = Field(default=None, description="Identificador opcional del Punto de Encuentro")
+    name: str = Field(
+        default="Punto de Encuentro",
+        description="Nombre descriptivo del Punto de Encuentro (ej. 'Polideportivo Municipal', 'Cruce N-435')",
+    )
+    lon: float | None = Field(default=None, description="Longitud WGS84 del Punto de Encuentro")
+    lat: float | None = Field(default=None, description="Latitud WGS84 del Punto de Encuentro")
+    grid_rc: list[int] | None = Field(
+        default=None,
+        description="Coordenada local [fila, columna] (0..31) alternativa a lon/lat",
+    )
+    kind: str = Field(
+        default="official_assembly_point",
+        description="Categoría del Punto de Encuentro (ej. 'shelter', 'road_junction_assembly', 'heliport')",
+    )
+    capacity: int = Field(default=500, ge=1, description="Capacidad estimada de personas/animales")
+
+
+class LuciaRouteRequest(BaseModel):
+    """Petición interactiva desde el Frontend para calcular ruta segura hacia un Punto de Encuentro."""
+
+    lon: float = Field(..., description="Longitud WGS84 de inicio (ej. -6.541)")
+    lat: float = Field(..., description="Latitud WGS84 de inicio (ej. 37.452)")
     profile: Literal["human", "animal"] = Field(
         default="human",
         description="Perfil de evacuación: 'human' (personas) o 'animal' (fauna/ganado)",
@@ -44,6 +65,13 @@ class LuciaRouteRequest(BaseModel):
         ge=0.05,
         le=0.95,
         description="Threshold seguro al fuego para zonas sin quemar (por defecto 0.25)",
+    )
+    meeting_points: list[LuciaMeetingPointInput] | None = Field(
+        default=None,
+        description=(
+            "Lista opcional de Puntos de Encuentro explícitos hacia los que dirigir la ruta. "
+            "Si se omite, LUCIA utiliza los Puntos de Encuentro oficiales seguros de la zona."
+        ),
     )
 
 
@@ -113,18 +141,49 @@ async def get_lucia_routes(
 
 @app.post("/api/lucia/route")
 async def compute_lucia_interactive_route(req: LuciaRouteRequest) -> dict:
-    """Calcula en tiempo real una ruta GeoJSON desde `(lon, lat)` hacia la zona libre de peligro más cercana."""
+    """Calcula en tiempo real una ruta GeoJSON desde `(lon, lat)` hacia el Punto de Encuentro más seguro."""
     if not os.path.exists(lucia_config.DEFAULT_CATA_PREDICTIONS_PATH):
         raise HTTPException(
             status_code=404,
             detail="No se encontró cata_predictions.json. Ejecuta primero CATA.",
         )
+    custom_mps = (
+        [mp.model_dump(exclude_none=True) for mp in req.meeting_points]
+        if req.meeting_points
+        else None
+    )
     return compute_Interactive_route_from_lonlat(
         lon=req.lon,
         lat=req.lat,
         profile=req.profile,
         safe_fire_threshold=req.safe_fire_threshold,
+        meeting_points=custom_mps,
     )
+
+
+@app.get("/api/lucia/meeting-points")
+async def get_lucia_meeting_points(
+    zone_id: str | None = Query(default=None, description="Filtrar por zone_id de CATA"),
+) -> dict:
+    """Devuelve todos los Puntos de Encuentro (Meeting Points) activos en las zonas de LUCIA."""
+    default_path = lucia_config.DEFAULT_GEOJSON_OUTPUT_PATH
+    if os.path.exists(default_path):
+        with open(default_path, encoding="utf-8") as f:
+            data = json.load(f)
+    else:
+        data = generate_lucia_geojson_from_cata(output_geojson_path=None)
+
+    mp_features = [
+        feat
+        for feat in data.get("features", [])
+        if feat.get("properties", {}).get("feature_type") == "meeting_point"
+        and (zone_id is None or feat.get("properties", {}).get("zone_id") == zone_id)
+    ]
+    return {
+        "type": "FeatureCollection",
+        "total_meeting_points": len(mp_features),
+        "features": mp_features,
+    }
 
 
 @app.get("/api/cata/predictions")

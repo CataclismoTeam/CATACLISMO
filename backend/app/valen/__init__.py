@@ -6,9 +6,18 @@ Pilares de enriquecimiento de VALEN (`backend/app/valen/`):
   3. `rainfall_client.py`: Días sin lluvia, racha seca y precipitación acumulada (AEMET + ERA5).
   4. `vegetation_client.py`: Inflamabilidad combinada ESA WorldCover 10m + MITECO IFN3.
   5. `roads_client.py`: Red viaria de carreteras, pistas forestales y caminos (OpenStreetMap Overpass API).
-  6. `scoring_client.py`: Validación inteligente multi-criterio (`ACEPTA` / `REVISA` / `RECHAZA`).
+  6. `elevation_client.py`: Altitud y pendiente topográfica con Open-Elevation API + función de marcha de Tobler.
+  7. `scoring_client.py`: Validación inteligente multi-criterio (`ACEPTA` / `REVISA` / `RECHAZA`).
 """
 
+from .elevation_client import (
+    ElevationCache,
+    ElevationClient,
+    compute_slope_cost_multiplier,
+    load_cell_elevation,
+    save_cell_elevation,
+    tobler_hiking_speed_kmh,
+)
 from .laea import (
     CELL_PREFIX,
     CELL_SIZE_M,
@@ -33,15 +42,21 @@ __all__ = [
     "ALGORITHM_NAME",
     "CELL_PREFIX",
     "CELL_SIZE_M",
+    "ElevationCache",
+    "ElevationClient",
     "GRID_LEVEL",
     "HIGHWAY_CLASSES",
     "RoadsCache",
     "RoadsClient",
     "cell_block_bbox_lonlat",
+    "compute_slope_cost_multiplier",
     "epsg3035_to_lonlat",
     "format_cell_id",
+    "load_cell_elevation",
     "load_cell_roads",
     "lonlat_to_epsg3035",
     "parse_cell_id",
+    "save_cell_elevation",
     "save_cell_roads",
+    "tobler_hiking_speed_kmh",
 ]

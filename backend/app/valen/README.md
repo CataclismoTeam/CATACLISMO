@@ -175,6 +175,18 @@ backend/app/valen/
   - Caché SQLite persistente por *bounding box*: `cache/roads_cache.sqlite`.
   - Artefacto de salida consumido por **LUCIA**: `output/cell_roads.json` (`road_length_km`, `road_access_score` $\in [0, 1]$, `best_highway_class`, `human_speed_factor`, `animal_speed_factor`, `motorway_barrier`).
 
+### Fase 3e: Elevación y Pendiente Topográfica con Open-Elevation (`elevation_client.py`)
+- **Fuente oficial:** **Open-Elevation API** (`https://api.open-elevation.com/api/v1/lookup`) — consulta por lotes (`POST`, 256 centroides WGS84 por petición) la altitud sobre el nivel del mar (`elevation_m`) de cada celda `ES1K`.
+- **Resiliencia hipsométrica:** Si Open-Elevation está temporalmente inaccesible o sin red, utiliza un modelo hipsométrico continuo $C^1$ de las cordilleras ibéricas (`estimate_iberian_elevation_m`) para garantizar pendientes suaves y realistas entre celdas vecinas.
+- **Métricas de pendiente y función de Tobler para LUCIA:**
+  - `elevation_m`: Altitud sobre el nivel del mar (metros).
+  - `slope_deg` y `slope_pct`: Pendiente media respecto a las 8 celdas vecinas.
+  - `max_delta_elev_m` y `max_uphill_delta_m`: Mayor desnivel absoluto y de subida en las 8 direcciones.
+  - `tobler_hiking_speed_kmh(slope_ratio)` y `compute_slope_cost_multiplier(delta_z, dist_m, profile)`: Multiplicador físico direccional ($\Delta z$) aplicado en cada transición del A\* de **LUCIA**.
+- **Caché y salida:**
+  - Caché SQLite persistente por celda: `cache/elevation_cache.sqlite`.
+  - Artefacto de salida consumido por **LUCIA**: `output/cell_elevation.json`.
+
 ---
 
 ## 4. Comandos de Ejecución del Pipeline VALEN
