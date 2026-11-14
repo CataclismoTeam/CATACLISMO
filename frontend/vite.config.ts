@@ -2,7 +2,7 @@ import react from '@vitejs/plugin-react';
 import { defineConfig } from 'vite';
 import { viteStaticCopy } from 'vite-plugin-static-copy';
 
-// Ruta base en GitHub Pages: https://celestedlc.github.io/CATACLISMO/
+// Ruta base en GitHub Pages: https://cataclismoteam.github.io/CATACLISMO/
 const BASE = '/CATACLISMO/';
 const CESIUM_BUILD = 'node_modules/cesium/Build/Cesium';
 

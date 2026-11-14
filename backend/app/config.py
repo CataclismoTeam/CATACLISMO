@@ -8,7 +8,7 @@ class Settings(BaseSettings):
 
     database_url: str = "postgresql+asyncpg://cataclismo:cataclismo@localhost:5432/cataclismo"
     # Orígenes del frontend con permiso para llamar a la API (separados por comas)
-    cors_origins: str = "http://localhost:5173,https://celestedlc.github.io"
+    cors_origins: str = "http://localhost:5173,https://cataclismoteam.github.io"
 
     @property
     def cors_origin_list(self) -> list[str]:

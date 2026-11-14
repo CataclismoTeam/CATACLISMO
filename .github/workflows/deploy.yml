@@ -44,7 +44,7 @@ concurrency:
 
 env:
   MAINTENANCE: ${{ inputs.maintenance == true || vars.MAINTENANCE_MODE == 'true' }}
-  SITE_URL: https://celestedlc.github.io/CATACLISMO/
+  SITE_URL: https://cataclismoteam.github.io/CATACLISMO/
 
 jobs:
   # ─── 0. Guardián ──────────────────────────────────────────────────────────
@@ -335,7 +335,7 @@ jobs:
           name: dist
           path: dist
       # Procedencia firmada de cada fichero publicado: se verifica con
-      # gh attestation verify <fichero> --repo Celestedlc/CATACLISMO
+      # gh attestation verify <fichero> --repo CataclismoTeam/CATACLISMO
       - name: Atestación de procedencia (SLSA)
         uses: actions/attest-build-provenance@4d101475d8b20a2381f78447822ac1eab6504dd8 # v4.2.2
         with:

@@ -10,7 +10,7 @@ on:
 permissions: {}
 
 env:
-  SITE_URL: https://celestedlc.github.io/CATACLISMO/
+  SITE_URL: https://cataclismoteam.github.io/CATACLISMO/
 
 jobs:
   produccion:

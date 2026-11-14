@@ -2,7 +2,7 @@
 
 Propuesta del equipo CATACLISMO para NASA Space Apps 2026.
 
-Web publicada: https://celestedlc.github.io/CATACLISMO/
+Web publicada: https://cataclismoteam.github.io/CATACLISMO/
 
 ## Stack
 

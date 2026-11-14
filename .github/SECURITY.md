@@ -2,7 +2,7 @@
 
 ## Versiones soportadas
 
-Solo se mantiene la versión publicada en https://celestedlc.github.io/CATACLISMO/ (rama `main`).
+Solo se mantiene la versión publicada en https://cataclismoteam.github.io/CATACLISMO/ (rama `main`).
 
 ## Cómo reportar una vulnerabilidad
 
