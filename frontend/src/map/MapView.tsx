@@ -46,6 +46,7 @@ import { MapToolbar } from './MapToolbar.tsx';
 import { formatArea, formatLength } from './measure.ts';
 import { SearchBox } from './SearchBox.tsx';
 import { useMeasure } from './useMeasure.ts';
+import { useBackendSync } from './useBackendSync.ts';
 import { ready as readyData, useRemote } from './useRemote.ts';
 import {
   CoordinatesBar,
@@ -369,6 +370,7 @@ export default function MapView() {
 
   useAreaDraw(mapRef, ready);
   useShareHash(mapRef, ready);
+  useBackendSync(mapRef, ready);
   const measure = useMeasure(mapRef, ready);
   const wide = useSyncExternalStore(subscribeWide, isWide);
   const [searchOpen, setSearchOpen] = useState(false);

@@ -21,7 +21,11 @@ export type LayerId =
   | 'unidades'
   | 'evacuacion'
   | 'curvas'
-  | 'sombreado';
+  | 'sombreado'
+  // Backend (solo con API conectada)
+  | 'cata'
+  | 'lucia'
+  | 'juli';
 
 export const DEFAULT_LAYERS: Record<LayerId, boolean> = {
   detecciones: true,
@@ -35,6 +39,9 @@ export const DEFAULT_LAYERS: Record<LayerId, boolean> = {
   evacuacion: true,
   curvas: false,
   sombreado: false,
+  cata: true,
+  lucia: true,
+  juli: true,
 };
 
 /** Encuadre pedido desde fuera del mapa (lista de incendios). `at` fuerza repetirlo. */

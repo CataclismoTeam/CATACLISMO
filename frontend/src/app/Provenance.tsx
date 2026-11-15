@@ -3,6 +3,7 @@ import { Info } from 'lucide-react';
 import { lazy, Suspense, useRef, useState } from 'react';
 import { cn } from '../lib/cn.ts';
 import { shortDate } from '../lib/sources.ts';
+import { useBackend } from '../store/backend.ts';
 import { useHistory } from '../store/history.ts';
 import { useUi } from '../store/ui.ts';
 
@@ -17,6 +18,7 @@ export function Provenance() {
   const lastDate = useHistory((s) => s.manifest?.tiempo.ultimoDato);
   const incident = useUi((s) => s.selectedIncident);
   const [open, setOpen] = useState(false);
+  const backend = useBackend((s) => s.status);
   const t = useT();
   const button = useRef<HTMLButtonElement>(null);
 
@@ -58,6 +60,30 @@ export function Provenance() {
             {t('Sim.')}
           </span>
         </span>
+        {backend !== 'apagado' && (
+          <span
+            title={
+              backend === 'conectado'
+                ? t('Backend conectado')
+                : backend === 'conectando'
+                  ? t('Conectando con el backend…')
+                  : t('El backend no responde')
+            }
+            className={cn(
+              'flex h-full items-center gap-1.5 border-l border-line-strong px-2',
+              backend === 'conectado' ? 'text-accent' : 'text-ink-muted line-through',
+            )}
+          >
+            <span
+              aria-hidden
+              className={cn(
+                'size-2.5 rounded-full',
+                backend === 'conectado' ? 'bg-accent' : 'border border-ink-muted',
+              )}
+            />
+            <span className="max-md:sr-only">API</span>
+          </span>
+        )}
         <Info
           size={14}
           strokeWidth={1.5}

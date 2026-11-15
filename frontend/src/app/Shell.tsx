@@ -1,6 +1,7 @@
 import { useT } from '../lib/i18n.ts';
 import { lazy, Suspense, useEffect } from 'react';
 import { CalendarDock } from '../features/history/CalendarDock.tsx';
+import { useBackendHealth } from '../store/backend.ts';
 import { useHistory } from '../store/history.ts';
 import { useUi } from '../store/ui.ts';
 import { Briefing } from './Briefing.tsx';
@@ -17,6 +18,7 @@ export function Shell() {
   const briefingOpen = useUi((s) => s.briefingOpen);
   const methodOpen = useUi((s) => s.methodOpen);
   const t = useT();
+  useBackendHealth();
 
   useEffect(() => {
     void load();

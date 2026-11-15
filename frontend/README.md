@@ -28,3 +28,24 @@ calendario inferior.
 El panel de capas permite activar perímetro, unidades, viento y detecciones
 satélite. Los datos del escenario son simulados y se muestran como apoyo visual,
 no como fuente operativa real.
+
+## Conexión con el backend (opcional)
+
+Sin backend, la app funciona con sus datos estáticos (también en GitHub Pages). Con la API de
+`backend/` en marcha, el mapa añade el grupo **Backend** en Capas:
+
+- **CATA**: predicción neuronal por celdas de 1 km (ardiendo, ya quemado y por encima del umbral).
+- **LUCIA**: vías de escape para personas y animales, puntos de inicio y de encuentro.
+- **JULI**: equipos en terreno, en vivo por el WebSocket `/ws`, con aro rojo si falta la prueba
+  de vida.
+
+La URL de la API se elige, por orden, con `?api=` en la dirección (se recuerda; `?api=` vacío
+la olvida), en **Ajustes → Backend** o con `VITE_API_URL` al compilar:
+
+```bash
+cd backend && uv run uvicorn app.main:app --port 8000
+pnpm dev   # y abre http://localhost:5173/CATACLISMO/?api=http://localhost:8000
+```
+
+El backend debe permitir el origen del front en `CORS_ORIGINS` (por defecto, `localhost:5173`,
+`localhost:4173` y GitHub Pages).

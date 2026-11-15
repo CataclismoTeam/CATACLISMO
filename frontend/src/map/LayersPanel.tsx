@@ -2,6 +2,7 @@ import { useT } from '../lib/i18n.ts';
 import { Eye, EyeOff, X } from 'lucide-react';
 import type { ReactNode } from 'react';
 import { cn } from '../lib/cn.ts';
+import { useBackend } from '../store/backend.ts';
 import { useUi, type Basemap, type LayerId } from '../store/ui.ts';
 import { Button } from '../ui/Button.tsx';
 import type { Detections } from './detections.ts';
@@ -16,18 +17,31 @@ import {
   type Pattern,
 } from './overlays.ts';
 import { provider } from './providers.ts';
+import {
+  CATA_COLORS,
+  CATEGORY_LABEL,
+  JULI_STATUS,
+  juliBbox,
+  LUCIA_ANIMAL,
+  LUCIA_HUMAN,
+  luciaBbox,
+  MEETING_COLOR,
+  ORIGIN_COLOR,
+  type FireCategory,
+} from './backend.ts';
 
 const BASEMAPS: [Basemap, string][] = [
   ['satelite', 'Satélite'],
   ['topografico', 'Topográfico'],
 ];
 
-type Origin = 'real' | 'simulado' | 'modelo' | 'ilustrativa';
+type Origin = 'real' | 'simulado' | 'modelo' | 'ilustrativa' | 'backend';
 const ORIGIN: Record<Origin, { label: string; className: string }> = {
   real: { label: 'Real', className: 'border-ok/60 text-ok' },
   simulado: { label: 'Simulado', className: 'border-warn/60 text-warn' },
   modelo: { label: 'Predicción', className: 'border-water/60 text-water' },
   ilustrativa: { label: 'Ilustrativa', className: 'border-line-strong text-ink-muted' },
+  backend: { label: 'Backend', className: 'border-accent/60 text-accent' },
 };
 
 function Toggle({
@@ -113,6 +127,110 @@ function Group({ title, children }: { title: string; children: ReactNode }) {
       </h3>
       <ul className="m-0 list-none p-0">{children}</ul>
     </section>
+  );
+}
+
+/** Capas del backend: solo aparecen con una URL de API puesta en Ajustes. */
+function BackendGroup() {
+  const status = useBackend((s) => s.status);
+  const lucia = useBackend((s) => s.lucia);
+  const juli = useBackend((s) => s.juli);
+  const socket = useBackend((s) => s.socket);
+  const flyTo = useUi((s) => s.flyTo);
+  const t = useT();
+  if (status === 'apagado') return null;
+  if (status !== 'conectado') {
+    return (
+      <Group title="Backend">
+        <li className="py-2 text-xs text-ink-muted">
+          {status === 'conectando'
+            ? t('Conectando con el backend…')
+            : t('El backend no responde: se muestran solo los datos de la demo.')}
+        </li>
+      </Group>
+    );
+  }
+  const zones = lucia?.metadata?.zones ?? [];
+  const routes = lucia?.metadata?.total_routes_generated ?? 0;
+  const zonesBox = luciaBbox(lucia);
+  const teamsBox = juliBbox(juli);
+  const alerts = juli?.metadata?.proof_of_life?.active_alerts_count ?? 0;
+  const view = (box?: [number, number, number, number]) =>
+    box && (
+      <Button className="mt-1 self-start" onClick={() => flyTo(box)}>
+        {t('Ver en el mapa')}
+      </Button>
+    );
+  return (
+    <Group title="Backend">
+      <Toggle
+        id="cata"
+        label="CATA · predicción neuronal"
+        origin="modelo"
+        legend={
+          <div className="flex flex-col gap-1">
+            {(Object.keys(CATA_COLORS) as FireCategory[]).map((c) => (
+              <Swatch key={c} fill={CATA_COLORS[c][0]}>
+                {CATEGORY_LABEL[c]}
+              </Swatch>
+            ))}
+            <span className="text-xs text-ink-muted">
+              {lucia
+                ? t('{n} zonas · predicción para {d} en celdas de 1 km', {
+                    n: zones.length,
+                    d: zones[0]?.predicted_date ?? '—',
+                  })
+                : t('cargando…')}
+            </span>
+            {view(zonesBox)}
+          </div>
+        }
+      />
+      <Toggle
+        id="lucia"
+        label="LUCIA · vías de escape"
+        origin="modelo"
+        legend={
+          <div className="flex flex-col gap-1">
+            <Swatch fill={LUCIA_HUMAN}>Ruta segura para personas</Swatch>
+            <Swatch fill={LUCIA_ANIMAL} hatch="/">
+              Ruta segura para animales (discontinua)
+            </Swatch>
+            <Swatch fill={MEETING_COLOR}>Punto de encuentro</Swatch>
+            <Swatch fill={ORIGIN_COLOR}>Punto de inicio en riesgo</Swatch>
+            {lucia && (
+              <span className="text-xs text-ink-muted">{t('{n} rutas', { n: routes })}</span>
+            )}
+          </div>
+        }
+      />
+      <Toggle
+        id="juli"
+        label="JULI · equipos en terreno"
+        origin="backend"
+        legend={
+          <div className="flex flex-col gap-1">
+            {Object.entries(JULI_STATUS).map(([id, [color, label]]) => (
+              <Swatch key={id} fill={color}>
+                {label}
+              </Swatch>
+            ))}
+            <span className="text-xs text-ink-muted">
+              {juli
+                ? t('{e} equipos · {o} operarios · {a} sin prueba de vida (aro rojo)', {
+                    e: juli.metadata?.total_teams ?? 0,
+                    o: juli.metadata?.total_operators ?? 0,
+                    a: alerts,
+                  })
+                : t('cargando…')}
+              {' · '}
+              {socket ? t('en vivo') : t('se actualiza cada 20 s')}
+            </span>
+            {view(teamsBox)}
+          </div>
+        }
+      />
+    </Group>
   );
 }
 
@@ -330,6 +448,8 @@ export function LayersPanel({ detections: load }: { detections: Remote<Detection
           }
         />
       </Group>
+
+      <BackendGroup />
 
       <Group title="Terreno">
         <Toggle

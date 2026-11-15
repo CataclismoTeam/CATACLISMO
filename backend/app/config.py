@@ -8,7 +8,9 @@ class Settings(BaseSettings):
 
     database_url: str = "postgresql+asyncpg://cataclismo:cataclismo@localhost:5432/cataclismo"
     # Orígenes del frontend con permiso para llamar a la API (separados por comas)
-    cors_origins: str = "http://localhost:5173,https://cataclismoteam.github.io"
+    cors_origins: str = (
+        "http://localhost:5173,http://localhost:4173,https://cataclismoteam.github.io"
+    )
     # Clave de NASA FIRMS para ingesta Near Real-Time (NRT)
     firms_map_key: str = ""
     live_nrt_interval_sec: int = 0  # >0 activa auto-refresco periódico en segundo plano

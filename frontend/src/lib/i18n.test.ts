@@ -4,6 +4,7 @@ import { UNIT } from '../features/history/model.ts';
 import { METRIC_LABEL } from '../features/history/series.ts';
 import { ANOMALY_LABEL } from '../features/history/stats.ts';
 import { LEVEL } from '../map/alerts.ts';
+import { backendDetails, CATEGORY_LABEL, JULI_STATUS } from '../map/backend.ts';
 import { KIND, STATUS } from '../map/markers.ts';
 import { channelsFor, DOMAIN_LABEL, GROUPS, SCENARIO_LIST } from '../map/scenario.ts';
 import en from './en.ts';
@@ -41,6 +42,17 @@ function dynamicKeys(): string[] {
     ...Object.values(METRIC_LABEL),
     ...Object.values(ANOMALY_LABEL),
     ...Object.values(LEVEL).map((l) => l.label),
+    // Fichas y leyendas del backend
+    ...Object.values(JULI_STATUS).map(([, label]) => label),
+    ...Object.values(CATEGORY_LABEL),
+    ...['field_operator', 'evacuation_route', 'meeting_point', 'evacuation_origin', 'fire_cell']
+      .map((feature_type) => backendDetails({ feature_type, alerta: true }))
+      .flatMap(({ rows }) => rows.map(([label]) => label)),
+    'Ruta',
+    'Punto de encuentro',
+    'Punto de inicio en riesgo',
+    'Celda de CATA (1 km)',
+    'Sin respuesta',
   ];
 }
 

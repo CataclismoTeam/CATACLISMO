@@ -41,6 +41,10 @@ export const LAYER_IDS: Record<LayerId, string[]> = {
   evacuacion: ['ruta-casing', 'ruta-line', 'ruta-destacada'],
   curvas: ['curvas-line', 'curvas-label'],
   sombreado: ['sombreado'],
+  // Backend: capas de map/backend.ts
+  cata: ['be-cata-fill'],
+  lucia: ['be-ruta', 'be-puntos'],
+  juli: ['be-juli-linea', 'be-juli'],
 };
 
 /** Trama para la predicción: se distingue del fuego real también en gris. */
