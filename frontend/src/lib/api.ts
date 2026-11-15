@@ -1,9 +1,10 @@
 // Cliente del backend (FastAPI). En la web publicada se conecta solo (VITE_API_URL del build);
-// si no responde, la app sigue con sus datos estáticos. La URL sale, por orden, de `?api=` en la
-// dirección (para desarrollo; se recuerda) o de VITE_API_URL.
-import { readStored, writeStored } from './storage.ts';
+// si no responde, la app sigue con sus datos estáticos. Para desarrollo, `?api=` en la dirección
+// elige otro servidor solo para esa pestaña.
 
-const KEY = 'cataclismo.api';
+/** Clave antigua: versiones anteriores guardaban aquí la URL elegida en Ajustes */
+const LEGACY_KEY = 'cataclismo.api';
+const SESSION_KEY = 'cataclismo.api';
 
 /** Quita espacios y barras finales: `http://host:8000/` → `http://host:8000`. */
 export const normalizeBase = (url: string): string => url.trim().replace(/\/+$/, '');
@@ -26,16 +27,45 @@ function fromQuery(): string | null {
   }
 }
 
-/** URL inicial del backend ('' = sin backend). `?api=` se recuerda; `?api=` vacío la olvida. */
+/** sessionStorage puede faltar o lanzar (modo privado, datos bloqueados) */
+function session(): Storage | undefined {
+  try {
+    return window.sessionStorage;
+  } catch {
+    return undefined;
+  }
+}
+
+/**
+ * URL inicial del backend ('' = sin backend). `?api=` vale para la pestaña (sobrevive a recargar);
+ * `?api=` vacío desactiva el backend en ella. Si no, la del build.
+ */
 export function initialApiBase(): string {
+  // Una URL guardada por una versión anterior no debe tapar la de producción
+  try {
+    window.localStorage.removeItem(LEGACY_KEY);
+  } catch {
+    // sin almacenamiento: nada que limpiar
+  }
   const query = fromQuery();
+  const store = session();
   if (query !== null) {
     const base = normalizeBase(query);
-    writeStored(KEY, validBase(base) ? base : '');
-    return validBase(base) ? base : '';
+    const value = validBase(base) ? base : '';
+    try {
+      store?.setItem(SESSION_KEY, value);
+    } catch {
+      // sin almacenamiento: vale solo hasta recargar
+    }
+    return value;
   }
-  const stored = normalizeBase(readStored<string>(KEY, ''));
-  if (validBase(stored)) return stored;
+  let chosen: string | null = null;
+  try {
+    chosen = store?.getItem(SESSION_KEY) ?? null;
+  } catch {
+    chosen = null;
+  }
+  if (chosen !== null) return validBase(chosen) ? chosen : '';
   return defaultApiBase(window.location.hostname, import.meta.env.VITE_API_URL);
 }
 

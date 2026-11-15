@@ -40,8 +40,8 @@ variable del repo `VITE_API_URL`). Si no responde, la app sigue con sus datos es
 - **JULI**: equipos en terreno, en vivo por el WebSocket `/ws`, con aro rojo si falta la prueba
   de vida.
 
-La URL de la API se elige, por orden, con `?api=` en la dirección (se recuerda; `?api=` vacío
-la olvida) o con `VITE_API_URL` al compilar:
+La URL de la API se elige, por orden, con `?api=` en la dirección (solo para esa pestaña; `?api=` vacío
+lo desactiva) o con `VITE_API_URL` al compilar:
 
 ```bash
 cd backend && uv run uvicorn app.main:app --port 8000
