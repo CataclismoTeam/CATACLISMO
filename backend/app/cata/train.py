@@ -1548,7 +1548,7 @@ def _maybe_export_predictions_for_lucia(
 
     if data_source and not data_source.endswith(".npz") and not data_source.endswith(".csv") and not data_source.endswith(".csv.gz"):
         try:
-            x_tr, _, x_va, _, meta_tr, meta_va = load_contract_cell_day(
+            x_tr, y_tr, x_va, y_va, meta_tr, meta_va = load_contract_cell_day(
                 data_source,
                 grid_size=cfg.height,
                 time_steps=cfg.time_steps,
@@ -1564,6 +1564,7 @@ def _maybe_export_predictions_for_lucia(
             )
             # Tomamos las últimas ventanas temporales activas de cada bloque para predecir t+1
             all_x = np.concatenate([x_tr, x_va], axis=0) if len(x_tr) and len(x_va) else (x_tr if len(x_tr) else x_va)
+            all_y = np.concatenate([y_tr, y_va], axis=0) if len(y_tr) and len(y_va) else (y_tr if len(y_tr) else y_va)
             all_meta = (meta_tr + meta_va) if (meta_tr or meta_va) else []
             if len(all_x) > 0:
                 max_zones = min(len(all_x), getattr(args, "max_prediction_zones", 8))
@@ -1571,12 +1572,14 @@ def _maybe_export_predictions_for_lucia(
                 scores_act = all_x[:, -1, :, :, 0].sum(axis=(1, 2))
                 top_idx = np.argsort(scores_act)[::-1][:max_zones]
                 seq_batch = all_x[top_idx]
+                y_batch = all_y[top_idx] if len(all_y) == len(all_x) else None
                 origins_batch = [all_meta[int(i)] for i in top_idx] if all_meta else None
                 export_cata_predictions_for_lucia(
                     model=model,
                     sequence=seq_batch,
                     output_path=pred_out,
                     patch_origins=origins_batch,
+                    y_true_batch=y_batch,
                 )
                 return pred_out
         except Exception as exc:  # noqa: BLE001

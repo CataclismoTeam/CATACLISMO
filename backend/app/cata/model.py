@@ -585,6 +585,7 @@ def export_cata_predictions_for_lucia(
     threshold: float = config.PREDICTION_THRESHOLD,
     include_history_burned: bool = True,
     patch_origins: Sequence[dict] | None = None,
+    y_true_batch: np.ndarray | None = None,
 ) -> dict:
     """Ejecuta CATA sobre secuencias validadas por VALEN y guarda el archivo de predicciones para LUCIA.
 
@@ -621,6 +622,32 @@ def export_cata_predictions_for_lucia(
     state_batch = q_res["state_matrix"]
     probs_batch = q_res["probabilities"]
     symbols_batch = q_res["symbol_grid"]
+
+    # Aprendizaje continuo: calibración recursiva por bloque + actualización si existe observación real t+1
+    try:
+        from app.continual import continual_engine
+
+        origins_list = list(patch_origins) if patch_origins else None
+        probs_batch = continual_engine.calibrate_cata_probabilities(probs_batch, origins_list)
+        q_cal = classify_cata_quadrants(
+            sequence=x,
+            probs_t1=probs_batch,
+            threshold=threshold,
+            include_history_burned=include_history_burned,
+        )
+        state_batch = q_cal["state_matrix"]
+        symbols_batch = q_cal["symbol_grid"]
+        if y_true_batch is not None:
+            continual_engine.update_cata_from_observation(
+                model=model,
+                seq_batch=x,
+                probs_batch=probs_batch,
+                y_true_batch=y_true_batch,
+                patch_origins=origins_list,
+                threshold=threshold,
+            )
+    except Exception as exc:  # noqa: BLE001
+        logger.debug("Calibración continua de CATA omitida: %s", exc)
 
     num_batches, _, height, width, num_ch = x.shape
     ch_names = list(config.CHANNEL_REGISTRY[:num_ch])

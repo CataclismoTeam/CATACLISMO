@@ -9,10 +9,12 @@ from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel, Field
 
 from app.config import settings
+from app.continual import continual_engine
 from app.db import postgis_version
 from app.juli import config as juli_config
 from app.juli.main import juli_live_router
 from app.juli.tracker import juli_tracker
+from app.live_nrt import LIVE_STATUS_PATH, run_live_nrt_cycle
 from app.lucia import config as lucia_config
 from app.lucia.router import (
     compute_Interactive_route_from_lonlat,
@@ -199,6 +201,57 @@ async def get_cata_predictions() -> dict:
         raise HTTPException(status_code=404, detail="No se encontró cata_predictions.json.")
     with open(path, encoding="utf-8") as f:
         return json.load(f)
+
+
+class ContinualFeedbackInput(BaseModel):
+    """Feedback en vivo desde el terreno (First Responders / JULI) para calibrar CATA y LUCIA."""
+
+    zone_or_block_id: str = Field(..., description="ID de zona o bloque (ej. 'ES1K_block_138_187_2022-07-18 06:00' o '138_187')")
+    feedback_type: Literal["confirmed_fire", "false_alarm"] = Field(
+        ..., description="'confirmed_fire' si hay fuego real no detectado; 'false_alarm' si es falsa alarma"
+    )
+    intensity: float = Field(default=1.0, ge=0.1, le=2.0, description="Peso del ajuste (0.1 a 2.0)")
+
+
+@app.get("/api/continual/status")
+async def get_continual_status() -> dict:
+    """Devuelve el estado del motor de aprendizaje continuo recursivo de CATA y LUCIA."""
+    return continual_engine.state
+
+
+@app.post("/api/continual/feedback")
+async def post_continual_feedback(req: ContinualFeedbackInput) -> dict:
+    """Aplica feedback directo desde terreno a la memoria recursiva sin reentrenar."""
+    res = continual_engine.register_field_feedback(
+        block_or_zone_id=req.zone_or_block_id,
+        feedback_type=req.feedback_type,
+        intensity=req.intensity,
+    )
+    return {"status": "ok", **res, "continual_state": continual_engine.state}
+
+
+@app.get("/api/live/status")
+async def get_live_nrt_status() -> dict:
+    """Devuelve el estado de la última consulta Near Real-Time a NASA FIRMS."""
+    if os.path.exists(LIVE_STATUS_PATH):
+        with open(LIVE_STATUS_PATH, encoding="utf-8") as f:
+            return json.load(f)
+    return {
+        "status": "idle",
+        "firms_key_configured": bool(settings.firms_map_key or os.environ.get("FIRMS_MAP_KEY")),
+    }
+
+
+@app.post("/api/live/refresh")
+async def trigger_live_nrt_refresh(days: int = Query(default=2, ge=1, le=10)) -> dict:
+    """Descarga detecciones FIRMS NRT en directo, predice con CATA y actualiza rutas LUCIA."""
+    try:
+        res = run_live_nrt_cycle(days=days)
+    except RuntimeError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    if res.get("status") == "updated_live":
+        await manager.broadcast({"event": "live_nrt_updated", **res})
+    return res
 
 
 # ==============================================================================

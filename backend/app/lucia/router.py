@@ -921,10 +921,22 @@ def build_zone_geojson_features(
         road_grids=road_grids,
         elevation_grids=elevation_grids,
     )
+    analytic = compute_analytic_target_fields(features_tensor)
     if model is not None:
         tf_fields = lucia_predict_fields(model, features_tensor)
+        try:
+            from app.continual import continual_engine
+
+            tf_fields = continual_engine.adapt_lucia_fields(
+                model=model,
+                zone_id=zone_id,
+                features_tensor=features_tensor,
+                tf_fields=tf_fields,
+                analytic_target=analytic,
+            )
+        except Exception as exc:  # noqa: BLE001
+            logger.debug("Adaptación continua de LUCIA omitida: %s", exc)
     else:
-        analytic = compute_analytic_target_fields(features_tensor)
         tf_fields = {
             "human_risk_field": analytic[..., 0],
             "animal_risk_field": analytic[..., 1],
