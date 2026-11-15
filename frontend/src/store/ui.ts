@@ -90,8 +90,8 @@ const storedMap = readStored<{ mode?: MapMode; basemap?: Basemap }>(MAP_KEY, {})
 
 export const useUi = create<UiState>((set, get) => ({
   briefingOpen: !readStored(BRIEFING_KEY, false),
-  // En pantallas estrechas el mapa va primero y el calendario empieza plegado
-  calendarOpen: !narrow(),
+  // El mapa va primero: el calendario empieza plegado (con él abierto el mapa queda muy bajo)
+  calendarOpen: false,
   methodOpen: false,
   projection: readStored(PROJECTION_KEY, false),
   theme: readStored<Theme>(THEME_KEY, 'oscuro'),
