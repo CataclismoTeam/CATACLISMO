@@ -18,6 +18,8 @@ export const PREDICTION_BANDS: [hours: number, color: string, label: string, pat
   [6, '#c9b46b', '4–6 h', 'x'],
 ];
 export const ACTIVE_COLOR = '#c2331f';
+/** Fuego real ya apagado (sin detecciones al cierre del dato): gris ceniza */
+export const ASH_COLOR = '#6f6a66';
 export const ROUTE_COLOR = '#2f9e62';
 /** Halo ilustrativo de los incendios reales: gris neutro, nunca los colores del modelo */
 export const HALO_COLOR = '#b8bcc4';
@@ -30,11 +32,11 @@ export function tokenColor(name: string, fallback: string): string {
 
 /** Capas de MapLibre que controla cada interruptor del panel. */
 export const LAYER_IDS: Record<LayerId, string[]> = {
-  detecciones: ['det-cell', 'det-cell-line', 'real-fill', 'real-icon'],
+  detecciones: ['det-cell', 'real-fill', 'real-icon'],
   halo: ['halo-fill', 'halo-line'],
   mes: ['mes-fill', 'mes-line'],
-  incendio: ['inc-fill', 'inc-line'],
-  prediccion: ['pred-tint', 'pred-fill', 'pred-line'],
+  incendio: ['inc-fill'],
+  prediccion: ['pred-tint', 'pred-fill'],
   unidades: [],
   evacuacion: ['ruta-casing', 'ruta-line', 'ruta-destacada'],
   curvas: ['curvas-line', 'curvas-label'],
@@ -82,9 +84,7 @@ const NEAR_ONLY = [
   'halo-line',
   'pred-tint',
   'pred-fill',
-  'pred-line',
   'inc-fill',
-  'inc-line',
   'ruta-casing',
   'ruta-line',
 ];
@@ -286,20 +286,7 @@ export function installOverlays(
         paint: {
           'fill-opacity': 0.85,
           'fill-pattern': ['step', ['get', 'horas'], 'trama-2', 2, 'trama-4', 4, 'trama-6'],
-        },
-      },
-      beforeLabels,
-    );
-    map.addLayer(
-      {
-        id: 'pred-line',
-        type: 'line',
-        source: 'incendio',
-        filter: predictionFilter(NOW_H),
-        paint: {
-          'line-color': '#e0b070',
-          'line-width': 0.4,
-          'line-opacity': 0.35,
+          'fill-antialias': false,
         },
       },
       beforeLabels,
@@ -311,17 +298,8 @@ export function installOverlays(
         type: 'fill',
         source: 'incendio',
         filter: burntFilter(NOW_H),
-        paint: { 'fill-color': ACTIVE_COLOR, 'fill-opacity': 0.85 },
-      },
-      beforeLabels,
-    );
-    map.addLayer(
-      {
-        id: 'inc-line',
-        type: 'line',
-        source: 'incendio',
-        filter: burntFilter(NOW_H),
-        paint: { 'line-color': '#2a0d08', 'line-width': 0.5, 'line-opacity': 0.6 },
+        // Sin antialias: las celdas vecinas se funden en una mancha, sin costuras de rejilla
+        paint: { 'fill-color': ACTIVE_COLOR, 'fill-opacity': 0.85, 'fill-antialias': false },
       },
       beforeLabels,
     );
@@ -338,19 +316,10 @@ export function installOverlays(
           source: 'celdas-reales',
           minzoom: FAR_ZOOM,
           paint: {
-            'fill-color': ACTIVE_COLOR,
-            'fill-opacity': 0.85,
+            'fill-color': ['case', ['get', 'activo'], ACTIVE_COLOR, ASH_COLOR],
+            'fill-opacity': ['case', ['get', 'activo'], 0.85, 0.7],
+            'fill-antialias': false,
           },
-        },
-        beforeLabels,
-      );
-      map.addLayer(
-        {
-          id: 'det-cell-line',
-          type: 'line',
-          source: 'celdas-reales',
-          minzoom: FAR_ZOOM,
-          paint: { 'line-color': '#2a0d08', 'line-width': 0.5, 'line-opacity': 0.6 },
         },
         beforeLabels,
       );
@@ -454,9 +423,8 @@ const predictionFilter = (h: number): FilterSpecification => ['>', ['get', 'hora
 
 /** Muestra el incendio simulado a la hora `h` desde la ignición (0–6 h). */
 export function applyFireHour(map: MapLibre, h: number) {
-  for (const id of ['inc-fill', 'inc-line'])
-    if (map.getLayer(id)) map.setFilter(id, burntFilter(h));
-  for (const id of ['pred-tint', 'pred-fill', 'pred-line']) {
+  for (const id of ['inc-fill']) if (map.getLayer(id)) map.setFilter(id, burntFilter(h));
+  for (const id of ['pred-tint', 'pred-fill']) {
     if (map.getLayer(id)) map.setFilter(id, predictionFilter(h));
   }
 }
