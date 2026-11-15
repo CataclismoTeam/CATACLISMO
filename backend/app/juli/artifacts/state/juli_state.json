@@ -1,0 +1,126 @@
+{
+  "algorithm": "juli",
+  "updated_at": "2026-11-15T04:52:29+0100",
+  "teams": {
+    "team_brif_huelva": {
+      "team_id": "team_brif_huelva",
+      "name": "Cuadrilla BRIF Alfa — Doñana / Almonte",
+      "unit_code": "BRIF-HU-01",
+      "vehicle_type": "Autobomba Forestal 4x4 + Helitransporte",
+      "radio_channel": "VHF-01",
+      "zone_assigned": "ES1K_block_110_179",
+      "color": "#06b6d4",
+      "created_at": "2026-11-15T04:52:29+0100"
+    },
+    "team_ume_zamora": {
+      "team_id": "team_ume_zamora",
+      "name": "Pelotón UME Bravo — Sierra de la Culebra",
+      "unit_code": "UME-ZA-02",
+      "vehicle_type": "Nodriza Pesada + Dron Térmico",
+      "radio_channel": "VHF-02",
+      "zone_assigned": "ES1K_block_131_201",
+      "color": "#f59e0b",
+      "created_at": "2026-11-15T04:52:29+0100"
+    }
+  },
+  "operators": {
+    "op_hu_01": {
+      "operator_id": "op_hu_01",
+      "name": "Carlos Méndez",
+      "team_id": "team_brif_huelva",
+      "lon": -6.4182,
+      "lat": 37.6415,
+      "elevation_m": 312.0,
+      "role": "jefe_cuadrilla",
+      "status": "en_terreno",
+      "callsign": "ALFA-1",
+      "battery_pct": 92,
+      "heart_rate_bpm": 98,
+      "updated_at": "2026-11-15T04:52:29+0100"
+    },
+    "op_hu_02": {
+      "operator_id": "op_hu_02",
+      "name": "Elena Vargas",
+      "team_id": "team_brif_huelva",
+      "lon": -6.4148,
+      "lat": 37.6438,
+      "elevation_m": 318.5,
+      "role": "brigadista",
+      "status": "en_terreno",
+      "callsign": "ALFA-2",
+      "battery_pct": 87,
+      "heart_rate_bpm": 112,
+      "updated_at": "2026-11-15T04:52:29+0100"
+    },
+    "op_hu_03": {
+      "operator_id": "op_hu_03",
+      "name": "Javier Romero",
+      "team_id": "team_brif_huelva",
+      "lon": -6.411,
+      "lat": 37.6392,
+      "elevation_m": 305.0,
+      "role": "conductor_autobomba",
+      "status": "en_ruta",
+      "callsign": "ALFA-3",
+      "battery_pct": 96,
+      "heart_rate_bpm": 84,
+      "updated_at": "2026-11-15T04:52:29+0100"
+    },
+    "op_hu_04": {
+      "operator_id": "op_hu_04",
+      "name": "Sofía Martín",
+      "team_id": "team_brif_huelva",
+      "lon": -6.4165,
+      "lat": 37.6401,
+      "elevation_m": 310.0,
+      "role": "sanitario",
+      "status": "en_terreno",
+      "callsign": "ALFA-4",
+      "battery_pct": 94,
+      "heart_rate_bpm": 88,
+      "updated_at": "2026-11-15T04:52:29+0100"
+    },
+    "op_za_01": {
+      "operator_id": "op_za_01",
+      "name": "Miguel Ángel Prieto",
+      "team_id": "team_ume_zamora",
+      "lon": -3.184,
+      "lat": 41.281,
+      "elevation_m": 582.0,
+      "role": "jefe_cuadrilla",
+      "status": "en_terreno",
+      "callsign": "BRAVO-1",
+      "battery_pct": 89,
+      "heart_rate_bpm": 102,
+      "updated_at": "2026-11-15T04:52:29+0100"
+    },
+    "op_za_02": {
+      "operator_id": "op_za_02",
+      "name": "Laura Domínguez",
+      "team_id": "team_ume_zamora",
+      "lon": -3.1805,
+      "lat": 41.2832,
+      "elevation_m": 590.0,
+      "role": "piloto_dron",
+      "status": "en_terreno",
+      "callsign": "BRAVO-2",
+      "battery_pct": 78,
+      "heart_rate_bpm": 91,
+      "updated_at": "2026-11-15T04:52:29+0100"
+    },
+    "op_za_03": {
+      "operator_id": "op_za_03",
+      "name": "David Alonso",
+      "team_id": "team_ume_zamora",
+      "lon": -3.1872,
+      "lat": 41.2794,
+      "elevation_m": 574.0,
+      "role": "brigadista",
+      "status": "en_terreno",
+      "callsign": "BRAVO-3",
+      "battery_pct": 85,
+      "heart_rate_bpm": 116,
+      "updated_at": "2026-11-15T04:52:29+0100"
+    }
+  }
+}
