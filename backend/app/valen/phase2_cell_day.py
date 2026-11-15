@@ -15,18 +15,17 @@ Uso:
 from __future__ import annotations
 
 import argparse
-import json
 import logging
 import sys
 from datetime import date
 from pathlib import Path
-from typing import Any
 
 import numpy as np
 import pandas as pd
 
 try:
     from pyproj import Transformer
+
     _TRANSFORMER_INV = Transformer.from_crs("EPSG:3035", "EPSG:4326", always_xy=True)
 except ImportError:
     _TRANSFORMER_INV = None
@@ -44,7 +43,7 @@ ALGORITHM_NAME: str = "valen"
 logging.basicConfig(
     level=logging.INFO,
     format="%(asctime)s %(levelname)s %(name)s: %(message)s",
-    handlers=[logging.StreamHandler(sys.stdout)]
+    handlers=[logging.StreamHandler(sys.stdout)],
 )
 logger = logging.getLogger("valen.phase2_cell_day")
 
@@ -52,16 +51,19 @@ logger = logging.getLogger("valen.phase2_cell_day")
 # Constantes
 # ---------------------------------------------------------------------------
 
+
 class _FallbackTransformerInv:
     @staticmethod
     def transform(x_val, y_val):
         return _laea_inv(float(x_val), float(y_val))
+
 
 TRANSFORMER_INV = _TRANSFORMER_INV if _TRANSFORMER_INV is not None else _FallbackTransformerInv()
 
 # ---------------------------------------------------------------------------
 # Utilidades
 # ---------------------------------------------------------------------------
+
 
 def parse_cell_id(cell_id: str) -> tuple[int, int, int] | None:
     """Parsea 'ES1K:L0:Y{iy}:X{ix}' -> (level, iy, ix)."""
@@ -94,8 +96,8 @@ def compute_parent_ids(iy: int, ix: int, grid_prefix: str) -> dict[str, str]:
     """Calcula parent_ids para L1, L2, L3 (anidamiento 2×2)."""
     parents = {}
     for level in (1, 2, 3):
-        p_iy = iy // (2 ** level)
-        p_ix = ix // (2 ** level)
+        p_iy = iy // (2**level)
+        p_ix = ix // (2**level)
         parents[f"L{level}"] = f"{grid_prefix}:L{level}:Y{p_iy:05d}:X{p_ix:05d}"
     return parents
 
@@ -113,20 +115,33 @@ def load_observations(parquet_path: Path) -> pd.DataFrame:
     return df
 
 
-def aggregate_cell_day(
-    df: pd.DataFrame,
-    cell_size: float,
-    grid_prefix: str
-) -> pd.DataFrame:
+def aggregate_cell_day(df: pd.DataFrame, cell_size: float, grid_prefix: str) -> pd.DataFrame:
     """Agrupa por (cell_id_L0, date, sensor) y calcula 15 campos contractuales."""
-    required = ["cell_id_L0", "acq_date", "sensor", "frp", "daynight", "platform",
-                "confidence_rank", "scan", "track", "product", "flags"]
+    required = [
+        "cell_id_L0",
+        "acq_date",
+        "sensor",
+        "frp",
+        "daynight",
+        "platform",
+        "confidence_rank",
+        "scan",
+        "track",
+        "product",
+        "flags",
+    ]
     missing = [c for c in required if c not in df.columns]
     if missing:
         raise ValueError(f"Faltan columnas en observations: {missing}")
 
     df = df.copy()
-    df["group_key"] = df["cell_id_L0"].astype(str) + "|" + df["acq_date"].astype(str) + "|" + df["sensor"].astype(str)
+    df["group_key"] = (
+        df["cell_id_L0"].astype(str)
+        + "|"
+        + df["acq_date"].astype(str)
+        + "|"
+        + df["sensor"].astype(str)
+    )
 
     grouped = df.groupby("group_key", observed=True)
 
@@ -217,7 +232,9 @@ def aggregate_cell_day(
         results.append(row)
 
     cell_day_df = pd.DataFrame(results)
-    logger.info(f"Agregados {len(cell_day_df)} cell-days ({cell_day_df['sensor'].value_counts().to_dict()})")
+    logger.info(
+        f"Agregados {len(cell_day_df)} cell-days ({cell_day_df['sensor'].value_counts().to_dict()})"
+    )
     return cell_day_df
 
 
@@ -231,7 +248,8 @@ def validate_cell_day(cell_day: pd.DataFrame, observations: pd.DataFrame) -> Non
         obs_count = len(observations[observations["sensor"] == sensor])
         cd_sum = int(cell_day[cell_day["sensor"] == sensor]["n_obs"].sum())
         ok = obs_count == cd_sum
-        logger.info(f"  {sensor}: observations={obs_count}, cell_day.n_obs.sum()={cd_sum} {'OK' if ok else 'MISMATCH'}")
+        status = "OK" if ok else "MISMATCH"
+        logger.info(f"  {sensor}: observations={obs_count}, cell_day.n_obs.sum()={cd_sum} {status}")
 
     dup = cell_day["row_id"].duplicated().sum()
     logger.info(f"row_id duplicados: {dup}")
@@ -249,6 +267,7 @@ def validate_cell_day(cell_day: pd.DataFrame, observations: pd.DataFrame) -> Non
             all_flags.extend(fl)
     if all_flags:
         from collections import Counter
+
         flag_counts = Counter(all_flags)
         logger.info("Flags:")
         for flag, count in flag_counts.most_common():
@@ -285,7 +304,7 @@ def write_outputs(cell_day: pd.DataFrame, output_dir: Path) -> None:
                     rec[k] = v.tolist()
                 elif isinstance(v, (pd.Timestamp, date)):
                     rec[k] = v.isoformat() if not pd.isna(v) else None
-                elif hasattr(v, 'isoformat'):
+                elif hasattr(v, "isoformat"):
                     rec[k] = v.isoformat()
             w.write(rec)
     logger.info(f"Escrito JSON: {json_path} ({json_path.stat().st_size / 1024:.1f} KB)")
@@ -293,12 +312,11 @@ def write_outputs(cell_day: pd.DataFrame, output_dir: Path) -> None:
 
 def build_arg_parser() -> argparse.ArgumentParser:
     p = argparse.ArgumentParser(description="Algoritmo VALEN — Fase 2: Agregación cell_day")
-    p.add_argument("--input", type=Path, required=True,
-                   help="observations.parquet de Fase 1")
-    p.add_argument("--output", type=Path, required=True,
-                   help="Directorio de salida")
-    p.add_argument("--cell-size", type=int, default=1000,
-                   help="Tamaño de celda L0 en metros (default: 1000)")
+    p.add_argument("--input", type=Path, required=True, help="observations.parquet de Fase 1")
+    p.add_argument("--output", type=Path, required=True, help="Directorio de salida")
+    p.add_argument(
+        "--cell-size", type=int, default=1000, help="Tamaño de celda L0 en metros (default: 1000)"
+    )
     return p
 
 
@@ -319,7 +337,7 @@ def main(argv: list[str] | None = None) -> int:
         logger.info(f"Salida: {output_dir}")
 
         observations = load_observations(args.input)
-        cell_day = aggregate_cell_day(observations, args.cell_size, infer_grid_prefix(args.cell_size))
+        cell_day = aggregate_cell_day(observations, args.cell_size, grid_prefix)
         validate_cell_day(cell_day, observations)
         write_outputs(cell_day, output_dir)
 
@@ -329,10 +347,12 @@ def main(argv: list[str] | None = None) -> int:
     except Exception as e:
         logger.error(f"ERROR: {e}")
         import traceback
+
         traceback.print_exc()
         return 1
 
 
 if __name__ == "__main__":
     import sys
+
     sys.exit(main())

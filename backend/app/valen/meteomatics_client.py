@@ -14,13 +14,11 @@ from __future__ import annotations
 import argparse
 import hashlib
 import json
-import os
 import sqlite3
-import time
 from contextlib import closing
-from datetime import datetime, timedelta, timezone
+from datetime import UTC, datetime, timedelta
 from pathlib import Path
-from typing import Any, Literal
+from typing import Any
 
 import pandas as pd
 import requests
@@ -35,19 +33,19 @@ BASE_URL = "https://api.meteomatics.com"
 
 # Parámetros clave para riesgo de incendio (Meteomatics parameter names)
 FIRE_PARAMETERS = [
-    "t_2m:C",                    # Temperatura 2m (°C)
-    "relative_humidity_2m:p",    # Humedad relativa 2m (%)
-    "wind_speed_10m:ms",         # Velocidad viento 10m (m/s)
-    "wind_dir_10m:d",            # Dirección viento 10m (grados)
-    "wind_gusts_10m_1h:ms",      # Rachas viento 1h (m/s)
-    "precip_1h:mm",              # Precipitación 1h (mm)
-    "precip_24h:mm",             # Precipitación 24h (mm)
-    "global_rad:W/m2",           # Radiación global (W/m²)
-    "fire_weather_index:idx",    # Índice meteorológico de incendio (FWI)
-    "haines_index:idx",          # Índice Haines (estabilidad atmósfera)
-    "fosberg_index:idx",         # Índice Fosberg
-    "soil_moisture_0_10cm:m3/m3", # Humedad suelo 0-10cm
-    "soil_temp_0_10cm:C",        # Temp suelo 0-10cm
+    "t_2m:C",  # Temperatura 2m (°C)
+    "relative_humidity_2m:p",  # Humedad relativa 2m (%)
+    "wind_speed_10m:ms",  # Velocidad viento 10m (m/s)
+    "wind_dir_10m:d",  # Dirección viento 10m (grados)
+    "wind_gusts_10m_1h:ms",  # Rachas viento 1h (m/s)
+    "precip_1h:mm",  # Precipitación 1h (mm)
+    "precip_24h:mm",  # Precipitación 24h (mm)
+    "global_rad:W/m2",  # Radiación global (W/m²)
+    "fire_weather_index:idx",  # Índice meteorológico de incendio (FWI)
+    "haines_index:idx",  # Índice Haines (estabilidad atmósfera)
+    "fosberg_index:idx",  # Índice Fosberg
+    "soil_moisture_0_10cm:m3/m3",  # Humedad suelo 0-10cm
+    "soil_temp_0_10cm:C",  # Temp suelo 0-10cm
 ]
 
 # Parámetros derivados útiles
@@ -64,6 +62,7 @@ DEFAULT_CACHE_DB = DEFAULT_CACHE_DIR / "meteomatics_cache.sqlite"
 # ---------------------------------------------------------------------------
 # Cache SQLite
 # ---------------------------------------------------------------------------
+
 
 class MeteomaticsCache:
     """Cache persistente en SQLite para respuestas Meteomatics."""
@@ -95,45 +94,63 @@ class MeteomaticsCache:
             """)
             conn.commit()
 
-    def _make_key(self, param: str, lat: float, lon: float,
-                  start: str, end: str, interval: str) -> str:
+    def _make_key(
+        self, param: str, lat: float, lon: float, start: str, end: str, interval: str
+    ) -> str:
         raw = f"{param}|{lat:.6f}|{lon:.6f}|{start}|{end}|{interval}"
         return hashlib.sha256(raw.encode()).hexdigest()[:32]
 
-    def get(self, param: str, lat: float, lon: float,
-            start: str, end: str, interval: str) -> dict | None:
+    def get(
+        self, param: str, lat: float, lon: float, start: str, end: str, interval: str
+    ) -> dict | None:
         key = self._make_key(param, lat, lon, start, end, interval)
         with closing(sqlite3.connect(self.db_path)) as conn, conn:
             conn.row_factory = sqlite3.Row
             row = conn.execute(
-                "SELECT response_json, expires_at FROM queries WHERE cache_key = ?",
-                (key,)
+                "SELECT response_json, expires_at FROM queries WHERE cache_key = ?", (key,)
             ).fetchone()
             if row:
                 if row["expires_at"]:
                     exp = datetime.fromisoformat(row["expires_at"])
-                    if datetime.now(timezone.utc) > exp:
+                    if datetime.now(UTC) > exp:
                         return None  # expirado
                 return json.loads(row["response_json"])
         return None
 
-    def set(self, param: str, lat: float, lon: float,
-            start: str, end: str, interval: str,
-            response: dict, ttl_hours: int = 24) -> None:
+    def set(
+        self,
+        param: str,
+        lat: float,
+        lon: float,
+        start: str,
+        end: str,
+        interval: str,
+        response: dict,
+        ttl_hours: int = 24,
+    ) -> None:
         key = self._make_key(param, lat, lon, start, end, interval)
-        expires = (datetime.now(timezone.utc) + timedelta(hours=ttl_hours)).isoformat()
+        expires = (datetime.now(UTC) + timedelta(hours=ttl_hours)).isoformat()
         with closing(sqlite3.connect(self.db_path)) as conn, conn:
-            conn.execute("""
+            conn.execute(
+                """
                 INSERT OR REPLACE INTO queries
                 (cache_key, param, lat, lon, start_date, end_date, interval,
                  response_json, created_at, expires_at)
                 VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-            """, (
-                key, param, lat, lon, start, end, interval,
-                json.dumps(response),
-                datetime.now(timezone.utc).isoformat(),
-                expires
-            ))
+            """,
+                (
+                    key,
+                    param,
+                    lat,
+                    lon,
+                    start,
+                    end,
+                    interval,
+                    json.dumps(response),
+                    datetime.now(UTC).isoformat(),
+                    expires,
+                ),
+            )
             conn.commit()
 
     def stats(self) -> dict:
@@ -146,6 +163,7 @@ class MeteomaticsCache:
 # ---------------------------------------------------------------------------
 # Cliente principal
 # ---------------------------------------------------------------------------
+
 
 class MeteomaticsClient:
     """Cliente Meteomatics con cache y rate limiting."""
@@ -162,10 +180,10 @@ class MeteomaticsClient:
         self.cache = cache or MeteomaticsCache()
         self.max_queries_per_day = max_queries_per_day
         self._queries_today = 0
-        self._day_start = datetime.now(timezone.utc).date()
+        self._day_start = datetime.now(UTC).date()
 
     def _check_rate_limit(self) -> None:
-        today = datetime.now(timezone.utc).date()
+        today = datetime.now(UTC).date()
         if today != self._day_start:
             self._day_start = today
             self._queries_today = 0
@@ -305,7 +323,7 @@ class MeteomaticsClient:
             "date": date_str,
             "centroid": {"lon": lon, "lat": lat},
             "parameters": {},
-            "queried_at": datetime.now(timezone.utc).isoformat(),
+            "queried_at": datetime.now(UTC).isoformat(),
         }
 
         # La respuesta de Meteomatics batch viene en una estructura única
@@ -326,6 +344,7 @@ class MeteomaticsClient:
 # ---------------------------------------------------------------------------
 # Utilidades de alto nivel para Fase 3
 # ---------------------------------------------------------------------------
+
 
 def enrich_cell_day_with_meteomatics(
     cell_day_path: Path,
@@ -371,12 +390,14 @@ def enrich_cell_day_with_meteomatics(
             print(f"  OK {cell_id} {date_str} (queries usadas: {client.get_queries_used_today()})")
         except Exception as e:
             print(f"  ERROR {cell_id} {date_str}: {e}")
-            enriched_rows.append({
-                "cell_id": cell_id,
-                "date": date_str,
-                "centroid": {"lon": lon, "lat": lat},
-                "error": str(e),
-            })
+            enriched_rows.append(
+                {
+                    "cell_id": cell_id,
+                    "date": date_str,
+                    "centroid": {"lon": lon, "lat": lat},
+                    "error": str(e),
+                }
+            )
 
     # Guardar resultados
     output_path.parent.mkdir(parents=True, exist_ok=True)
@@ -395,8 +416,10 @@ def enrich_cell_day_with_meteomatics(
 # CLI
 # ---------------------------------------------------------------------------
 
+
 def build_arg_parser() -> argparse.ArgumentParser:
     import argparse
+
     p = argparse.ArgumentParser(description="Algoritmo VALEN — Cliente Meteomatics para Fase 3a")
     p.add_argument("--username", required=True, help="Usuario Meteomatics (hackathon)")
     p.add_argument("--password", required=True, help="Password Meteomatics")
@@ -411,7 +434,7 @@ def build_arg_parser() -> argparse.ArgumentParser:
 
 
 def main(argv: list[str] | None = None) -> int:
-    import argparse
+
     args = build_arg_parser().parse_args(argv)
 
     if not args.cell_day or not args.output:
@@ -435,4 +458,5 @@ def main(argv: list[str] | None = None) -> int:
 if __name__ == "__main__":
     import argparse
     import sys
+
     sys.exit(main())

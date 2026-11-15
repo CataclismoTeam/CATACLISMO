@@ -2,14 +2,14 @@
 
 Comprueba antes de distribuir cualquier archivo a los participantes del chat:
   1. Nombre e higiene de extensión (bloquea null bytes, traversal y dobles extensiones peligrosas).
-  2. Detección real por magic bytes y estructura binaria (sin confiar en la extensión ni MIME declarados).
-  3. Bloqueo explícito de ejecutables (`MZ`, `ELF`), scripts/HTML/PHP, archivos `ZIP`/`DOCX` y `SVG` (riesgo XSS).
+  2. Detección real por magic bytes y estructura binaria (sin confiar en MIME ni extensión).
+  3. Bloqueo explícito de ejecutables (`MZ`, `ELF`), HTML/PHP, `ZIP`/`DOCX` y `SVG` (riesgo XSS).
   4. Para **imágenes (`PNG`, `JPEG`, `WEBP`, `GIF`)**: validación de chunks/marcadores, detección de
      polyglots tras `IEND`/`EOF`, protección contra bombas de descompresión (píxeles máximos) y
-     re-codificación limpia (Content Disarm & Reconstruction) con `Pillow` para eliminar metadatos EXIF/comentarios.
-  5. Para **PDF (`application/pdf`)**: cabecera en offset `0`, cierre `%%EOF` sin cola binaria oculta,
-     descompresión segura de streams `FlateDecode` (con límite anti zip-bomb), decodificación de nombres
-     ofuscados `#XX` y bloqueo estricto de contenido activo/peligroso (`/JS`, `/JavaScript`, `/Launch`,
+     re-codificación limpia (Content Disarm & Reconstruction) con `Pillow` sin metadatos EXIF.
+  5. Para **PDF (`application/pdf`)**: cabecera en offset `0`, cierre `%%EOF` sin cola oculta,
+     descompresión segura de streams `FlateDecode` (anti zip-bomb), decodificación de nombres
+     ofuscados `#XX` y bloqueo de contenido activo (`/JS`, `/JavaScript`, `/Launch`,
      `/OpenAction`, `/AA`, `/EmbeddedFile`, `/EmbeddedFiles`, `/XFA`, `/RichMedia`, `/SubmitForm`,
      `/ImportData`, `/GoToE`, `/GoToR`, `/Encrypt`).
 """
@@ -18,11 +18,10 @@ from __future__ import annotations
 
 import hashlib
 import io
-import os
 import re
 import struct
-from typing import Any
 import zlib
+from typing import Any
 
 from . import config
 
@@ -71,7 +70,11 @@ _DANGEROUS_EXTENSIONS = frozenset(
 
 _IMAGE_FORMATS: dict[str, dict[str, Any]] = {
     "PNG": {"mime": "image/png", "ext": "png", "aliases": {"image/png"}},
-    "JPEG": {"mime": "image/jpeg", "ext": "jpg", "aliases": {"image/jpeg", "image/jpg", "image/pjpeg"}},
+    "JPEG": {
+        "mime": "image/jpeg",
+        "ext": "jpg",
+        "aliases": {"image/jpeg", "image/jpg", "image/pjpeg"},
+    },
     "WEBP": {"mime": "image/webp", "ext": "webp", "aliases": {"image/webp"}},
     "GIF": {"mime": "image/gif", "ext": "gif", "aliases": {"image/gif"}},
 }
@@ -117,7 +120,9 @@ def _sanitize_stem(filename: str) -> tuple[str, str]:
     if not raw:
         return "adjunto", ""
     if "\x00" in raw or any(ord(ch) < 32 for ch in raw):
-        raise MaliciousAttachmentError("Nombre de archivo inválido (contiene caracteres de control).")
+        raise MaliciousAttachmentError(
+            "Nombre de archivo inválido (contiene caracteres de control)."
+        )
     if "/" in raw or "\\" in raw or ".." in raw:
         raise MaliciousAttachmentError("Nombre de archivo inválido (ruta o traversal detectado).")
 
@@ -142,24 +147,36 @@ def _reject_dangerous_leading_signatures(data: bytes) -> None:
         raise MaliciousAttachmentError("Archivo bloqueado: ejecutable Windows (PE/MZ) camuflado.")
     if data.startswith(b"\x7fELF"):
         raise MaliciousAttachmentError("Archivo bloqueado: binario ejecutable ELF camuflado.")
-    if data[:4] in (b"\xfe\xed\xfa\xce", b"\xfe\xed\xfa\xcf", b"\xca\xfe\xba\xbe", b"\xcf\xfa\xed\xfe"):
+    if data[:4] in (
+        b"\xfe\xed\xfa\xce",
+        b"\xfe\xed\xfa\xcf",
+        b"\xca\xfe\xba\xbe",
+        b"\xcf\xfa\xed\xfe",
+    ):
         raise MaliciousAttachmentError("Archivo bloqueado: binario ejecutable Mach-O camuflado.")
-    if data.startswith((b"PK\x03\x04", b"PK\x05\x06", b"Rar!", b"\x1f\x8b\x08", b"7z\xbc\xaf\x27\x1c")):
-        raise MaliciousAttachmentError("Archivo bloqueado: contenedor comprimido (ZIP/RAR/7z/GZIP).")
+    if data.startswith(
+        (b"PK\x03\x04", b"PK\x05\x06", b"Rar!", b"\x1f\x8b\x08", b"7z\xbc\xaf\x27\x1c")
+    ):
+        raise MaliciousAttachmentError(
+            "Archivo bloqueado: contenedor comprimido (ZIP/RAR/7z/GZIP)."
+        )
     if head_lstrip.startswith(b"#!"):
         raise MaliciousAttachmentError("Archivo bloqueado: script ejecutable (#!).")
     for prefix in (b"<svg", b"<?xml", b"<html", b"<!doctype html", b"<script", b"<?php"):
         if head_lower.startswith(prefix):
+            tag = prefix.decode("ascii")
             raise MaliciousAttachmentError(
-                f"Archivo bloqueado: documento activo/XML/SVG no permitido ('{prefix.decode('ascii')}')."
+                f"Archivo bloqueado: documento activo/XML/SVG no permitido ('{tag}')."
             )
 
 
 def _scan_text_payload_for_polyglot(chunk: bytes, *, context: str) -> None:
-    if b"MZ\x90\x00" in chunk or b"This program cannot be run in DOS mode" in chunk or b"\x7fELF" in chunk:
-        raise MaliciousAttachmentError(
-            f"Contenido ejecutable oculto detectado en {context}."
-        )
+    if (
+        b"MZ\x90\x00" in chunk
+        or b"This program cannot be run in DOS mode" in chunk
+        or b"\x7fELF" in chunk
+    ):
+        raise MaliciousAttachmentError(f"Contenido ejecutable oculto detectado en {context}.")
     for pat in _SCRIPT_POLYGLOT_PATTERNS:
         if pat.search(chunk):
             raise MaliciousAttachmentError(
@@ -180,7 +197,8 @@ def _detect_binary_format(data: bytes) -> tuple[str, str]:
     if data.startswith((b"%PDF-1.", b"%PDF-2.")):
         return "pdf", "PDF"
     raise MaliciousAttachmentError(
-        "Formato rechazado: el archivo no corresponde por cabecera binaria real a PNG, JPEG, WEBP, GIF ni PDF."
+        "Formato rechazado: el archivo no corresponde por cabecera binaria real "
+        "a PNG, JPEG, WEBP, GIF ni PDF."
     )
 
 
@@ -207,7 +225,9 @@ def _validate_png_chunks(data: bytes) -> None:
         if chunk_type == b"IHDR":
             saw_ihdr = True
         if chunk_type in (b"tEXt", b"iTXt", b"zTXt"):
-            _scan_text_payload_for_polyglot(payload, context=f"chunk PNG {chunk_type.decode('ascii')}")
+            _scan_text_payload_for_polyglot(
+                payload, context=f"chunk PNG {chunk_type.decode('ascii')}"
+            )
 
         pos = crc_end
         if chunk_type == b"IEND":
@@ -222,7 +242,9 @@ def _validate_png_chunks(data: bytes) -> None:
         )
 
 
-def _inspect_and_sanitize_image(data: bytes, fmt: str) -> tuple[bytes, int | None, int | None, list[str]]:
+def _inspect_and_sanitize_image(
+    data: bytes, fmt: str
+) -> tuple[bytes, int | None, int | None, list[str]]:
     """Verifica integridad de imagen, protege contra pixel-flood y limpia metadatos con CDR."""
     checks = [f"magic_bytes:{fmt}", "no_executable_or_svg_signature"]
 
@@ -238,7 +260,9 @@ def _inspect_and_sanitize_image(data: bytes, fmt: str) -> tuple[bytes, int | Non
         checks.append("webp_riff_bounds_verified")
     elif fmt == "GIF":
         if not data.rstrip(b"\x00").endswith(b"\x3b"):
-            raise MaliciousAttachmentError("GIF truncado o con datos añadidos tras el terminador ';'.")
+            raise MaliciousAttachmentError(
+                "GIF truncado o con datos añadidos tras el terminador ';'."
+            )
         _scan_text_payload_for_polyglot(data, context="metadatos GIF")
         checks.append("gif_terminator_verified")
     elif fmt == "JPEG":
@@ -280,10 +304,14 @@ def _inspect_and_sanitize_image(data: bytes, fmt: str) -> tuple[bytes, int | Non
                     _scan_text_payload_for_polyglot(raw_val, context=f"metadato {k}")
 
             out = io.BytesIO()
-            is_animated = bool(getattr(img, "is_animated", False) and getattr(img, "n_frames", 1) > 1)
+            is_animated = bool(
+                getattr(img, "is_animated", False) and getattr(img, "n_frames", 1) > 1
+            )
             if fmt == "GIF" and is_animated:
                 frames = [frame.copy().convert("RGBA") for frame in ImageSequence.Iterator(img)]
-                durations = [frame.info.get("duration", 100) for frame in ImageSequence.Iterator(img)]
+                durations = [
+                    frame.info.get("duration", 100) for frame in ImageSequence.Iterator(img)
+                ]
                 frames[0].save(
                     out,
                     format="GIF",
@@ -341,14 +369,18 @@ def _scan_pdf_buffer_for_threats(buf: bytes, *, context: str) -> None:
 
 
 def _inspect_pdf(data: bytes) -> list[str]:
-    """Verifica que el archivo es un PDF real sin scripts, acciones automáticas ni adjuntos ocultos."""
+    """Verifica que el PDF es real sin scripts, acciones automáticas ni adjuntos ocultos."""
     if not re.match(rb"^%PDF-(?:1\.[0-7]|2\.[0-9])[ \t\r\n]", data[:16]):
-        raise MaliciousAttachmentError("Cabecera %PDF inválida o desplazamiento no nulo (posible polyglot).")
+        raise MaliciousAttachmentError(
+            "Cabecera %PDF inválida o desplazamiento no nulo (posible polyglot)."
+        )
 
     tail = data[-1024:]
     eof_idx = tail.rfind(b"%%EOF")
     if eof_idx == -1:
-        raise MaliciousAttachmentError("PDF inválido: falta marcador de cierre '%%EOF' al final del archivo.")
+        raise MaliciousAttachmentError(
+            "PDF inválido: falta marcador de cierre '%%EOF' al final del archivo."
+        )
     after_eof = tail[eof_idx + 5 :].strip()
     if len(after_eof) > 0:
         raise MaliciousAttachmentError(
@@ -356,15 +388,21 @@ def _inspect_pdf(data: bytes) -> list[str]:
         )
 
     if not re.search(rb"\bobj\b", data) or not re.search(rb"\bendobj\b", data):
-        raise MaliciousAttachmentError("PDF inválido: carece de estructura de objetos ('obj'/'endobj').")
+        raise MaliciousAttachmentError(
+            "PDF inválido: carece de estructura de objetos ('obj'/'endobj')."
+        )
     if b"trailer" not in data and b"/XRef" not in data and b"/Catalog" not in data:
-        raise MaliciousAttachmentError("PDF inválido: falta tabla/diccionario raíz (trailer o /XRef).")
+        raise MaliciousAttachmentError(
+            "PDF inválido: falta tabla/diccionario raíz (trailer o /XRef)."
+        )
 
     _scan_pdf_buffer_for_threats(data, context="cuerpo principal PDF")
 
     total_decompressed = 0
     stream_count = 0
-    for m in re.finditer(rb"stream(?:\r\n|\n|\r)(.*?)(?:\r\n|\n|\r)?endstream", data, flags=re.DOTALL):
+    for m in re.finditer(
+        rb"stream(?:\r\n|\n|\r)(.*?)(?:\r\n|\n|\r)?endstream", data, flags=re.DOTALL
+    ):
         stream_count += 1
         stream_body = m.group(1)
         # Intentar descomprimir streams FlateDecode para detectar /JS u /ObjStm ocultos
@@ -377,7 +415,8 @@ def _inspect_pdf(data: bytes) -> list[str]:
                 continue
             if decomp.unconsumed_tail:
                 raise MaliciousAttachmentError(
-                    "PDF rechazado: stream comprimido excede el presupuesto seguro (posible zip-bomb)."
+                    "PDF rechazado: stream comprimido excede el presupuesto seguro "
+                    "(posible zip-bomb)."
                 )
             total_decompressed += len(unpacked)
             _scan_pdf_buffer_for_threats(unpacked, context=f"stream PDF #{stream_count}")
@@ -397,12 +436,15 @@ def inspect_and_sanitize_attachment(
 ) -> dict[str, Any]:
     """Valida exhaustivamente que un adjunto es una imagen o PDF legítimo y no malicioso."""
     if not isinstance(content_bytes, (bytes, bytearray)) or len(content_bytes) < 16:
-        raise MaliciousAttachmentError("Archivo vacío o demasiado pequeño para ser una imagen o PDF válido.")
+        raise MaliciousAttachmentError(
+            "Archivo vacío o demasiado pequeño para ser una imagen o PDF válido."
+        )
 
     raw = bytes(content_bytes)
     if len(raw) > config.CHAT_ATTACHMENT_MAX_BYTES:
+        max_mib = config.CHAT_ATTACHMENT_MAX_BYTES // (1024 * 1024)
         raise MaliciousAttachmentError(
-            f"El archivo supera el límite máximo permitido ({config.CHAT_ATTACHMENT_MAX_BYTES // (1024 * 1024)} MiB)."
+            f"El archivo supera el límite máximo permitido ({max_mib} MiB)."
         )
 
     safe_stem, declared_ext = _sanitize_stem(filename)
@@ -414,13 +456,19 @@ def inspect_and_sanitize_attachment(
         fmt_info = _IMAGE_FORMATS[fmt]
         canonical_mime = fmt_info["mime"]
         canonical_ext = fmt_info["ext"]
-        if decl_mime and decl_mime != "application/octet-stream" and decl_mime not in fmt_info["aliases"]:
+        if (
+            decl_mime
+            and decl_mime != "application/octet-stream"
+            and decl_mime not in fmt_info["aliases"]
+        ):
             raise MaliciousAttachmentError(
-                f"Tipo MIME declarado '{decl_mime}' no coincide con la imagen detectada ({canonical_mime})."
+                f"Tipo MIME declarado '{decl_mime}' no coincide con la imagen detectada "
+                f"({canonical_mime})."
             )
         if declared_ext and declared_ext == "pdf":
             raise MaliciousAttachmentError(
-                "Extensión contradictoria: el archivo dice '.pdf' pero su contenido real es una imagen."
+                "Extensión contradictoria: el archivo dice '.pdf' pero su contenido real "
+                "es una imagen."
             )
         clean_bytes, width, height, checks = _inspect_and_sanitize_image(raw, fmt)
         sanitized = clean_bytes != raw or _HAS_PIL

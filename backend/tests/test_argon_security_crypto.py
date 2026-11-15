@@ -1,34 +1,36 @@
-"""Suite QA de alta complejidad — Seguridad de Adjuntos (CDR/Antimalware) y Criptografía E2EE (JULI).
+"""Suite QA — Seguridad de Adjuntos (CDR/Antimalware) y Criptografía E2EE (JULI).
 
 Cubre exhaustivamente:
   1. `app.juli.chat_crypto`:
      - Fuzzing y validación algebraica sobre curva elíptica NIST P-256 (secp256r1):
        puntos válidos (G, -G, múltiplos escalares k*G), puntos fuera de curva, punto nulo (0,0),
-       coordenadas fuera de cuerpo primo (>= p), longitudes inválidas, inyección de clave privada 'd',
+       coordenadas fuera de cuerpo primo (>= p), longitudes inválidas, clave privada 'd',
        kty/crv inválidos, y decodificación flexible de base64/base64url con y sin padding.
      - Huellas criptográficas RFC 7638 (SHA-256 canónico) e invariancia ante orden/campos extra.
-     - Código numérico de verificación de pares (`compute_pair_safety_code`): simetría, normalización y formato.
-     - Validación de sobres AES-256-GCM (`validate_encrypted_envelope`): rechazo de claves en texto plano
-       prohibidas, ciphertext < 17 bytes, límite máximo de tamaño, IV != 12 bytes, key_epoch < 1,
+     - Código numérico de pares (`compute_pair_safety_code`): simetría, normalización y formato.
+     - Validación de sobres AES-256-GCM (`validate_encrypted_envelope`): rechazo de texto plano,
+       ciphertext < 17 bytes, límite máximo de tamaño, IV != 12 bytes, key_epoch < 1,
        ausencia de `sender_key_fingerprint`, sal PBKDF2 < 8 bytes, firmas ECDSA y claves efímeras.
-     - Validación de claves envueltas (`validate_wrapped_key_entry`): wrapped_key < 32 bytes, IV != 12 bytes,
+     - Validación de `validate_wrapped_key_entry`: wrapped_key < 32 bytes, IV != 12 bytes,
        y clave pública efímera inválida.
   2. `app.juli.attachment_security`:
-     - Higiene de nombres: path traversal, null bytes, caracteres de control ASCII y dobles extensiones peligrosas.
-     - Bloqueo de firmas camufladas en offset 0: PE/MZ, ELF, Mach-O, PK ZIP/RAR/7z/GZIP, SVG, XML, HTML, PHP y shebang.
+     - Higiene de nombres: path traversal, null bytes, control ASCII y dobles extensiones.
+     - Bloqueo de firmas camufladas en offset 0: PE/MZ, ELF, Mach-O, ZIP/RAR/7z/GZIP,
+       SVG, XML, HTML, PHP y shebang.
      - Inspección profunda de imágenes:
-       * PNG: corrupción de CRC32, payload oculto tras `IEND`, scripts/ejecutables en `tEXt`/`iTXt`/`zTXt`,
+       * PNG: corrupción de CRC32, payload oculto tras `IEND`, scripts en `tEXt`/`iTXt`/`zTXt`,
          primer chunk distinto de `IHDR`, falta de `IEND` y truncado.
        * JPEG: payload oculto tras EOI (`0xFFD9`) y scripts en cabecera/comentarios.
        * WEBP: discrepancia de tamaño en cabecera `RIFF` y datos anexados.
        * GIF: ausencia de terminador `;` (`0x3B`), basura tras terminador y scripts embebidos.
-       * Sanitización CDR real con Pillow (JPEG, PNG, WEBP, GIF estático y animado): verificación de magic bytes,
-         eliminación efectiva de EXIF/metadatos y límites contra pixel-flood / bombas de descompresión.
+       * Sanitización CDR con Pillow (JPEG, PNG, WEBP, GIF estático y animado): magic bytes,
+         eliminación de EXIF/metadatos y límites contra pixel-flood / bombas de descompresión.
      - Inspección profunda de PDF:
-       * Cabecera fuera de offset 0, basura tras `%%EOF`, falta de estructura `obj`/`endobj`/`trailer`.
-       * Nombres peligrosos ofuscados en hexadecimal `#XX` (`/J#53`, `/Open#41ction`, `/Embe#64dedFile`, `/#45ncrypt`, etc.).
+       * Cabecera fuera de offset 0, basura tras `%%EOF`, falta de `obj`/`endobj`/`trailer`.
+       * Nombres peligrosos ofuscados en hex `#XX` (`/J#53`, `/Open#41ction`,
+         `/Embe#64dedFile`, `/#45ncrypt`, etc.).
        * Amenazas ocultas dentro de streams comprimidos `FlateDecode`.
-       * Detección de bombas de descompresión (zip-bomb) superando `CHAT_PDF_MAX_DECOMPRESSED_BYTES`.
+       * Detección de bombas de descompresión (zip-bomb) > `CHAT_PDF_MAX_DECOMPRESSED_BYTES`.
        * Límite máximo de archivo `CHAT_ATTACHMENT_MAX_BYTES` y aceptación de PDF limpio válido.
 """
 
@@ -37,17 +39,15 @@ from __future__ import annotations
 import base64
 import hashlib
 import io
-import random
 import struct
 import unittest
-from unittest import mock
 import zlib
+from unittest import mock
 
 from PIL import Image, PngImagePlugin
 
 from app.juli import attachment_security, chat_crypto, config
 from app.juli.attachment_security import MaliciousAttachmentError
-
 
 # ---------------------------------------------------------------------------
 # Utilidades matemáticas NIST P-256 para generación y fuzzing de puntos reales
@@ -200,7 +200,9 @@ class TestArgonChatCrypto(unittest.TestCase):
     def test_p256_rejects_zero_point_and_out_of_range_coordinates(self) -> None:
         zero_b64 = _int_to_b64url_32(0)
         with self.assertRaisesRegex(ValueError, "fuera de rango"):
-            chat_crypto.validate_ec_p256_jwk({"kty": "EC", "crv": "P-256", "x": zero_b64, "y": zero_b64})
+            chat_crypto.validate_ec_p256_jwk(
+                {"kty": "EC", "crv": "P-256", "x": zero_b64, "y": zero_b64}
+            )
 
         # Coordenada x == P (cabe en 32 bytes porque P < 2^256, pero está fuera de F_p)
         p_b64 = _int_to_b64url_32(_P256_P)
@@ -212,7 +214,9 @@ class TestArgonChatCrypto(unittest.TestCase):
         # Coordenada y == 2^256 - 1
         max_u256_b64 = _int_to_b64url_32((1 << 256) - 1)
         with self.assertRaisesRegex(ValueError, "fuera de rango"):
-            chat_crypto.validate_ec_p256_jwk({"kty": "EC", "crv": "P-256", "x": gx_b64, "y": max_u256_b64})
+            chat_crypto.validate_ec_p256_jwk(
+                {"kty": "EC", "crv": "P-256", "x": gx_b64, "y": max_u256_b64}
+            )
 
     def test_p256_fuzzing_off_curve_and_invalid_curve_attack_points(self) -> None:
         # Perturbaciones de 1 bit / ±1 sobre G
@@ -238,11 +242,12 @@ class TestArgonChatCrypto(unittest.TestCase):
                 }
             )
 
-        # Fuzzing determinista con 60 pares de coordenadas aleatorias en [1, P-1]
-        rng = random.Random(0xA4602026)
-        for _ in range(60):
-            rx = rng.randrange(1, _P256_P)
-            ry = rng.randrange(1, _P256_P)
+        # Fuzzing determinista con 60 pares de coordenadas pseudoaleatorias en [1, P-1]
+        for idx in range(60):
+            dx = hashlib.sha256(f"p256-fuzz-x-{idx}".encode()).digest()
+            dy = hashlib.sha256(f"p256-fuzz-y-{idx}".encode()).digest()
+            rx = (int.from_bytes(dx, "big") % (_P256_P - 1)) + 1
+            ry = (int.from_bytes(dy, "big") % (_P256_P - 1)) + 1
             if pow(ry, 2, _P256_P) == (pow(rx, 3, _P256_P) + _P256_A * rx + _P256_B) % _P256_P:
                 continue
             with self.assertRaisesRegex(ValueError, "no pertenece a la curva NIST P-256"):
@@ -301,7 +306,9 @@ class TestArgonChatCrypto(unittest.TestCase):
         jwk_a = _make_valid_jwk(1)
         jwk_b = _make_valid_jwk(2)
 
-        expected_json = f'{{"crv":"P-256","kty":"EC","x":"{jwk_a["x"]}","y":"{jwk_a["y"]}"}}'.encode("utf-8")
+        expected_json = (
+            f'{{"crv":"P-256","kty":"EC","x":"{jwk_a["x"]}","y":"{jwk_a["y"]}"}}'.encode()
+        )
         expected_hex = hashlib.sha256(expected_json).hexdigest()
 
         noisy_jwk = {
@@ -320,7 +327,9 @@ class TestArgonChatCrypto(unittest.TestCase):
         thumb_b = chat_crypto.compute_jwk_thumbprint(jwk_b)
         self.assertNotEqual(thumb_a["fingerprint"], thumb_b["fingerprint"])
 
-        code_ab = chat_crypto.compute_pair_safety_code(thumb_a["fingerprint"], thumb_b["fingerprint"])
+        code_ab = chat_crypto.compute_pair_safety_code(
+            thumb_a["fingerprint"], thumb_b["fingerprint"]
+        )
         code_ba = chat_crypto.compute_pair_safety_code(
             f"  {thumb_b['fingerprint'].upper()} \n",
             f"\t{thumb_a['fingerprint'].lower()}  ",
@@ -573,7 +582,9 @@ class TestArgonAttachmentSecurity(unittest.TestCase):
         ]
         for raw_bytes, expected_msg in payloads:
             with self.assertRaisesRegex(MaliciousAttachmentError, expected_msg):
-                attachment_security.inspect_and_sanitize_attachment(raw_bytes, "camuflado.png", "image/png")
+                attachment_security.inspect_and_sanitize_attachment(
+                    raw_bytes, "camuflado.png", "image/png"
+                )
 
         # Contradicciones entre magic bytes y MIME/extensión declarados
         valid_png = _make_valid_image_bytes("PNG")
@@ -581,7 +592,9 @@ class TestArgonAttachmentSecurity(unittest.TestCase):
         with self.assertRaisesRegex(MaliciousAttachmentError, "Extensión contradictoria"):
             attachment_security.inspect_and_sanitize_attachment(valid_png, "engano.pdf")
         with self.assertRaisesRegex(MaliciousAttachmentError, "Tipo MIME declarado"):
-            attachment_security.inspect_and_sanitize_attachment(valid_png, "foto.png", "application/pdf")
+            attachment_security.inspect_and_sanitize_attachment(
+                valid_png, "foto.png", "application/pdf"
+            )
         with self.assertRaisesRegex(MaliciousAttachmentError, "Extensión contradictoria"):
             attachment_security.inspect_and_sanitize_attachment(clean_pdf, "falso.png")
         with self.assertRaisesRegex(MaliciousAttachmentError, "Tipo MIME declarado"):
@@ -598,11 +611,15 @@ class TestArgonAttachmentSecurity(unittest.TestCase):
         corrupted_crc_png = bytearray(valid_png)
         corrupted_crc_png[29] ^= 0xFF
         with self.assertRaisesRegex(MaliciousAttachmentError, "Checksum CRC32 inválido"):
-            attachment_security.inspect_and_sanitize_attachment(bytes(corrupted_crc_png), "bad_crc.png")
+            attachment_security.inspect_and_sanitize_attachment(
+                bytes(corrupted_crc_png), "bad_crc.png"
+            )
 
         # 2. Payload oculto tras IEND (polyglot PNG + archivo ZIP/ejecutable anexado)
         polyglot_png = valid_png + b"PK\x03\x04HIDDEN_PAYLOAD_AFTER_IEND"
-        with self.assertRaisesRegex(MaliciousAttachmentError, "datos ocultos tras la marca de fin IEND"):
+        with self.assertRaisesRegex(
+            MaliciousAttachmentError, "datos ocultos tras la marca de fin IEND"
+        ):
             attachment_security.inspect_and_sanitize_attachment(polyglot_png, "polyglot.png")
 
         # 3. Scripts maliciosos en chunks tEXt e iTXt con CRC32 válido (insertados antes de IEND)
@@ -613,7 +630,9 @@ class TestArgonAttachmentSecurity(unittest.TestCase):
 
         malicious_chunks = [
             _build_png_chunk(b"tEXt", b"Comment\x00<script>alert('xss')</script>"),
-            _build_png_chunk(b"iTXt", b"XML:com.adobe.xmp\x00\x00\x00\x00\x00<?php eval($_GET['x']); ?>"),
+            _build_png_chunk(
+                b"iTXt", b"XML:com.adobe.xmp\x00\x00\x00\x00\x00<?php eval($_GET['x']); ?>"
+            ),
             _build_png_chunk(b"tEXt", b"Author\x00MZ\x90\x00PE_HEADER_IN_TEXT"),
         ]
         for chunk in malicious_chunks:
@@ -624,7 +643,9 @@ class TestArgonAttachmentSecurity(unittest.TestCase):
         # 4. PNG sin IEND o cuyo primer chunk no es IHDR
         with self.assertRaisesRegex(MaliciousAttachmentError, "falta IHDR o IEND"):
             attachment_security.inspect_and_sanitize_attachment(prefix, "no_iend.png")
-        bad_first_chunk_png = b"\x89PNG\r\n\x1a\n" + _build_png_chunk(b"tEXt", b"k\x00v") + iend_chunk
+        bad_first_chunk_png = (
+            b"\x89PNG\r\n\x1a\n" + _build_png_chunk(b"tEXt", b"k\x00v") + iend_chunk
+        )
         with self.assertRaisesRegex(MaliciousAttachmentError, "primer chunk debe ser IHDR"):
             attachment_security.inspect_and_sanitize_attachment(bad_first_chunk_png, "no_ihdr.png")
 
@@ -654,14 +675,20 @@ class TestArgonAttachmentSecurity(unittest.TestCase):
         tampered_webp = bytearray(valid_webp)
         struct.pack_into("<I", tampered_webp, 4, len(valid_webp) + 100)
         with self.assertRaisesRegex(MaliciousAttachmentError, "contenedor RIFF"):
-            attachment_security.inspect_and_sanitize_attachment(bytes(tampered_webp), "bad_len.webp")
+            attachment_security.inspect_and_sanitize_attachment(
+                bytes(tampered_webp), "bad_len.webp"
+            )
 
         # GIF sin terminador ';' (0x3B) o con basura posterior
         valid_gif = _make_valid_image_bytes("GIF")
         with self.assertRaisesRegex(MaliciousAttachmentError, "terminador ';'"):
-            attachment_security.inspect_and_sanitize_attachment(valid_gif[:-1] + b"\x21", "no_term.gif")
+            attachment_security.inspect_and_sanitize_attachment(
+                valid_gif[:-1] + b"\x21", "no_term.gif"
+            )
         with self.assertRaisesRegex(MaliciousAttachmentError, "terminador ';'"):
-            attachment_security.inspect_and_sanitize_attachment(valid_gif + b"TRAILING", "trailing.gif")
+            attachment_security.inspect_and_sanitize_attachment(
+                valid_gif + b"TRAILING", "trailing.gif"
+            )
 
         # GIF con terminador ';' válido pero con script embebido
         gif_with_script = valid_gif[:-1] + b"<script>evil()</script>;"
@@ -706,7 +733,9 @@ class TestArgonAttachmentSecurity(unittest.TestCase):
         raw_png = png_buf.getvalue()
         self.assertIn(b"OperarioSecretName", raw_png)
 
-        res_png = attachment_security.inspect_and_sanitize_attachment(raw_png, "mapa.png", "image/png")
+        res_png = attachment_security.inspect_and_sanitize_attachment(
+            raw_png, "mapa.png", "image/png"
+        )
         clean_png = res_png["clean_bytes"]
         self.assertTrue(clean_png.startswith(b"\x89PNG\r\n\x1a\n"))
         self.assertNotIn(b"OperarioSecretName", clean_png)
@@ -722,7 +751,9 @@ class TestArgonAttachmentSecurity(unittest.TestCase):
         frame1 = Image.new("RGB", (16, 16), color=(255, 0, 0))
         frame2 = Image.new("RGB", (16, 16), color=(0, 255, 0))
         anim_buf = io.BytesIO()
-        frame1.save(anim_buf, format="GIF", save_all=True, append_images=[frame2], duration=80, loop=0)
+        frame1.save(
+            anim_buf, format="GIF", save_all=True, append_images=[frame2], duration=80, loop=0
+        )
         res_gif = attachment_security.inspect_and_sanitize_attachment(
             anim_buf.getvalue(), "radar.gif", "image/gif"
         )
@@ -731,7 +762,9 @@ class TestArgonAttachmentSecurity(unittest.TestCase):
 
         # 4. Protección contra dimensiones excesivas (pixel-flood)
         with mock.patch.object(config, "CHAT_IMAGE_MAX_WIDTH", 16):
-            with self.assertRaisesRegex(MaliciousAttachmentError, "Dimensiones de imagen fuera de límite"):
+            with self.assertRaisesRegex(
+                MaliciousAttachmentError, "Dimensiones de imagen fuera de límite"
+            ):
                 attachment_security.inspect_and_sanitize_attachment(raw_png, "too_wide.png")
 
     def test_pdf_header_offset_trailing_eof_hex_obfuscation_flate_and_zipbomb(self) -> None:
@@ -745,7 +778,9 @@ class TestArgonAttachmentSecurity(unittest.TestCase):
         self.assertTrue(res_pdf["security_scan"]["verified"])
 
         # 2. Cabecera fuera de offset 0 o versión PDF inválida
-        with self.assertRaisesRegex(MaliciousAttachmentError, "no corresponde por cabecera|Cabecera %PDF"):
+        with self.assertRaisesRegex(
+            MaliciousAttachmentError, "no corresponde por cabecera|Cabecera %PDF"
+        ):
             attachment_security.inspect_and_sanitize_attachment(
                 b"   " + clean_pdf, "offset_bad.pdf", "application/pdf"
             )
@@ -786,7 +821,9 @@ class TestArgonAttachmentSecurity(unittest.TestCase):
             (b"/GoTo#52", "/GoToR"),
         ):
             malicious_pdf = _make_minimal_pdf(
-                extra_body=b"4 0 obj\n<< /Type /Action " + obfuscated_token + b" (alert(1)) >>\nendobj\n"
+                extra_body=b"4 0 obj\n<< /Type /Action "
+                + obfuscated_token
+                + b" (alert(1)) >>\nendobj\n"
             )
             with self.assertRaisesRegex(MaliciousAttachmentError, expected_canonical):
                 attachment_security.inspect_and_sanitize_attachment(
@@ -795,7 +832,9 @@ class TestArgonAttachmentSecurity(unittest.TestCase):
 
         # 5. Amenaza oculta dentro de un stream comprimido FlateDecode
         compressed_threat_pdf = _make_minimal_pdf(
-            stream_payload=b"<< /Type /Action /S /Java#53cript /J#53 (app.launchURL('http://evil')) >>",
+            stream_payload=(
+                b"<< /Type /Action /S /Java#53cript /J#53 (app.launchURL('http://evil')) >>"
+            ),
             compress_stream=True,
         )
         with self.assertRaisesRegex(MaliciousAttachmentError, "stream PDF #1"):
@@ -808,7 +847,9 @@ class TestArgonAttachmentSecurity(unittest.TestCase):
         bomb_pdf = _make_minimal_pdf(stream_payload=real_bomb_payload, compress_stream=True)
         self.assertLess(len(bomb_pdf), config.CHAT_ATTACHMENT_MAX_BYTES)
         with self.assertRaisesRegex(MaliciousAttachmentError, "zip-bomb"):
-            attachment_security.inspect_and_sanitize_attachment(bomb_pdf, "bomb.pdf", "application/pdf")
+            attachment_security.inspect_and_sanitize_attachment(
+                bomb_pdf, "bomb.pdf", "application/pdf"
+            )
 
         # 7. Tamaño máximo de adjunto excedido (> CHAT_ATTACHMENT_MAX_BYTES)
         with mock.patch.object(config, "CHAT_ATTACHMENT_MAX_BYTES", 1024):

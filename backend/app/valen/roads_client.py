@@ -10,8 +10,8 @@ Por cada celda (`cell_id`) se genera:
   - `road_length_km` total y desglosado por grupo (`major`, `secondary`, `local`, `track`, `path`).
   - `best_highway_class`: la vía más rápida presente en la celda (con >= 200 m de longitud).
   - `road_access_score` [0, 1]: densidad viaria ponderada por jerarquía (1 = muy bien comunicada).
-  - `human_speed_factor`: multiplicador de coste de paso a pie/vehículo (< 1 = más rápido que campo a través).
-  - `animal_speed_factor`: multiplicador para fauna/ganado (las autovías valladas son barrera, > 1).
+  - `human_speed_factor`: multiplicador de coste a pie/vehículo (< 1 = más rápido).
+  - `animal_speed_factor`: multiplicador fauna/ganado (autovías valladas son barrera, > 1).
   - `motorway_barrier`: True si hay autopista/autovía (vallado perimetral para animales).
 
 No inventa carreteras: si Overpass no responde, el bloque se marca `osm_status = "unavailable"`
@@ -19,7 +19,8 @@ y LUCIA trata esas celdas como campo a través (factor 1.0).
 
 Uso:
     # Precalcular las carreteras de las zonas que CATA ha predicho:
-    python -m app.valen.roads_client --from-cata app/cata/artifacts/predictions/cata_predictions.json
+    python -m app.valen.roads_client --from-cata \\
+        app/cata/artifacts/predictions/cata_predictions.json
 
     # O cubrir todas las celdas de cell_day.parquet (bloques de 32 km):
     python -m app.valen.roads_client --cell-day app/valen/output/cell_day.parquet --limit-blocks 10
@@ -41,7 +42,7 @@ import urllib.parse
 import urllib.request
 from collections import defaultdict
 from contextlib import closing
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
 
@@ -159,7 +160,7 @@ class RoadsCache:
                     json.dumps(bbox),
                     len(ways),
                     json.dumps(ways, separators=(",", ":")),
-                    datetime.now(timezone.utc).isoformat(),
+                    datetime.now(UTC).isoformat(),
                 ),
             )
 
@@ -305,7 +306,9 @@ class RoadsClient:
         if wait > 0:
             time.sleep(wait)
         body = urllib.parse.urlencode({"data": self.build_query(bbox)}).encode()
-        req = urllib.request.Request(
+        if not str(self.overpass_url).startswith(("https://", "http://")):
+            raise ValueError(f"Esquema Overpass no permitido: {self.overpass_url}")
+        req = urllib.request.Request(  # noqa: S310
             self.overpass_url, data=body, headers={"User-Agent": USER_AGENT}
         )
         try:
@@ -432,7 +435,10 @@ def build_arg_parser() -> argparse.ArgumentParser:
     src.add_argument("--from-cata", type=Path, help="cata_predictions.json (bloques de sus zonas)")
     src.add_argument("--cell-day", type=Path, help="cell_day.parquet/json (bloques que lo cubren)")
     src.add_argument(
-        "--block", nargs=4, type=int, metavar=("ORIGIN_IY", "ORIGIN_IX", "H", "W"),
+        "--block",
+        nargs=4,
+        type=int,
+        metavar=("ORIGIN_IY", "ORIGIN_IX", "H", "W"),
         help="Bloque explícito de celdas ES1K",
     )
     p.add_argument("--output", type=Path, default=DEFAULT_OUTPUT_PATH)

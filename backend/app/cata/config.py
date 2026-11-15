@@ -21,7 +21,9 @@ CRS: str = "EPSG:3035"
 GRID_LEVEL: int = 0  # Nivel base L0 = 1000 m (1 km x 1 km)
 GRID_SIZE: int = 64  # Sub-grilla N x N celdas (64 x 64 km de cobertura)
 CHUNK_SIZE_M: float = 1000.0  # Tamaño de cuadrícula/chunk en metros (1000 x 1000 m)
-TIME_STEPS: int = 5  # T: nº de pasos temporales de historia de entrada (5 x 6h = 30h de contexto táctico)
+TIME_STEPS: int = (
+    5  # T: nº de pasos temporales de historia de entrada (5 x 6h = 30h de contexto táctico)
+)
 STEP_HOURS: int = 6  # Resolución temporal táctica para First Responders: 6h (00, 06, 12, 18 UTC)
 
 # ---------------------------------------------------------------------------
@@ -82,7 +84,8 @@ CHANNEL_REGISTRY: tuple[str, ...] = (
     "meteo_humidity_inv",  # 15: clip(1 - (rh - 10) / 80, 0, 1), sequedad atmosférica [0, 1]
     "meteo_temp",  # 16: clip((temp_c + 5) / 50.0, 0, 1), temperatura a 2m [0, 1]
     # --- Bloque 3: Rainfall / Sequía de VALEN [17..19] ---
-    "rain_days_since_1mm",  # 17: clip(days_since_rain_1mm / 30.0, 0, 1), días sin lluvia >=1mm [0, 1]
+    # 17: clip(days_since_rain_1mm / 30.0, 0, 1), días sin lluvia >=1mm [0, 1]
+    "rain_days_since_1mm",
     "rain_dry_spell_max",  # 18: clip(dry_spell_max_days / 30.0, 0, 1), racha seca máxima [0, 1]
     "rain_precip_30d_inv",  # 19: clip(1 - precip_30d_mm / 100.0, 0, 1), déficit hídrico 30d [0, 1]
     # --- Bloque 4: Vegetation & Validación de VALEN [20..21] ---
@@ -90,7 +93,9 @@ CHANNEL_REGISTRY: tuple[str, ...] = (
     "valen_score",  # 21: score global de validación de VALEN [0, 1]
 )
 CELL_DAY_NUM_CHANNELS: int = 13  # Canales exclusivos de cell_day (0..12)
-VALEN_NUM_CHANNELS: int = len(CHANNEL_REGISTRY)  # 22 canales (Cell Day + Meteo + Rainfall + Veg + Score)
+VALEN_NUM_CHANNELS: int = len(
+    CHANNEL_REGISTRY
+)  # 22 canales (Cell Day + Meteo + Rainfall + Veg + Score)
 NUM_CHANNELS: int = VALEN_NUM_CHANNELS  # Por defecto CATA consume todos los canales de VALEN (22)
 EXPANDED_NUM_CHANNELS: int = VALEN_NUM_CHANNELS  # Expansión completa a los 22 canales de VALEN
 

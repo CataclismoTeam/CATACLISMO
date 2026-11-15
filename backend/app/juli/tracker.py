@@ -7,24 +7,27 @@ devolviendo su posición y telemetría en formato GeoJSON listo para el Frontend
 
 from __future__ import annotations
 
-from dataclasses import asdict, dataclass, field
-from datetime import datetime, timezone
 import json
+import logging
 import math
 import os
 import time
+from dataclasses import asdict, dataclass, field
+from datetime import UTC, datetime
 from typing import Any
 
 from . import config
 from .coords import lonlat_to_quadrant_subcoords, quadrant_subcoords_to_lonlat
 
+_LOGGER = logging.getLogger("juli.tracker")
+
 
 def _now_utc(now: datetime | None = None) -> datetime:
     if now is None:
-        return datetime.now(timezone.utc)
+        return datetime.now(UTC)
     if now.tzinfo is None:
-        return now.replace(tzinfo=timezone.utc)
-    return now.astimezone(timezone.utc)
+        return now.replace(tzinfo=UTC)
+    return now.astimezone(UTC)
 
 
 def _now_iso(now: datetime | None = None) -> str:
@@ -321,9 +324,7 @@ class JuliTracker:
             try:
                 with open(self.state_path, encoding="utf-8") as f:
                     raw = json.load(f)
-                self.teams = {
-                    tid: Team(**tdata) for tid, tdata in raw.get("teams", {}).items()
-                }
+                self.teams = {tid: Team(**tdata) for tid, tdata in raw.get("teams", {}).items()}
                 self.operators = {
                     oid: Operator(
                         operator_id=odata["operator_id"],
@@ -354,8 +355,8 @@ class JuliTracker:
                 if not os.path.exists(self.geojson_path):
                     self.export_geojson()
                 return
-            except Exception:
-                pass
+            except Exception as exc:
+                _LOGGER.warning("Estado de tracker corrupto en %s: %s", self.state_path, exc)
 
         self.teams, self.operators = _default_seed_data()
         for op in self.operators.values():
@@ -369,9 +370,7 @@ class JuliTracker:
         team = self.teams.get(op.team_id)
         if not op.radio_channel:
             op.radio_channel = (
-                str(plan["radio_channel"])
-                if plan
-                else (team.radio_channel if team else "VHF-GEN")
+                str(plan["radio_channel"]) if plan else (team.radio_channel if team else "VHF-GEN")
             )
         if op.radio_frequency_mhz is None and plan:
             op.radio_frequency_mhz = float(plan["frequency_mhz"])
@@ -420,9 +419,7 @@ class JuliTracker:
     def list_teams_with_members(self) -> list[dict[str, Any]]:
         result: list[dict[str, Any]] = []
         for tid, team in self.teams.items():
-            members = [
-                op.to_dict() for op in self.operators.values() if op.team_id == tid
-            ]
+            members = [op.to_dict() for op in self.operators.values() if op.team_id == tid]
             result.append(
                 {
                     **team.to_dict(),
@@ -508,7 +505,7 @@ class JuliTracker:
             raise ValueError("Se requiere (lon, lat) o (quadrant_id + subcoordenadas).")
 
         oid = operator_id or f"op_{len(self.operators) + 1:03d}"
-        # Si el equipo aún no existe, se crea automáticamente para que ningún operario quede huérfano
+        # Si el equipo no existe, se crea automáticamente para evitar operarios huérfanos
         if team_id not in self.teams:
             self.teams[team_id] = Team(
                 team_id=team_id,
@@ -521,7 +518,10 @@ class JuliTracker:
         if existing is not None:
             last_moved_at = existing.last_moved_at
             last_pol_at = existing.last_proof_of_life_at
-            if _displacement_m(existing.lon, existing.lat, float(lon), float(lat)) >= config.PROOF_OF_LIFE_MIN_MOVE_M:
+            if (
+                _displacement_m(existing.lon, existing.lat, float(lon), float(lat))
+                >= config.PROOF_OF_LIFE_MIN_MOVE_M
+            ):
                 last_moved_at = now_str
                 last_pol_at = now_str
         else:
@@ -543,8 +543,12 @@ class JuliTracker:
             updated_at=now_str,
             last_moved_at=last_moved_at,
             last_proof_of_life_at=last_pol_at,
-            radio_channel=existing.radio_channel if existing and existing.team_id == team_id else "",
-            radio_frequency_mhz=existing.radio_frequency_mhz if existing and existing.team_id == team_id else None,
+            radio_channel=existing.radio_channel
+            if existing and existing.team_id == team_id
+            else "",
+            radio_frequency_mhz=existing.radio_frequency_mhz
+            if existing and existing.team_id == team_id
+            else None,
             talkgroup_id=existing.talkgroup_id if existing and existing.team_id == team_id else "",
             radio_protocol=existing.radio_protocol if existing else config.RADIO_DEFAULT_PROTOCOL,
             radio_device_id=existing.radio_device_id if existing else "",
@@ -753,7 +757,9 @@ class JuliTracker:
                 mins = last_location["immobile_seconds"] // 60
                 reason_msgs.append(f"sin movimiento desde hace {mins} min")
             if is_quadrant_burning:
-                state_lbl = (fire_cell or {}).get("state_label") or f"estado {fire_cell['quadrant_state']}"
+                state_lbl = (fire_cell or {}).get(
+                    "state_label"
+                ) or f"estado {fire_cell['quadrant_state']}"
                 reason_msgs.append(f"cuadrante {qid} en llamas ({state_lbl})")
 
             summary = (
@@ -930,9 +936,7 @@ class JuliTracker:
                         "proof_of_life_reasons": op_pol.get("reasons", []),
                         "marker_color": status_color,
                         "team_color": team_color,
-                        "marker_symbol": (
-                            "star" if op.role == "jefe_cuadrilla" else "person"
-                        ),
+                        "marker_symbol": ("star" if op.role == "jefe_cuadrilla" else "person"),
                     },
                 }
             )
@@ -1032,7 +1036,7 @@ class JuliTracker:
             "type": "FeatureCollection",
             "metadata": {
                 "algorithm": config.ALGORITHM_NAME,
-                "description": "Control en tiempo real de equipos y operarios desplegados en el terreno",
+                "description": "Control live de equipos y operarios desplegados en terreno",
                 "independent_from_pipeline": True,
                 "crs": config.OUTPUT_GEOJSON_CRS,
                 "quadrant_grid": {

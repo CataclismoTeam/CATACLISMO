@@ -13,21 +13,23 @@ Garantiza coherencia única en los datos de JULI:
 
 from __future__ import annotations
 
-from datetime import datetime, timezone
 import json
+import logging
 import os
 import re
-from typing import Any
 import uuid
+from datetime import UTC, datetime
+from typing import Any
 
 from . import config
 from .tracker import JuliTracker, juli_tracker
 
+_LOGGER = logging.getLogger("juli.walkie_radio")
 _AT_CMD_REGEX = re.compile(r"^\s*(AT\+[A-Z0-9]+)\s*(?:=\s*(.+?)|\?)?\s*$", re.IGNORECASE)
 
 
 def _now_iso() -> str:
-    return datetime.now(timezone.utc).isoformat()
+    return datetime.now(UTC).isoformat()
 
 
 def _decode_ble_or_text_command(raw_command: str | None, ble_payload_hex: str | None) -> str:
@@ -39,7 +41,9 @@ def _decode_ble_or_text_command(raw_command: str | None, ble_payload_hex: str | 
         try:
             return bytes.fromhex(cleaned).decode("utf-8").strip()
         except (ValueError, UnicodeDecodeError) as exc:
-            raise ValueError("La carga hexadecimal BLE GATT no contiene un comando AT UTF-8 válido.") from exc
+            raise ValueError(
+                "La carga hexadecimal BLE GATT no contiene un comando AT UTF-8 válido."
+            ) from exc
     return ""
 
 
@@ -91,8 +95,8 @@ class WalkieRadioManager:
                 raw = json.load(f)
             if isinstance(raw, dict) and isinstance(raw.get("history"), list):
                 self.history = raw["history"][-200:]
-        except Exception:
-            pass
+        except Exception as exc:
+            _LOGGER.warning("Historial de radio ilegible en %s: %s", self.log_path, exc)
 
     def _save_history(self) -> None:
         if not self.log_path:
@@ -141,7 +145,11 @@ class WalkieRadioManager:
                     freq_mhz = round(155.0 + dyn_idx * config.RADIO_CHANNEL_STEP_MHZ, 4)
                     tetra_mhz = round(391.5 + dyn_idx * config.RADIO_CHANNEL_STEP_MHZ, 4)
                     gssi = str(3000 + dyn_idx)
-                    if freq_mhz not in used_vhf and tetra_mhz not in used_tetra and gssi not in used_gssi:
+                    if (
+                        freq_mhz not in used_vhf
+                        and tetra_mhz not in used_tetra
+                        and gssi not in used_gssi
+                    ):
                         used_vhf.add(freq_mhz)
                         used_tetra.add(tetra_mhz)
                         used_gssi.add(gssi)
@@ -209,9 +217,7 @@ class WalkieRadioManager:
         if decoded_cmd:
             match = _AT_CMD_REGEX.match(decoded_cmd)
             if not match:
-                raise ValueError(
-                    f"+CME ERROR: 3 — Comando TETRA PEI inválido: '{decoded_cmd}'."
-                )
+                raise ValueError(f"+CME ERROR: 3 — Comando TETRA PEI inválido: '{decoded_cmd}'.")
             cmd_name = match.group(1).upper()
             arg = (match.group(2) or "").strip().strip('"').strip("'")
             if not arg:
@@ -242,9 +248,7 @@ class WalkieRadioManager:
             resolved = next((e for e in bank if e["talkgroup_id"] == gssi), None)
         elif target_radio_channel:
             ch = target_radio_channel.strip().lower()
-            resolved = next(
-                (e for e in bank if e["radio_channel"].strip().lower() == ch), None
-            )
+            resolved = next((e for e in bank if e["radio_channel"].strip().lower() == ch), None)
         elif target_frequency_mhz is not None:
             resolved = self._find_entry_by_frequency(bank, float(target_frequency_mhz))
 
@@ -327,8 +331,14 @@ class WalkieRadioManager:
         # Mantener referencia coherente en el plano BLE / TETRA PEI
         tx_wire = f"{effective_at}\r\n"
         pei_responses = [
-            f'+CTGS: {target["talkgroup_id"]},{target["frequency_mhz"]:.4f},"{target["radio_channel"]}","{target["team_id"]}"',
-            f'+CFREQ: {target["frequency_mhz"]:.4f},{target["tetra_frequency_mhz"]:.4f},{target["ctcss_hz"]}',
+            (
+                f"+CTGS: {target['talkgroup_id']},{target['frequency_mhz']:.4f},"
+                f'"{target["radio_channel"]}","{target["team_id"]}"'
+            ),
+            (
+                f"+CFREQ: {target['frequency_mhz']:.4f},"
+                f"{target['tetra_frequency_mhz']:.4f},{target['ctcss_hz']}"
+            ),
             f'+CREG: 1,"{target["unit_code"]}"',
             "OK",
         ]
@@ -416,7 +426,10 @@ class WalkieRadioManager:
         if upper == "AT+CNUMF?":
             state = self.get_operator_radio_state(operator_id)
             responses = [
-                f'+CNUMF: {state["talkgroup_id"]},{state["radio_frequency_mhz"]},"{state["radio_channel"]}","{state["team_id"]}"',
+                (
+                    f"+CNUMF: {state['talkgroup_id']},{state['radio_frequency_mhz']},"
+                    f'"{state["radio_channel"]}","{state["team_id"]}"'
+                ),
                 "OK",
             ]
             return {
@@ -430,7 +443,10 @@ class WalkieRadioManager:
         if upper in ("AT+CTGLIST?", "AT+CSCAN"):
             bank = self.get_frequency_bank()
             responses = [
-                f'+CTGLIST: {e["talkgroup_id"]},{e["frequency_mhz"]:.4f},"{e["radio_channel"]}","{e["team_id"]}"'
+                (
+                    f"+CTGLIST: {e['talkgroup_id']},{e['frequency_mhz']:.4f},"
+                    f'"{e["radio_channel"]}","{e["team_id"]}"'
+                )
                 for e in bank
             ]
             responses.append("OK")

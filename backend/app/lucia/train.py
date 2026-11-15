@@ -30,14 +30,6 @@ import keras
 import numpy as np
 import tensorflow as tf
 
-# ===========================================================================
-# Configuración de Épocas Virtuales, Checkpoints y Smoke Test (DRY_RUN)
-# ===========================================================================
-DRY_RUN: bool = False
-STEPS_PER_EPOCH: int = 500
-VALIDATION_STEPS: int = 100
-CHECKPOINTS_DIR: str = "checkpoints"
-
 from . import config
 from .model import (
     compute_analytic_target_fields,
@@ -55,6 +47,14 @@ from .router import (
     load_zone_road_grids,
 )
 
+# ===========================================================================
+# Configuración de Épocas Virtuales, Checkpoints y Smoke Test (DRY_RUN)
+# ===========================================================================
+DRY_RUN: bool = False
+STEPS_PER_EPOCH: int = 500
+VALIDATION_STEPS: int = 100
+CHECKPOINTS_DIR: str = "checkpoints"
+
 logger = logging.getLogger(__name__)
 
 
@@ -68,11 +68,14 @@ def build_dataset_from_cata_predictions(
     augment_rotations: bool = True,
     max_samples: int = 2500,
 ) -> tuple[np.ndarray, np.ndarray]:
-    """Extrae pares `(X, Y)` de entrenamiento a partir de `cata_predictions.json` + OSM + Open-Elevation de VALEN."""
+    """Extrae pares `(X, Y)` desde `cata_predictions.json` + OSM + Open-Elevation de VALEN."""
     if not os.path.exists(cata_predictions_path):
         return (
             np.empty((0, config.GRID_SIZE, config.GRID_SIZE, num_channels), dtype=np.float32),
-            np.empty((0, config.GRID_SIZE, config.GRID_SIZE, config.OUTPUT_HEAD_CHANNELS), dtype=np.float32),
+            np.empty(
+                (0, config.GRID_SIZE, config.GRID_SIZE, config.OUTPUT_HEAD_CHANNELS),
+                dtype=np.float32,
+            ),
         )
 
     with open(cata_predictions_path, encoding="utf-8") as f:
@@ -126,7 +129,10 @@ def build_dataset_from_cata_predictions(
     if not xs:
         return (
             np.empty((0, config.GRID_SIZE, config.GRID_SIZE, num_channels), dtype=np.float32),
-            np.empty((0, config.GRID_SIZE, config.GRID_SIZE, config.OUTPUT_HEAD_CHANNELS), dtype=np.float32),
+            np.empty(
+                (0, config.GRID_SIZE, config.GRID_SIZE, config.OUTPUT_HEAD_CHANNELS),
+                dtype=np.float32,
+            ),
         )
 
     n_out = len(xs)
@@ -151,12 +157,10 @@ def generate_synthetic_lucia_scenarios(
     safe_fire_threshold: float = config.SAFE_FIRE_THRESHOLD,
     seed: int = config.SEED,
 ) -> tuple[np.ndarray, np.ndarray]:
-    """Genera escenarios variados de incendio (quemado, quemándose, sin quemar + VALEN) para entrenar LUCIA."""
+    """Genera escenarios de incendio (quemado, ardiendo, seguro + VALEN) para entrenar LUCIA."""
     rng = np.random.default_rng(seed)
     xs = np.zeros((n_samples, grid_size, grid_size, num_channels), dtype=np.float32)
-    ys = np.zeros(
-        (n_samples, grid_size, grid_size, config.OUTPUT_HEAD_CHANNELS), dtype=np.float32
-    )
+    ys = np.zeros((n_samples, grid_size, grid_size, config.OUTPUT_HEAD_CHANNELS), dtype=np.float32)
 
     rr, cc = np.meshgrid(np.arange(grid_size), np.arange(grid_size), indexing="ij")
     dist_to_border = np.minimum(
@@ -182,7 +186,7 @@ def generate_synthetic_lucia_scenarios(
             burning_active[ring_active] = 1.0
             prob_t1 = np.maximum(
                 prob_t1,
-                np.clip(np.exp(-((dist_c - rad_burned) / 3.2) ** 2), 0.0, 1.0),
+                np.clip(np.exp(-(((dist_c - rad_burned) / 3.2) ** 2)), 0.0, 1.0),
             )
 
         is_burning_or_thresh = ((burning_active > 0.5) | (prob_t1 >= safe_fire_threshold)).astype(
@@ -399,7 +403,10 @@ def run_lucia_training_pipeline(
         )
     except KeyboardInterrupt:
         interrupted_path = os.path.join(CHECKPOINTS_DIR, "interrupted_model.keras")
-        print(f"\n[LUCIA] Entrenamiento interrumpido manualmente (Ctrl+C). Guardando estado en '{interrupted_path}'...")
+        print(
+            f"\n[LUCIA] Entrenamiento interrumpido manualmente (Ctrl+C). "
+            f"Guardando estado en '{interrupted_path}'..."
+        )
         model.save(interrupted_path)
         print(f"[LUCIA] Modelo guardado limpiamente en '{interrupted_path}'. Saliendo sin errores.")
         return {
@@ -444,7 +451,7 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
         "--mode",
         choices=("train", "expand", "route"),
         default="train",
-        help="train: entrena TF + genera GeoJSON | expand: channel surgery | route: sólo genera GeoJSON",
+        help="train: TF + GeoJSON | expand: channel surgery | route: sólo GeoJSON",
     )
     p.add_argument("--cata-input", default=config.DEFAULT_CATA_PREDICTIONS_PATH)
     p.add_argument("--save-path", default=config.DEFAULT_MODEL_PATH)
@@ -483,7 +490,9 @@ def main(argv: list[str] | None = None) -> None:
             new_num_channels=args.num_channels,
             save_path=args.save_path,
         )
-        save_lucia_metadata(model, args.save_path, extra={"mode": "expand", "expanded_from": args.base_model})
+        save_lucia_metadata(
+            model, args.save_path, extra={"mode": "expand", "expanded_from": args.base_model}
+        )
         logger.info("Modelo LUCIA expandido guardado en %s", args.save_path)
     elif args.mode == "route":
         payload = generate_lucia_geojson_from_cata(

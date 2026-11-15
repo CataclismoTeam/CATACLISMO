@@ -3,6 +3,7 @@ import re
 import sys
 import time
 from pathlib import Path
+
 from google import genai
 from google.genai import errors
 
@@ -48,7 +49,9 @@ def generate(client: genai.Client, prompt: str) -> str:
                     break  # clave inválida, modelo inexistente...: reintentar no sirve
             if attempt < ATTEMPTS:
                 time.sleep(min(60, 5 * 2 ** (attempt - 1)))  # 5, 10, 20, 40 s
-    soft_fail(f"Gemini no respondió ({last}). Se reintentará en el próximo push a main.")
+    soft_fail(
+        f"Gemini no respondió ({last}). Se reintentará en el próximo push a main."
+    )
     return ""
 
 
@@ -87,7 +90,9 @@ def main():
         code_context += block
     if skipped:
         names = ", ".join(skipped[:10])
-        print(f"::warning::{len(skipped)} fichero(s) fuera del prompt por tamaño: {names}")
+        print(
+            f"::warning::{len(skipped)} fichero(s) fuera del prompt por tamaño: {names}"
+        )
 
     if not code_context.strip():
         print("No valid text content extracted from modified files.")

@@ -53,7 +53,8 @@ def validate_ec_p256_jwk(jwk: dict[str, Any], *, label: str = "ECDH") -> dict[st
         raise ValueError(f"La clave pública {label} debe ser un objeto JWK.")
     if "d" in jwk:
         raise ValueError(
-            f"Seguridad E2EE: la clave pública {label} nunca puede incluir el componente privado 'd'."
+            f"Seguridad E2EE: la clave pública {label} nunca puede incluir "
+            "el componente privado 'd'."
         )
     if jwk.get("kty") != "EC" or jwk.get("crv") != "P-256":
         raise ValueError(f"La clave {label} debe usar kty='EC' y crv='P-256'.")
@@ -61,7 +62,9 @@ def validate_ec_p256_jwk(jwk: dict[str, Any], *, label: str = "ECDH") -> dict[st
     x_bytes = _b64_decode_flexible(str(jwk.get("x", "")), field_name=f"{label}.x")
     y_bytes = _b64_decode_flexible(str(jwk.get("y", "")), field_name=f"{label}.y")
     if len(x_bytes) != 32 or len(y_bytes) != 32:
-        raise ValueError(f"Las coordenadas (x, y) de {label} P-256 deben medir exactamente 32 bytes.")
+        raise ValueError(
+            f"Las coordenadas (x, y) de {label} P-256 deben medir exactamente 32 bytes."
+        )
 
     x_int = int.from_bytes(x_bytes, "big")
     y_int = int.from_bytes(y_bytes, "big")
@@ -106,10 +109,7 @@ def compute_pair_safety_code(fingerprint_a: str, fingerprint_b: str) -> str:
     """Genera un código numérico simétrico de verificación entre dos pares (estilo Signal)."""
     ordered = "|".join(sorted([fingerprint_a.strip().lower(), fingerprint_b.strip().lower()]))
     digest = hashlib.sha256(f"juli-safety-v1:{ordered}".encode()).digest()
-    blocks = [
-        f"{int.from_bytes(digest[i : i + 4], 'big') % 100000:05d}"
-        for i in range(0, 24, 4)
-    ]
+    blocks = [f"{int.from_bytes(digest[i : i + 4], 'big') % 100000:05d}" for i in range(0, 24, 4)]
     return " ".join(blocks)
 
 
@@ -132,14 +132,14 @@ def validate_encrypted_envelope(envelope: dict[str, Any]) -> dict[str, Any]:
 
     ct_b64 = str(envelope.get("ciphertext_b64", "")).strip()
     if len(ct_b64) > config.CHAT_MAX_CIPHERTEXT_B64_CHARS:
-        raise ValueError(
-            f"El mensaje cifrado supera el límite máximo ({config.CHAT_MAX_CIPHERTEXT_B64_CHARS} chars)."
-        )
+        max_chars = config.CHAT_MAX_CIPHERTEXT_B64_CHARS
+        raise ValueError(f"El mensaje cifrado supera el límite máximo ({max_chars} chars).")
     ct_bytes = _b64_decode_flexible(ct_b64, field_name="encryption.ciphertext_b64")
     # AES-256-GCM siempre incluye tag de autenticación de 16 bytes + al menos 1 byte de mensaje
     if len(ct_bytes) < 17:
         raise ValueError(
-            "El ciphertext AES-256-GCM debe incluir texto cifrado + tag de autenticación (mín. 17 bytes)."
+            "El ciphertext AES-256-GCM debe incluir texto cifrado + tag de autenticación "
+            "(mín. 17 bytes)."
         )
 
     iv_b64 = str(envelope.get("iv_b64", "")).strip()
@@ -154,7 +154,8 @@ def validate_encrypted_envelope(envelope: dict[str, Any]) -> dict[str, Any]:
     sender_fp = str(envelope.get("sender_key_fingerprint", "")).strip()
     if scheme in ("e2ee-ecdh-p256-aes256gcm", "e2ee-room-aes256gcm") and not sender_fp:
         raise ValueError(
-            f"El esquema '{scheme}' requiere 'sender_key_fingerprint' para identificar la clave emisora."
+            f"El esquema '{scheme}' requiere 'sender_key_fingerprint' "
+            "para identificar la clave emisora."
         )
 
     normalized: dict[str, Any] = {

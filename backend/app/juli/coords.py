@@ -1,4 +1,4 @@
-"""Sistema de coordenadas duales de JULI: Cuadrante 1000x1000m (ES1K) + Subcoordenadas de precisión + WGS84.
+"""Sistema dual de coordenadas JULI: Cuadrante 1000x1000m (ES1K) + Subcoordenadas + WGS84.
 
 Permite localizar a cada operario de forma inequívoca con:
   1. Su cuadrante táctico 1000x1000m (`quadrant_id`: `ES1K:L0:Y{iy}:X{ix}`), 100% compatible
@@ -6,9 +6,9 @@ Permite localizar a cada operario de forma inequívoca con:
   2. Sus subcoordenadas exactas dentro de ese cuadrante:
      - Métricas (`offset_x_m`, `offset_y_m` en `[0, 1000)` m desde la esquina SW del cuadrante)
      - Normalizadas (`sub_x_norm`, `sub_y_norm` en `[0, 1)`)
-     - Subrejilla táctica 100m (`sub_100m_rc` = `[0..9, 0..9]`) y subrejilla fina 10m (`sub_10m_rc` = `[0..99, 0..99]`)
-     - Identificador único de subcuadrante 10m (`sub_cell_id`: `ES1K:L0:Y...:X...:S{yy}_{xx}`)
-  3. Coordenadas absolutas precisas en WGS84 (`lon`, `lat`) y proyectadas (`epsg3035_x_m`, `epsg3035_y_m`).
+     - Subrejilla 100m (`sub_100m_rc` `[0..9, 0..9]`) y 10m (`sub_10m_rc` `[0..99, 0..99]`)
+     - Subcuadrante 10m (`sub_cell_id`: `ES1K:L0:Y...:X...:S{yy}_{xx}`)
+  3. Coordenadas absolutas en WGS84 (`lon`, `lat`) y proyectadas (`epsg3035_x_m`, `epsg3035_y_m`).
 """
 
 from __future__ import annotations
@@ -79,7 +79,11 @@ except ImportError:
         lon, lat = math.radians(float(lon_deg)), math.radians(float(lat_deg))
         beta = math.asin(max(-1.0, min(1.0, _q(math.sin(lat)) / _QP)))
         dlon = lon - _LON0
-        denom = 1.0 + math.sin(_BETA0) * math.sin(beta) + math.cos(_BETA0) * math.cos(beta) * math.cos(dlon)
+        denom = (
+            1.0
+            + math.sin(_BETA0) * math.sin(beta)
+            + math.cos(_BETA0) * math.cos(beta) * math.cos(dlon)
+        )
         b = _RQ * math.sqrt(2.0 / max(1e-12, denom))
         x = _FE + (b * _D) * (math.cos(beta) * math.sin(dlon))
         y = _FN + (b / _D) * (
@@ -115,7 +119,7 @@ def lonlat_to_quadrant_subcoords(
     lat: float,
     cell_size_m: float = CELL_SIZE_M,
 ) -> dict[str, Any]:
-    """Convierte `(lon, lat)` WGS84 en cuadrante 1000x1000m + subcoordenadas locales + métricas EPSG:3035."""
+    """Convierte `(lon, lat)` WGS84 en cuadrante 1000x1000m + subcoordenadas + EPSG:3035."""
     x_m, y_m = lonlat_to_epsg3035(lon, lat)
     ix = int(math.floor(x_m / cell_size_m))
     iy = int(math.floor(y_m / cell_size_m))
@@ -159,12 +163,16 @@ def quadrant_subcoords_to_lonlat(
     sub_y_norm: float | None = None,
     cell_size_m: float = CELL_SIZE_M,
 ) -> tuple[float, float]:
-    """Convierte `(quadrant_id + subcoordenadas)` a coordenadas absolutas precisas `(lon, lat)` WGS84."""
+    """Convierte `(quadrant_id + subcoordenadas)` a coordenadas absolutas `(lon, lat)` WGS84."""
     iy, ix = parse_quadrant_id(quadrant_id)
     if offset_x_m is None:
-        offset_x_m = (float(sub_x_norm) * cell_size_m) if sub_x_norm is not None else (0.5 * cell_size_m)
+        offset_x_m = (
+            (float(sub_x_norm) * cell_size_m) if sub_x_norm is not None else (0.5 * cell_size_m)
+        )
     if offset_y_m is None:
-        offset_y_m = (float(sub_y_norm) * cell_size_m) if sub_y_norm is not None else (0.5 * cell_size_m)
+        offset_y_m = (
+            (float(sub_y_norm) * cell_size_m) if sub_y_norm is not None else (0.5 * cell_size_m)
+        )
 
     ox = max(0.0, min(cell_size_m - 0.01, float(offset_x_m)))
     oy = max(0.0, min(cell_size_m - 0.01, float(offset_y_m)))

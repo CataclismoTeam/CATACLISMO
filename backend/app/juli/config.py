@@ -25,11 +25,11 @@ OperatorRole = Literal[
 ]
 
 STATUS_COLORS: dict[str, str] = {
-    "en_terreno": "#10b981",   # Verde esmeralda: operativo en misión
-    "en_ruta": "#3b82f6",      # Azul: desplazándose
+    "en_terreno": "#10b981",  # Verde esmeralda: operativo en misión
+    "en_ruta": "#3b82f6",  # Azul: desplazándose
     "en_descanso": "#a855f7",  # Violeta: relevo / base
-    "alerta": "#ef4444",       # Rojo: emergencia / SOS del operario
-    "inactivo": "#6b7280",     # Gris: fuera de turno
+    "alerta": "#ef4444",  # Rojo: emergencia / SOS del operario
+    "inactivo": "#6b7280",  # Gris: fuera de turno
 }
 
 ROLE_LABELS: dict[str, str] = {

@@ -18,10 +18,11 @@ from __future__ import annotations
 
 import asyncio
 import json
+import logging
 import math
 import os
-import random
-from datetime import datetime, timezone
+import secrets
+from datetime import UTC, datetime
 from typing import Any, Literal
 
 from fastapi import APIRouter, FastAPI, HTTPException, Query, WebSocket, WebSocketDisconnect
@@ -35,19 +36,22 @@ try:
     from .chat_crypto import _b64_decode_flexible, build_crypto_spec
     from .coords import lonlat_to_quadrant_subcoords
     from .tracker import juli_tracker
-    from .walkie_radio import build_protocol_spec as build_radio_protocol_spec, walkie_radio
+    from .walkie_radio import build_protocol_spec as build_radio_protocol_spec
+    from .walkie_radio import walkie_radio
 except ImportError:  # Ejecución standalone desde backend/app/juli/
     import config as juli_config
     from chat import broadcast_proof_of_life_alerts_to_chat, chat_ws_manager, juli_chat
     from chat_crypto import _b64_decode_flexible, build_crypto_spec
     from coords import lonlat_to_quadrant_subcoords
     from tracker import juli_tracker
-    from walkie_radio import build_protocol_spec as build_radio_protocol_spec, walkie_radio
+    from walkie_radio import build_protocol_spec as build_radio_protocol_spec
+    from walkie_radio import walkie_radio
 
 # ---------------------------------------------------------------------------
 # Modelos de datos y rutas
 # ---------------------------------------------------------------------------
 
+_LOGGER = logging.getLogger("juli.main")
 UnitRole = Literal["paramédico", "bombero", "dron"]
 UnitStatus = Literal["activo", "en_camino", "sos"]
 
@@ -263,8 +267,7 @@ def _load_fire_deployment_anchors(
                 ] or [
                     c
                     for c in zone_cells
-                    if isinstance(c.get("centroid_lonlat"), list)
-                    and len(c["centroid_lonlat"]) >= 2
+                    if isinstance(c.get("centroid_lonlat"), list) and len(c["centroid_lonlat"]) >= 2
                 ]
 
                 if hot_cells:
@@ -284,8 +287,8 @@ def _load_fire_deployment_anchors(
                         (p_lat + 0.0085, p_lon + 0.0110),
                         (d_lat + 0.0015, d_lon - 0.0015),
                     ]
-        except Exception:
-            pass
+        except Exception as exc:
+            _LOGGER.debug("No se pudo leer cata_predictions.json para anclar unidades: %s", exc)
 
     f_lat, f_lon = fallback_center
     return fallback_zone, [
@@ -332,7 +335,7 @@ def _sync_units_to_tracker(units: dict[str, RescueUnit], persist: bool = False) 
                 status=_STATUS_TO_TRACKER_STATUS.get(u.status, "en_terreno"),
                 battery_pct=u.battery,
                 heart_rate_bpm=u.heart_rate if u.heart_rate > 0 else None,
-                timestamp=datetime.now(timezone.utc).isoformat(),
+                timestamp=datetime.now(UTC).isoformat(),
             )
     if persist:
         juli_tracker.save_state()
@@ -445,7 +448,7 @@ def build_units_payload() -> dict:
             "grid_level": juli_config.GRID_LEVEL,
             "cell_size_m": juli_config.CELL_SIZE_M,
         },
-        "timestamp": datetime.now(timezone.utc).isoformat(),
+        "timestamp": datetime.now(UTC).isoformat(),
         "units": units_list,
         "proof_of_life": {
             "checked_at": pol_eval["checked_at"],
@@ -467,9 +470,11 @@ def step_simulation(tick_count: int) -> None:
             d_lon = unit.anchor_lon - unit.lon
             if math.hypot(d_lat, d_lon) > max_patrol_radius_deg:
                 target_heading = math.degrees(math.atan2(d_lon, d_lat)) % 360.0
-                unit.heading_deg = target_heading + random.uniform(-12.0, 12.0)
+                jitter = (secrets.randbelow(2401) - 1200) / 100.0
+                unit.heading_deg = target_heading + jitter
             else:
-                unit.heading_deg = (unit.heading_deg + random.uniform(-20.0, 20.0)) % 360.0
+                jitter = (secrets.randbelow(4001) - 2000) / 100.0
+                unit.heading_deg = (unit.heading_deg + jitter) % 360.0
 
             rad = math.radians(unit.heading_deg)
             unit.lat += math.cos(rad) * speed_deg
@@ -478,9 +483,11 @@ def step_simulation(tick_count: int) -> None:
         if unit.role == "dron":
             unit.heart_rate = 0
         elif unit.status == "sos":
-            unit.heart_rate = min(175, max(128, unit.heart_rate + random.randint(-2, 4)))
+            delta_hr = secrets.randbelow(7) - 2
+            unit.heart_rate = min(175, max(128, unit.heart_rate + delta_hr))
         else:
-            unit.heart_rate = min(148, max(72, unit.heart_rate + random.randint(-3, 3)))
+            delta_hr = secrets.randbelow(7) - 3
+            unit.heart_rate = min(148, max(72, unit.heart_rate + delta_hr))
 
         if tick_count % 3 == 0 and unit.battery > 5:
             unit.battery -= 1
@@ -532,7 +539,7 @@ async def get_juli_proof_of_life(
         ge=1,
     ),
 ) -> dict:
-    """Evalúa la prueba de vida (>= 15 min inmóvil o cuadrante en llamas) para Central y escuadrones."""
+    """Evalúa prueba de vida (>= 15 min inmóvil o cuadrante ardiendo) para Central y escuadrón."""
     return {
         "algorithm": juli_config.ALGORITHM_NAME,
         **juli_tracker.evaluate_proof_of_life(immobile_seconds=immobile_seconds),
@@ -1083,8 +1090,8 @@ async def _after_radio_switch(record: dict[str, Any]) -> dict[str, Any]:
     for hook in list(_EXTERNAL_RADIO_EVENT_HOOKS):
         try:
             await hook(ws_event)
-        except Exception:
-            pass
+        except Exception as exc:
+            _LOGGER.warning("Error ejecutando hook externo de radio WS: %s", exc)
 
     return {
         **record,
@@ -1227,7 +1234,9 @@ async def websocket_radio_bridge(
         while True:
             frame = await websocket.receive_json()
             action = str(frame.get("action", "")).strip()
-            target_oid = str(frame.get("operator_id") or ("" if sub_key == "*" else sub_key)).strip()
+            target_oid = str(
+                frame.get("operator_id") or ("" if sub_key == "*" else sub_key)
+            ).strip()
             try:
                 if action == "ping":
                     await websocket.send_json({"event": "pong"})

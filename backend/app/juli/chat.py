@@ -13,13 +13,14 @@ Soporta:
 
 from __future__ import annotations
 
-from dataclasses import asdict, dataclass, field
-from datetime import datetime, timezone
 import hashlib
 import json
+import logging
 import os
-from typing import Any
 import uuid
+from dataclasses import asdict, dataclass, field
+from datetime import UTC, datetime
+from typing import Any
 
 from . import config
 from .attachment_security import inspect_and_sanitize_attachment
@@ -31,6 +32,8 @@ from .chat_crypto import (
     validate_wrapped_key_entry,
 )
 from .tracker import JuliTracker, juli_tracker
+
+logger = logging.getLogger("juli.chat")
 
 ALLOWED_MESSAGE_TYPES = frozenset(
     {
@@ -47,7 +50,7 @@ ALLOWED_MESSAGE_TYPES = frozenset(
 
 
 def _now_iso() -> str:
-    return datetime.now(timezone.utc).isoformat()
+    return datetime.now(UTC).isoformat()
 
 
 def direct_channel_id(participant_a: str, participant_b: str) -> str:
@@ -303,7 +306,7 @@ class JuliChatManager:
                 ch.title = f"Escuadrón {team.unit_code} — {team.name}"
                 ch.member_ids = roster
 
-        # Supervisión global: Central siempre tiene acceso de lectura y escritura en todos los canales
+        # Supervisión global: Central tiene acceso de lectura y escritura en todos los canales
         for ch in self.channels.values():
             if config.CHAT_CENTRAL_ID not in ch.member_ids:
                 ch.member_ids = sorted([*ch.member_ids, config.CHAT_CENTRAL_ID])
@@ -318,8 +321,7 @@ class JuliChatManager:
                     for pid, data in raw.get("identity_keys", {}).items()
                 }
                 self.channels = {
-                    cid: ChatChannel(**data)
-                    for cid, data in raw.get("channels", {}).items()
+                    cid: ChatChannel(**data) for cid, data in raw.get("channels", {}).items()
                 }
                 self.room_keys = raw.get("room_keys", {})
                 self.attachments = {
@@ -333,8 +335,8 @@ class JuliChatManager:
                 self._channel_seq = {
                     cid: int(seq) for cid, seq in raw.get("channel_seq", {}).items()
                 }
-            except Exception:
-                pass
+            except Exception as exc:
+                logger.warning("Estado de chat corrupto o ilegible en %s: %s", self.state_path, exc)
         self._sync_default_channels()
 
     def save_state(self) -> None:
@@ -348,17 +350,10 @@ class JuliChatManager:
             "channels": {cid: ch.to_dict() for cid, ch in self.channels.items()},
             "room_keys": self.room_keys,
             "attachments": {
-                aid: {
-                    k: v
-                    for k, v in asdict(att).items()
-                }
-                for aid, att in self.attachments.items()
+                aid: {k: v for k, v in asdict(att).items()} for aid, att in self.attachments.items()
             },
             "channel_seq": self._channel_seq,
-            "messages": {
-                cid: [m.to_dict() for m in mlist]
-                for cid, mlist in self.messages.items()
-            },
+            "messages": {cid: [m.to_dict() for m in mlist] for cid, mlist in self.messages.items()},
         }
         with open(self.state_path, "w", encoding="utf-8") as f:
             json.dump(payload, f, ensure_ascii=False, indent=2)
@@ -558,13 +553,7 @@ class JuliChatManager:
             msgs = self.messages.get(ch.channel_id, [])
             last_msg = msgs[-1].to_dict() if msgs else None
             unread = (
-                sum(
-                    1
-                    for m in msgs
-                    if m.sender_id != pid and pid not in m.read_by
-                )
-                if pid
-                else 0
+                sum(1 for m in msgs if m.sender_id != pid and pid not in m.read_by) if pid else 0
             )
             entry = {
                 **ch.to_dict(),
@@ -607,18 +596,14 @@ class JuliChatManager:
         sender_ident = self.identity_keys.get(sender_id)
         if sender_ident is not None and sender_ident.revoked:
             raise PermissionError(f"La clave de '{sender_id}' fue revocada.")
-        resolved_fp = sender_key_fingerprint or (
-            sender_ident.fingerprint if sender_ident else ""
-        )
+        resolved_fp = sender_key_fingerprint or (sender_ident.fingerprint if sender_ident else "")
         if not resolved_fp:
             raise ValueError(
                 "Se requiere 'sender_key_fingerprint' o haber registrado clave pública previa."
             )
 
         target_epoch = (
-            ch.current_key_epoch + 1
-            if rotate_epoch
-            else int(key_epoch or ch.current_key_epoch)
+            ch.current_key_epoch + 1 if rotate_epoch else int(key_epoch or ch.current_key_epoch)
         )
         if target_epoch < 1:
             raise ValueError("'key_epoch' debe ser >= 1.")
@@ -643,9 +628,7 @@ class JuliChatManager:
             "key_epoch": target_epoch,
             "distributed_by": sender_id,
             "sender_key_fingerprint": resolved_fp,
-            "distributor_ecdh_public_jwk": (
-                sender_ident.ecdh_public_jwk if sender_ident else None
-            ),
+            "distributor_ecdh_public_jwk": (sender_ident.ecdh_public_jwk if sender_ident else None),
             "updated_at": now_str,
             "wrapped_keys": merged_wrapped,
         }
@@ -764,7 +747,9 @@ class JuliChatManager:
         with open(file_path, "rb") as f:
             data = f.read()
         if hashlib.sha256(data).hexdigest() != att.sha256:
-            raise ValueError("Integridad comprometida: el checksum SHA-256 del adjunto no coincide.")
+            raise ValueError(
+                "Integridad comprometida: el checksum SHA-256 del adjunto no coincide."
+            )
         return att.to_dict(), data
 
     # -----------------------------------------------------------------------
@@ -780,7 +765,7 @@ class JuliChatManager:
         reply_to_id: str | None = None,
         attachment_ids: list[str] | None = None,
     ) -> tuple[dict[str, Any], bool]:
-        """Valida y persiste un mensaje E2EE (con adjuntos verificados opcionales). Devuelve `(msg, created)`."""
+        """Valida y persiste un mensaje E2EE (adjuntos opcionales). Devuelve `(msg, created)`."""
         if message_type not in ALLOWED_MESSAGE_TYPES or message_type == "system_alert":
             raise ValueError(
                 f"Tipo de mensaje '{message_type}' inválido. Válidos: "
@@ -825,7 +810,7 @@ class JuliChatManager:
             fp = normalized_enc.get("sender_key_fingerprint", "")
             if fp and fp not in (sender_ident.fingerprint, sender_ident.short_fingerprint):
                 raise ValueError(
-                    "El 'sender_key_fingerprint' no coincide con la clave pública registrada del emisor."
+                    "El 'sender_key_fingerprint' no coincide con la clave pública registrada."
                 )
 
         seq = self._channel_seq.get(ch.channel_id, 0) + 1

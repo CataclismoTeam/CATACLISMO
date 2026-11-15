@@ -25,7 +25,7 @@ from __future__ import annotations
 import json
 import logging
 import os
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from typing import Any
 
 import numpy as np
@@ -70,7 +70,7 @@ class ContinualLearningEngine:
                 logger.warning("No se pudo leer continual_state.json (%s); creando nuevo.", exc)
         return {
             "version": "1.0.0",
-            "updated_at": datetime.now(timezone.utc).isoformat(),
+            "updated_at": datetime.now(UTC).isoformat(),
             "cata": {
                 "total_continual_updates": 0,
                 "total_head_micro_steps": 0,
@@ -92,7 +92,7 @@ class ContinualLearningEngine:
         }
 
     def save_state(self) -> None:
-        self.state["updated_at"] = datetime.now(timezone.utc).isoformat()
+        self.state["updated_at"] = datetime.now(UTC).isoformat()
         os.makedirs(os.path.dirname(self.state_path), exist_ok=True)
         with open(self.state_path, "w", encoding="utf-8") as f:
             json.dump(self.state, f, ensure_ascii=False, indent=2)
@@ -145,7 +145,7 @@ class ContinualLearningEngine:
         threshold: float = 0.5,
         enable_head_micro_step: bool = True,
     ) -> dict[str, Any]:
-        """Actualiza recursivamente CATA cuando existe observación `t+1` sin reentrenar desde cero."""
+        """Actualiza recursivamente CATA con observación `t+1` sin reentrenar desde cero."""
         if y_true_batch is None or len(y_true_batch) == 0:
             return {"updated": False, "reason": "no_ground_truth_t1"}
 
@@ -155,7 +155,7 @@ class ContinualLearningEngine:
         else:
             y_true_2d = y_true
 
-        # Si el target t+1 está completamente vacío en toda la tanda (p. ej. fecha futura aún no ocurrida), no penalizar
+        # Si el target t+1 está vacío (p. ej. fecha futura aún no ocurrida), no penalizar
         if float(y_true_2d.sum()) <= 0.0:
             return {"updated": False, "reason": "future_unobserved_t1"}
 
@@ -183,19 +183,32 @@ class ContinualLearningEngine:
                 {"logit_bias": 0.0, "temp_scale": 1.0, "updates": 0, "last_iou": 0.0},
             )
 
-            # Si hay más FN que FP, subimos ligeramente el logit_bias; si hay más FP que FN, lo bajamos
+            # Si hay más FN que FP, subimos ligeramente el logit_bias; si hay más FP, lo bajamos
             denom = max(tp + fp + fn, 1.0)
             imbalance = (fn - fp) / denom  # en [-1, 1]
             step_bias = float(np.clip(imbalance * 0.25, -0.15, 0.15))
             b_entry["logit_bias"] = round(
-                float(np.clip((1.0 - EMA_ALPHA) * b_entry["logit_bias"] + EMA_ALPHA * (b_entry["logit_bias"] + step_bias), -1.0, 1.0)),
+                float(
+                    np.clip(
+                        (1.0 - EMA_ALPHA) * b_entry["logit_bias"]
+                        + EMA_ALPHA * (b_entry["logit_bias"] + step_bias),
+                        -1.0,
+                        1.0,
+                    )
+                ),
                 5,
             )
             # Ajustar temperatura local según sobreconfianza en FP
             fp_ratio = fp / denom
             target_temp = 1.0 + 0.35 * fp_ratio
             b_entry["temp_scale"] = round(
-                float(np.clip((1.0 - EMA_ALPHA) * b_entry["temp_scale"] + EMA_ALPHA * target_temp, 0.75, 1.5)),
+                float(
+                    np.clip(
+                        (1.0 - EMA_ALPHA) * b_entry["temp_scale"] + EMA_ALPHA * target_temp,
+                        0.75,
+                        1.5,
+                    )
+                ),
                 5,
             )
             b_entry["updates"] = int(b_entry.get("updates", 0)) + 1
@@ -206,7 +219,8 @@ class ContinualLearningEngine:
         batch_iou = total_tp / max(total_tp + total_fp + total_fn, 1.0)
 
         cata_st["ema_precision"] = round(
-            float((1.0 - EMA_ALPHA) * cata_st.get("ema_precision", 0.65) + EMA_ALPHA * batch_prec), 4
+            float((1.0 - EMA_ALPHA) * cata_st.get("ema_precision", 0.65) + EMA_ALPHA * batch_prec),
+            4,
         )
         cata_st["ema_recall"] = round(
             float((1.0 - EMA_ALPHA) * cata_st.get("ema_recall", 0.63) + EMA_ALPHA * batch_rec), 4
@@ -228,12 +242,14 @@ class ContinualLearningEngine:
         )
         cata_st["total_continual_updates"] = int(cata_st.get("total_continual_updates", 0)) + 1
 
-        # Actualizar Experience Replay Buffer y aplicar 1 micro-paso solo a la última capa si procede
+        # Actualizar Experience Replay Buffer y aplicar 1 micro-paso en la cabeza si procede
         micro_step_done = False
         if enable_head_micro_step and model is not None:
             micro_step_done = self._cata_replay_and_head_step(model, seq_batch, y_true)
             if micro_step_done:
-                cata_st["total_head_micro_steps"] = int(cata_st.get("total_head_micro_steps", 0)) + 1
+                cata_st["total_head_micro_steps"] = (
+                    int(cata_st.get("total_head_micro_steps", 0)) + 1
+                )
 
         self.save_state()
         return {
@@ -249,7 +265,7 @@ class ContinualLearningEngine:
         x_new: np.ndarray,
         y_new: np.ndarray,
     ) -> bool:
-        """Guarda en Replay Buffer circular y ejecuta 1 micro-paso en la cabeza de salida de CATA."""
+        """Guarda en Replay Buffer circular y ejecuta 1 micro-paso en la cabeza de CATA."""
         try:
             import keras
 
@@ -321,9 +337,11 @@ class ContinualLearningEngine:
         residual = analytic_target.astype(np.float32) - pred_stack
         mae = float(np.mean(np.abs(residual)))
 
-        # Ganancia tipo Kalman: si el residuo sube, aumenta el peso correctivo analítico [0.15, 0.65]
+        # Ganancia Kalman: si sube el residuo, sube el peso correctivo analítico [0.15, 0.65]
         target_gain = float(np.clip(0.20 + 2.5 * mae, 0.15, 0.65))
-        gain = float((1.0 - EMA_ALPHA) * z_entry.get("residual_gain", 0.25) + EMA_ALPHA * target_gain)
+        gain = float(
+            (1.0 - EMA_ALPHA) * z_entry.get("residual_gain", 0.25) + EMA_ALPHA * target_gain
+        )
         z_entry["residual_gain"] = round(gain, 4)
         z_entry["updates"] = int(z_entry.get("updates", 0)) + 1
         z_entry["last_mae"] = round(mae, 5)
@@ -332,7 +350,10 @@ class ContinualLearningEngine:
             float((1.0 - EMA_ALPHA) * lucia_st.get("ema_mae", 0.013) + EMA_ALPHA * mae), 5
         )
         lucia_st["global_residual_gain"] = round(
-            float((1.0 - EMA_ALPHA) * lucia_st.get("global_residual_gain", 0.25) + EMA_ALPHA * gain), 4
+            float(
+                (1.0 - EMA_ALPHA) * lucia_st.get("global_residual_gain", 0.25) + EMA_ALPHA * gain
+            ),
+            4,
         )
         lucia_st["total_continual_updates"] = int(lucia_st.get("total_continual_updates", 0)) + 1
 
@@ -340,8 +361,12 @@ class ContinualLearningEngine:
 
         # Si el residuo de la red supera 0.025, hacemos 1 micro-paso en la cabeza de LUCIA
         if enable_head_micro_step and model is not None and mae > 0.025:
-            if self._lucia_replay_and_head_step(model, features_tensor[None], analytic_target[None]):
-                lucia_st["total_head_micro_steps"] = int(lucia_st.get("total_head_micro_steps", 0)) + 1
+            if self._lucia_replay_and_head_step(
+                model, features_tensor[None], analytic_target[None]
+            ):
+                lucia_st["total_head_micro_steps"] = (
+                    int(lucia_st.get("total_head_micro_steps", 0)) + 1
+                )
 
         self.save_state()
         return {
@@ -410,9 +435,13 @@ class ContinualLearningEngine:
         )
         delta = 0.12 * float(np.clip(intensity, 0.1, 2.0))
         if feedback_type == "confirmed_fire":
-            b_entry["logit_bias"] = round(float(np.clip(b_entry["logit_bias"] + delta, -1.0, 1.0)), 5)
+            b_entry["logit_bias"] = round(
+                float(np.clip(b_entry["logit_bias"] + delta, -1.0, 1.0)), 5
+            )
         elif feedback_type == "false_alarm":
-            b_entry["logit_bias"] = round(float(np.clip(b_entry["logit_bias"] - delta, -1.0, 1.0)), 5)
+            b_entry["logit_bias"] = round(
+                float(np.clip(b_entry["logit_bias"] - delta, -1.0, 1.0)), 5
+            )
         b_entry["updates"] = int(b_entry.get("updates", 0)) + 1
         self.save_state()
         return {"block_key": b_key, "block_state": dict(b_entry)}

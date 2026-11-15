@@ -16,9 +16,8 @@ from __future__ import annotations
 
 import argparse
 import json
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from pathlib import Path
-from typing import Any
 
 import numpy as np
 import pandas as pd
@@ -31,40 +30,40 @@ ALGORITHM_NAME: str = "valen"
 
 DEFAULT_WEIGHTS = {
     # Sensores y calidad detección
-    "sensor_count": 0.20,        # MODIS+VIIRS=3, solo VIIRS=2, solo MODIS=1
-    "confidence_rank_max": 0.15, # 0/1/2 normalizado
-    "n_high_conf_ratio": 0.05,   # n_high_conf / n_obs
-
+    "sensor_count": 0.20,  # MODIS+VIIRS=3, solo VIIRS=2, solo MODIS=1
+    "confidence_rank_max": 0.15,  # 0/1/2 normalizado
+    "n_high_conf_ratio": 0.05,  # n_high_conf / n_obs
     # Meteorología (Meteomatics)
-    "fwi": 0.15,                 # Fire Weather Index (0-100+)
-    "wind_speed": 0.10,          # Viento >30 km/h
-    "humidity": 0.10,            # Humedad relativa <30%
-
+    "fwi": 0.15,  # Fire Weather Index (0-100+)
+    "wind_speed": 0.10,  # Viento >30 km/h
+    "humidity": 0.10,  # Humedad relativa <30%
     # Sequía / Lluvia (NASA POWER)
-    "days_since_rain_1mm": 0.10, # Días sin lluvia ≥1mm
-    "dry_spell_max": 0.05,       # Máxima racha seca
-    "precip_30d": 0.05,          # Precipitación 30 días (inverso)
-
+    "days_since_rain_1mm": 0.10,  # Días sin lluvia ≥1mm
+    "dry_spell_max": 0.05,  # Máxima racha seca
+    "precip_30d": 0.05,  # Precipitación 30 días (inverso)
     # Vegetación
     "vegetation_flammability": 0.10,  # combined_flammability 1-5
-
     # Geometría / Calidad dato
-    "boundary_crossing": 0.05,   # Flag boundary_crossing
-    "product_mix_nrt": 0.05,     # product_mix (NRT=1, SP=0)
+    "boundary_crossing": 0.05,  # Flag boundary_crossing
+    "product_mix_nrt": 0.05,  # product_mix (NRT=1, SP=0)
 }
 
 # Umbrales de decisión
 DEFAULT_THRESHOLDS = {
-    "accept": 0.70,       # ≥ 0.70 → ACEPTA
-    "review": 0.30,       # 0.30-0.70 → REVISAR_MANUAL
+    "accept": 0.70,  # ≥ 0.70 → ACEPTA
+    "review": 0.30,  # 0.30-0.70 → REVISAR_MANUAL
     # < 0.30 → RECHAZA
 }
 
 # Normalización de variables (min-max o sigmoid)
 NORMALIZATION = {
-    "fwi": {"type": "minmax", "min": 0, "max": 50},           # FWI típico 0-50
-    "wind_speed": {"type": "minmax", "min": 0, "max": 20},    # m/s
-    "humidity": {"type": "inverse_minmax", "min": 10, "max": 90},  # % (inverso: menos humedad = más riesgo)
+    "fwi": {"type": "minmax", "min": 0, "max": 50},  # FWI típico 0-50
+    "wind_speed": {"type": "minmax", "min": 0, "max": 20},  # m/s
+    "humidity": {
+        "type": "inverse_minmax",
+        "min": 10,
+        "max": 90,
+    },  # % (inverso: menos humedad = más riesgo)
     "days_since_rain_1mm": {"type": "minmax", "min": 0, "max": 30},
     "dry_spell_max": {"type": "minmax", "min": 0, "max": 30},
     "precip_30d": {"type": "inverse_minmax", "min": 0, "max": 100},  # mm (inverso)
@@ -73,13 +72,14 @@ NORMALIZATION = {
     "sensor_count": {"type": "minmax", "min": 1, "max": 3},
     "n_high_conf_ratio": {"type": "minmax", "min": 0, "max": 1},
     "boundary_crossing": {"type": "binary"},  # 0/1
-    "product_mix_nrt": {"type": "direct"},    # 0-1
+    "product_mix_nrt": {"type": "direct"},  # 0-1
 }
 
 
 # ---------------------------------------------------------------------------
 # Utilidades de normalización
 # ---------------------------------------------------------------------------
+
 
 def normalize_value(value: float | None, spec: dict) -> float:
     """Normaliza un valor según especificación (0-1)."""
@@ -156,15 +156,18 @@ def extract_features(row: pd.Series) -> dict[str, float]:
 
     # 10. Vegetation flammability (1-5)
     vf = row.get("combined_flammability") or row.get("vegetation_flammability")
-    features["vegetation_flammability"] = normalize_value(vf, NORMALIZATION["vegetation_flammability"])
+    features["vegetation_flammability"] = normalize_value(
+        vf, NORMALIZATION["vegetation_flammability"]
+    )
 
     # 11. Boundary crossing (binary)
     flags = row.get("flags", [])
     if isinstance(flags, str):
         import ast
+
         try:
             flags = ast.literal_eval(flags)
-        except:
+        except (ValueError, SyntaxError):
             flags = []
     bc = 1 if "boundary_crossing" in flags else 0
     features["boundary_crossing"] = normalize_value(bc, NORMALIZATION["boundary_crossing"])
@@ -211,6 +214,7 @@ decide = valen_decide
 # ---------------------------------------------------------------------------
 # Pipeline principal
 # ---------------------------------------------------------------------------
+
 
 def load_enrichment_file(path: Path) -> pd.DataFrame:
     """Carga JSON/JSONL de enriquecimiento (meteo, veg, lluvia)."""
@@ -264,14 +268,22 @@ def merge_enrichments(
         for _, r in rain.iterrows():
             key = (r.get("cell_id"), r.get("reference_date") or r.get("date"))
             rain_lookup[key] = r
+
         def get_rain(row):
             key = (row["cell_id"], str(row["date"]))
             return rain_lookup.get(key, {})
+
         rain_data = df.apply(get_rain, axis=1)
-        for col in ["days_since_rain_1mm", "days_since_rain_10mm",
-                    "precip_7d_mm", "precip_30d_mm", "precip_90d_mm",
-                    "dry_spell_max_days", "rain_days_30d"]:
-            df[col] = rain_data.apply(lambda x: x.get(col))
+        for col in [
+            "days_since_rain_1mm",
+            "days_since_rain_10mm",
+            "precip_7d_mm",
+            "precip_30d_mm",
+            "precip_90d_mm",
+            "dry_spell_max_days",
+            "rain_days_30d",
+        ]:
+            df[col] = rain_data.apply(lambda x, c=col: x.get(c))
 
     # Meteorología
     if meteo_path and meteo_path.exists():
@@ -280,18 +292,31 @@ def merge_enrichments(
         for _, r in meteo.iterrows():
             key = (r.get("cell_id"), r.get("date"))
             meteo_lookup[key] = r
+
         def get_meteo(row):
             key = (row["cell_id"], str(row["date"]))
             return meteo_lookup.get(key, {})
+
         meteo_data = df.apply(get_meteo, axis=1)
-        for param in ["t_2m:C", "wind_speed_10m:ms", "wind_gusts_10m_1h:ms",
-                      "relative_humidity_2m:p", "fire_weather_index:idx",
-                      "haines_index:idx", "fosberg_index:idx",
-                      "precip_1h:mm", "precip_24h:mm",
-                      "soil_moisture_0_10cm:m3/m3", "soil_temp_0_10cm:C"]:
+        for param in [
+            "t_2m:C",
+            "wind_speed_10m:ms",
+            "wind_gusts_10m_1h:ms",
+            "relative_humidity_2m:p",
+            "fire_weather_index:idx",
+            "haines_index:idx",
+            "fosberg_index:idx",
+            "precip_1h:mm",
+            "precip_24h:mm",
+            "soil_moisture_0_10cm:m3/m3",
+            "soil_temp_0_10cm:C",
+        ]:
             df[param.replace(":", "_").replace(".", "_")] = meteo_data.apply(
-                lambda x: x.get("parameters", {}).get(param, {}).get("dates", [{}])[0].get("value")
-                if x.get("parameters", {}).get(param, {}).get("dates") else None
+                lambda x, p=param: (
+                    x.get("parameters", {}).get(p, {}).get("dates", [{}])[0].get("value")
+                    if x.get("parameters", {}).get(p, {}).get("dates")
+                    else None
+                )
             )
 
     return df
@@ -315,9 +340,11 @@ def run_valen_scoring(
     df = merge_enrichments(cell_day, meteo_path, veg_path, rain_path)
 
     # Para sensors_present, necesitamos saber qué sensores hay en cada cell_id+date
-    sensor_map = df.groupby(["cell_id", "date"])["sensor"].apply(
-        lambda x: "BOTH" if set(x) == {"MODIS", "VIIRS"} else list(x)[0]
-    ).reset_index(name="sensors_present")
+    sensor_map = (
+        df.groupby(["cell_id", "date"])["sensor"]
+        .apply(lambda x: "BOTH" if set(x) == {"MODIS", "VIIRS"} else list(x)[0])
+        .reset_index(name="sensors_present")
+    )
     df = df.merge(sensor_map, on=["cell_id", "date"], how="left")
 
     # Calcular score por fila
@@ -335,14 +362,14 @@ def run_valen_scoring(
             "score": round(score, 4),
             "decision": decision,
             "features": features,
-            "scored_at": datetime.now(timezone.utc).isoformat(),
+            "scored_at": datetime.now(UTC).isoformat(),
         }
         results.append(result)
 
     results_df = pd.DataFrame(results)
 
     # Estadísticas
-    print(f"\n=== RESULTADOS ALGORITMO VALEN (SCORING) ===")
+    print("\n=== RESULTADOS ALGORITMO VALEN (SCORING) ===")
     print(f"Total: {len(results_df)}")
     print(f"Decisiones: {results_df['decision'].value_counts().to_dict()}")
     print(f"Score mean: {results_df['score'].mean():.4f}")
@@ -374,6 +401,7 @@ run_scoring = run_valen_scoring
 # ---------------------------------------------------------------------------
 # CLI
 # ---------------------------------------------------------------------------
+
 
 def build_arg_parser():
     p = argparse.ArgumentParser(description="Algoritmo VALEN — Scoring Multi-fuente Fase 3b")
@@ -416,4 +444,5 @@ def main(argv: list[str] | None = None) -> int:
 
 if __name__ == "__main__":
     import sys
+
     sys.exit(main())

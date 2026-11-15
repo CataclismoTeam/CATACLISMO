@@ -24,15 +24,17 @@ import hashlib
 import json
 import logging
 import sys
-from datetime import datetime, timezone
+from collections.abc import Iterator
+from datetime import UTC, datetime
 from pathlib import Path
-from typing import Any, Iterator
+from typing import Any
 
 import numpy as np
 import pandas as pd
 
 try:
     from pyproj import Transformer
+
     _TRANSFORMER = Transformer.from_crs("EPSG:4326", "EPSG:3035", always_xy=True)
 except ImportError:
     _TRANSFORMER = None
@@ -50,7 +52,7 @@ ALGORITHM_NAME: str = "valen"
 logging.basicConfig(
     level=logging.INFO,
     format="%(asctime)s %(levelname)s %(name)s: %(message)s",
-    handlers=[logging.StreamHandler(sys.stdout)]
+    handlers=[logging.StreamHandler(sys.stdout)],
 )
 logger = logging.getLogger("valen.phase1_projection")
 
@@ -58,16 +60,18 @@ logger = logging.getLogger("valen.phase1_projection")
 # Constantes y umbrales (configurables vía CLI)
 # ---------------------------------------------------------------------------
 
+
 class _FallbackTransformer:
     @staticmethod
     def transform(lons, lats):
         xs = np.empty(len(lons), dtype=np.float64)
         ys = np.empty(len(lats), dtype=np.float64)
-        for i, (lo, la) in enumerate(zip(lons, lats)):
+        for i, (lo, la) in enumerate(zip(lons, lats, strict=True)):
             x, y = _laea_forward(float(lo), float(la))
             xs[i] = x
             ys[i] = y
         return xs, ys
+
 
 # Proyección EPSG:4326 (WGS84) -> EPSG:3035 (ETRS89-LAEA Europe, metros)
 TRANSFORMER = _TRANSFORMER if _TRANSFORMER is not None else _FallbackTransformer()
@@ -91,6 +95,7 @@ STREAMING_CHUNK_SIZE = 10_000
 # ---------------------------------------------------------------------------
 # Utilidades
 # ---------------------------------------------------------------------------
+
 
 def compute_file_hash(path: Path) -> str:
     """SHA-256 del archivo original."""
@@ -158,7 +163,9 @@ def infer_product_from_filename(fname: str) -> str:
     return "unknown"
 
 
-def iter_json_records(file_path: Path, chunk_size: int = STREAMING_CHUNK_SIZE) -> Iterator[list[dict]]:
+def iter_json_records(
+    file_path: Path, chunk_size: int = STREAMING_CHUNK_SIZE
+) -> Iterator[list[dict]]:
     """
     Itera sobre registros JSON en chunks para streaming.
     Soporta tanto array JSON como JSONL.
@@ -174,7 +181,7 @@ def iter_json_records(file_path: Path, chunk_size: int = STREAMING_CHUNK_SIZE) -
             data = json.loads(content)
             if isinstance(data, list):
                 for i in range(0, len(data), chunk_size):
-                    yield data[i:i + chunk_size]
+                    yield data[i : i + chunk_size]
             else:
                 logger.warning(f"{file_path.name}: JSON root no es array, se omite")
         else:
@@ -247,7 +254,7 @@ def normalize_and_enrich(
     cell_size: float,
     grid_prefix: str,
     partial_period_start: str,
-    file_paths: list[Path]
+    file_paths: list[Path],
 ) -> pd.DataFrame:
     """Aplica tipos, proyección, celdas, ranks, flags, IDs."""
     # --- Tipos básicos ---
@@ -258,7 +265,9 @@ def normalize_and_enrich(
     df["acq_minute"] = df.get("src_acq_time").apply(parse_acq_time)
 
     src_sensor = df["src_sensor"] if "src_sensor" in df.columns else "UNKNOWN"
-    df["sensor"] = df["src_instrument"].replace({"SNPP": "VIIRS"}).fillna(src_sensor).astype(str).str.upper()
+    df["sensor"] = (
+        df["src_instrument"].replace({"SNPP": "VIIRS"}).fillna(src_sensor).astype(str).str.upper()
+    )
     src_platform = df["src_platform"] if "src_platform" in df.columns else "Unknown"
     df["platform"] = df["src_satellite"].fillna(src_platform).astype(str).str.title()
     df["product"] = df["source_file"].apply(infer_product_from_filename)
@@ -271,8 +280,7 @@ def normalize_and_enrich(
 
     df["confidence_raw"] = df.get("src_confidence").astype(str)
     df["confidence_rank"] = df.apply(
-        lambda r: confidence_to_rank(r.get("sensor", ""), r.get("confidence_raw")),
-        axis=1
+        lambda r: confidence_to_rank(r.get("sensor", ""), r.get("confidence_raw")), axis=1
     )
 
     df["daynight"] = df.get("src_daynight").fillna("").str.upper()
@@ -294,13 +302,14 @@ def normalize_and_enrich(
 
     # --- Celdas L0-L3 (anidamiento 2×2) ---
     for level in range(4):
-        level_cell_size = cell_size * (2 ** level)
+        level_cell_size = cell_size * (2**level)
         ix = np.floor(df["x_3035"] / level_cell_size).astype("Int64")
         iy = np.floor(df["y_3035"] / level_cell_size).astype("Int64")
         df[f"cell_id_L{level}"] = [
             f"{grid_prefix}:L{level}:Y{int(iy_v):05d}:X{int(ix_v):05d}"
-            if pd.notna(iy_v) and pd.notna(ix_v) else None
-            for iy_v, ix_v in zip(iy, ix)
+            if pd.notna(iy_v) and pd.notna(ix_v)
+            else None
+            for iy_v, ix_v in zip(iy, ix, strict=True)
         ]
 
     # Parent_ids (basado en L0)
@@ -314,10 +323,15 @@ def normalize_and_enrich(
             parts = cell_id_l0.split(":")
             iy_v = int(parts[2][1:])
             ix_v = int(parts[3][1:])
-            parent_ids.append({
-                f"L{level}": f"{grid_prefix}:L{level}:Y{iy_v // (2**level):05d}:X{ix_v // (2**level):05d}"
-                for level in (1, 2, 3)
-            })
+            parent_ids.append(
+                {
+                    f"L{level}": (
+                        f"{grid_prefix}:L{level}:"
+                        f"Y{iy_v // (2**level):05d}:X{ix_v // (2**level):05d}"
+                    )
+                    for level in (1, 2, 3)
+                }
+            )
         except Exception:
             parent_ids.append(None)
     df["parent_ids"] = parent_ids
@@ -328,7 +342,7 @@ def normalize_and_enrich(
     )
 
     # --- ingest_run_id (mismo para toda la corrida) ---
-    run_timestamp = datetime.now(timezone.utc).strftime("%Y%m%dT%H%M%SZ")
+    run_timestamp = datetime.now(UTC).strftime("%Y%m%dT%H%M%SZ")
     # Usar el hash del primer archivo real, no el nombre
     first_file_name = df["source_file"].iloc[0]
     first_file_path = None
@@ -336,15 +350,16 @@ def normalize_and_enrich(
         if fpath.name == first_file_name:
             first_file_path = fpath
             break
-    first_hash = compute_file_hash(first_file_path)[:8] if first_file_path else hashlib.sha256(first_file_name.encode()).hexdigest()[:8]
+    first_hash = (
+        compute_file_hash(first_file_path)[:8]
+        if first_file_path
+        else hashlib.sha256(first_file_name.encode()).hexdigest()[:8]
+    )
     ingest_run_id = f"{run_timestamp}-{first_hash}"
     df["ingest_run_id"] = ingest_run_id
 
     # --- flags ---
-    df["flags"] = df.apply(
-        lambda r: compute_flags(r, cell_size, partial_period_start),
-        axis=1
-    )
+    df["flags"] = df.apply(lambda r: compute_flags(r, cell_size, partial_period_start), axis=1)
 
     return df
 
@@ -400,8 +415,12 @@ def compute_flags(row: pd.Series, cell_size: float, partial_period_start: str) -
             footprint_x_max = x_3035 + half
             footprint_y_min = y_3035 - half
             footprint_y_max = y_3035 + half
-            if (footprint_x_min < x_min_cell or footprint_x_max > x_max_cell or
-                footprint_y_min < y_min_cell or footprint_y_max > y_max_cell):
+            if (
+                footprint_x_min < x_min_cell
+                or footprint_x_max > x_max_cell
+                or footprint_y_min < y_min_cell
+                or footprint_y_max > y_max_cell
+            ):
                 flags.append("boundary_crossing")
         except (ValueError, TypeError):
             pass
@@ -464,7 +483,6 @@ def select_output_columns(df: pd.DataFrame) -> pd.DataFrame:
     ]
 
     src_cols = sorted([c for c in df.columns if c.startswith("src_")])
-    internal = {"source_file", "source_row"}
 
     missing = [c for c in core_cols if c not in df.columns]
     if missing:
@@ -511,6 +529,7 @@ def validate_output(df: pd.DataFrame) -> None:
             all_flags.extend(fl)
     if all_flags:
         from collections import Counter
+
         flag_counts = Counter(all_flags)
         logger.info("Flags:")
         for flag, count in flag_counts.most_common():
@@ -541,28 +560,51 @@ def write_outputs(df: pd.DataFrame, parquet_path: Path, json_path: Path) -> None
                     rec[k] = v.isoformat() if not pd.isna(v) else None
                 elif isinstance(v, type(pd.NaT)):
                     rec[k] = None
-                elif hasattr(v, 'isoformat'):
+                elif hasattr(v, "isoformat"):
                     rec[k] = v.isoformat()
             w.write(rec)
     logger.info(f"Escrito JSON: {json_path} ({json_path.stat().st_size / 1024:.1f} KB)")
 
 
 def build_arg_parser() -> argparse.ArgumentParser:
-    p = argparse.ArgumentParser(description="Algoritmo VALEN — Fase 1: Proyección + Celdas (GENÉRICO)")
-    p.add_argument("--input", nargs="+", type=Path, required=True,
-                   help="Archivos JSON o directorios (recursivo)")
-    p.add_argument("--output", type=Path, required=True,
-                   help="Directorio de salida")
-    p.add_argument("--cell-size", type=int, default=1000,
-                   help="Tamaño de celda L0 en metros (estándar del sistema: 1000)")
-    p.add_argument("--grid-prefix", type=str, default=None,
-                   help="Prefijo grid ID (default: ES1K para cuadrícula normalizada 1000x1000 m)")
-    p.add_argument("--partial-period-start", type=str, default=DEFAULT_PARTIAL_PERIOD_START,
-                   help=f"Inicio de periodo incompleto (default: {DEFAULT_PARTIAL_PERIOD_START})")
-    p.add_argument("--chunk-size", type=int, default=10000,
-                   help="Tamaño de chunk para streaming JSON (default: 10000)")
-    p.add_argument("--validate-only", action="store_true",
-                   help="Solo valida archivo existente sin reprocesar")
+    p = argparse.ArgumentParser(
+        description="Algoritmo VALEN — Fase 1: Proyección + Celdas (GENÉRICO)"
+    )
+    p.add_argument(
+        "--input",
+        nargs="+",
+        type=Path,
+        required=True,
+        help="Archivos JSON o directorios (recursivo)",
+    )
+    p.add_argument("--output", type=Path, required=True, help="Directorio de salida")
+    p.add_argument(
+        "--cell-size",
+        type=int,
+        default=1000,
+        help="Tamaño de celda L0 en metros (estándar del sistema: 1000)",
+    )
+    p.add_argument(
+        "--grid-prefix",
+        type=str,
+        default=None,
+        help="Prefijo grid ID (default: ES1K para cuadrícula normalizada 1000x1000 m)",
+    )
+    p.add_argument(
+        "--partial-period-start",
+        type=str,
+        default=DEFAULT_PARTIAL_PERIOD_START,
+        help=f"Inicio de periodo incompleto (default: {DEFAULT_PARTIAL_PERIOD_START})",
+    )
+    p.add_argument(
+        "--chunk-size",
+        type=int,
+        default=10000,
+        help="Tamaño de chunk para streaming JSON (default: 10000)",
+    )
+    p.add_argument(
+        "--validate-only", action="store_true", help="Solo valida archivo existente sin reprocesar"
+    )
     return p
 
 
@@ -605,7 +647,9 @@ def main(argv: list[str] | None = None) -> int:
         df = load_json_files(file_paths)
 
         # 3. Normalizar y enriquecer
-        df = normalize_and_enrich(df, args.cell_size, args.grid_prefix, args.partial_period_start, file_paths)
+        df = normalize_and_enrich(
+            df, args.cell_size, args.grid_prefix, args.partial_period_start, file_paths
+        )
 
         # 4. Seleccionar columnas de output
         df = select_output_columns(df)
@@ -622,10 +666,12 @@ def main(argv: list[str] | None = None) -> int:
     except Exception as e:
         logger.error(f"ERROR: {e}")
         import traceback
+
         traceback.print_exc()
         return 1
 
 
 if __name__ == "__main__":
     import sys
+
     sys.exit(main())

@@ -11,7 +11,7 @@ Arquitectura modular análoga a CATA (`backend/app/cata/model.py`):
   - Salida `(H, W, 3)` con activación sigmoide:
       * Canal `0`: `human_risk_field` in `[0, 1]` (penalización neuronal de paso para personas).
       * Canal `1`: `animal_risk_field` in `[0, 1]` (penalización neuronal de paso para animales).
-      * Canal `2`: `safe_haven_score` in `[0, 1]` (idoneidad de cada celda como **zona libre de peligro**).
+      * Canal `2`: `safe_haven_score` in `[0, 1]` (idoneidad como **zona libre de peligro**).
   - Soporta **Channel Surgery** (`expand_lucia_channels`) para añadir nuevos canales
     (p. ej. pendiente DEM, red de carreteras OSM, refugios civiles) sin perder pesos entrenados.
 """
@@ -52,12 +52,14 @@ OUTPUT_LAYER_NAME = "lucia_routing_fields_out"
 # ===========================================================================
 # 2. Construcción, compilación y carga del modelo TensorFlow de LUCIA
 # ===========================================================================
-def build_lucia_model(cfg: LuciaModelConfig = LuciaModelConfig()) -> keras.Model:
+def build_lucia_model(cfg: LuciaModelConfig | None = None) -> keras.Model:
     """Construye la red convolucional espacial de LUCIA (sin compilar).
 
     Entrada: `(B, H, W, C)`
     Salida : `(B, H, W, 3)` -> `[human_risk_field, animal_risk_field, safe_haven_score]`
     """
+    if cfg is None:
+        cfg = LuciaModelConfig()
     if not cfg.conv_filters:
         raise ValueError("conv_filters debe contener al menos un bloque")
 
@@ -279,7 +281,7 @@ def expand_lucia_channels(
 
     if new_num_channels <= old_cfg.num_channels:
         raise ValueError(
-            f"new_num_channels ({new_num_channels}) debe ser > canales actuales ({old_cfg.num_channels})"
+            f"new_num_channels ({new_num_channels}) debe ser > canales ({old_cfg.num_channels})"
         )
 
     new_cfg = replace(old_cfg, num_channels=new_num_channels)
@@ -365,7 +367,7 @@ def extract_lucia_features_from_zone(
     human_base_norm = np.clip((human_cost_2d - 1.0) / 3.6, 0.0, 1.0).astype(np.float32)
     animal_base_norm = np.clip((animal_cost_2d - 0.85) / 3.9, 0.0, 1.0).astype(np.float32)
 
-    # 5. Variables ambientales de VALEN por celda (reconstruidas desde active_and_predicted_cells + grids)
+    # 5. Variables ambientales de VALEN por celda (active_and_predicted_cells + grids)
     veg_grid = np.clip((human_cost_2d - 1.0 - 2.5 * probs_2d) / 0.7, 0.0, 1.0).astype(np.float32)
     wind_grid = np.clip(
         (animal_cost_2d - 0.85 - 0.3 * veg_grid - 3.0 * probs_2d) / 0.6, 0.0, 1.0
@@ -411,21 +413,21 @@ def extract_lucia_features_from_zone(
             )
 
     channels = [
-        is_safe_unburned,       # 0
-        is_burning_active,      # 1
-        is_already_burned,      # 2
-        probs_2d,               # 3
-        fire_proximity_risk,    # 4
-        arrival_urgency,        # 5
-        human_base_norm,        # 6
-        animal_base_norm,       # 7
-        veg_grid,               # 8
-        wind_grid,              # 9
-        fwi_temp_grid,          # 10
-        border_escape_affinity, # 11
-        road_access,            # 12
-        elevation_norm,         # 13
-        slope_steepness,        # 14
+        is_safe_unburned,  # 0
+        is_burning_active,  # 1
+        is_already_burned,  # 2
+        probs_2d,  # 3
+        fire_proximity_risk,  # 4
+        arrival_urgency,  # 5
+        human_base_norm,  # 6
+        animal_base_norm,  # 7
+        veg_grid,  # 8
+        wind_grid,  # 9
+        fwi_temp_grid,  # 10
+        border_escape_affinity,  # 11
+        road_access,  # 12
+        elevation_norm,  # 13
+        slope_steepness,  # 14
     ]
 
     tensor = np.stack(channels, axis=-1).astype(np.float32)
@@ -458,11 +460,11 @@ def compute_analytic_target_fields(features: np.ndarray) -> np.ndarray:
     elev_norm = features[..., 13] if features.shape[-1] > 13 else np.zeros_like(is_safe)
     slope = features[..., 14] if features.shape[-1] > 14 else np.zeros_like(is_safe)
 
-    # Efecto chimenea en ladera: laderas empinadas y cotas altas cercanas al fuego aceleran la convección
+    # Efecto chimenea: laderas empinadas y cotas altas cercanas al fuego aceleran la convección
     chimney_risk = slope * prox_risk + 0.35 * elev_norm * prox_risk
 
-    # Personas: bloqueo total (1.0) en ardiendo/quemado; penaliza proximidad, urgencia, vegetación densa y pendiente.
-    # Las carreteras/pistas (OSM) reducen el riesgo: paso rápido, sin combustible y accesibles a rescate.
+    # Personas: bloqueo en ardiendo/quemado; penaliza proximidad, urgencia, vegetación y pendiente.
+    # Las carreteras/pistas OSM reducen el riesgo: paso rápido, sin combustible y acceso rescate.
     human_risk = np.clip(
         0.95 * is_burning
         + 0.88 * is_burned
@@ -478,7 +480,7 @@ def compute_analytic_target_fields(features: np.ndarray) -> np.ndarray:
         1.0,
     )
 
-    # Animales: bloqueo total en ardiendo/quemado; menor penalización por matorral/pendiente moderada pero mayor por viento/humo.
+    # Animales: bloqueo en ardiendo/quemado; menor peso matorral/pendiente, mayor viento/humo.
     animal_risk = np.clip(
         0.98 * is_burning
         + 0.90 * is_burned
@@ -494,7 +496,7 @@ def compute_analytic_target_fields(features: np.ndarray) -> np.ndarray:
         1.0,
     )
 
-    # Zona libre de peligro / Punto de Encuentro (Safe Haven): alta sólo en celdas sin quemar, lejos del fuego,
+    # Zona libre de peligro (Safe Haven): alta sólo en celdas sin quemar, lejos del fuego,
     # con terreno llano (1 - slope), baja inflamabilidad y acceso por carretera.
     safe_haven = np.clip(
         is_safe

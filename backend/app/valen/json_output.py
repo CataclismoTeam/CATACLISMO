@@ -14,10 +14,10 @@ Uso:
 from __future__ import annotations
 
 import json
-import os
+from collections.abc import Iterator
 from contextlib import contextmanager
 from pathlib import Path
-from typing import Any, Iterator
+from typing import Any
 
 
 class JSONArrayWriter:
@@ -97,9 +97,10 @@ def jsonl_to_json_array(
     json_path.parent.mkdir(parents=True, exist_ok=True)
 
     count = 0
-    with open(jsonl_path, "r", encoding="utf-8") as infile, \
-         open(json_path, "w", encoding="utf-8") as outfile:
-
+    with (
+        open(jsonl_path, encoding="utf-8") as infile,
+        open(json_path, "w", encoding="utf-8") as outfile,
+    ):
         outfile.write("[")
         first = True
 
@@ -139,6 +140,7 @@ def _write_chunk(outfile, chunk: list[str], first: bool, indent: int | None):
 # ---------------------------------------------------------------------------
 # Funciones de conveniencia para cada fase
 # ---------------------------------------------------------------------------
+
 
 def write_observations_json(records: list[dict], output_path: str | Path) -> int:
     """Escribe observations.json (array único)."""
@@ -192,6 +194,7 @@ def convert_all_jsonl_to_json(output_dir: str | Path) -> dict[str, int]:
 
 if __name__ == "__main__":
     import argparse
+
     p = argparse.ArgumentParser(description="Convierte JSONL a JSON array único")
     p.add_argument("input", type=Path, help="Archivo .jsonl o directorio")
     p.add_argument("--output", type=Path, help="Archivo .json salida (si input es archivo)")

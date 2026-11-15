@@ -20,7 +20,7 @@ import json
 import logging
 import os
 import urllib.request
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from typing import Any
 
 import numpy as np
@@ -77,10 +77,14 @@ def fetch_firms_nrt_csv(
     """Descarga detecciones NRT de NASA FIRMS para la Península Ibérica."""
     rows: list[dict[str, str]] = []
     for src in sources:
-        url = f"https://firms.modaps.eosdis.nasa.gov/api/area/csv/{map_key}/{src}/{bbox}/{int(days)}"
+        url = (
+            f"https://firms.modaps.eosdis.nasa.gov/api/area/csv/{map_key}/{src}/{bbox}/{int(days)}"
+        )
         try:
+            if not url.startswith("https://"):
+                raise ValueError(f"Esquema no permitido: {url}")
             req = urllib.request.Request(url, headers={"User-Agent": "Cataclismo-NRT/1.0"})
-            with urllib.request.urlopen(req, timeout=timeout_sec) as resp:
+            with urllib.request.urlopen(req, timeout=timeout_sec) as resp:  # noqa: S310
                 text = resp.read().decode("utf-8", errors="replace")
             if not text.strip() or text.strip().startswith("Invalid"):
                 logger.warning("FIRMS NRT (%s) devolvió respuesta inválida/vacía.", src)
@@ -102,20 +106,26 @@ def fetch_open_meteo_current(lon: float, lat: float, timeout_sec: int = 10) -> d
         "&wind_speed_unit=ms"
     )
     try:
+        if not url.startswith("https://"):
+            raise ValueError(f"Esquema no permitido: {url}")
         req = urllib.request.Request(url, headers={"User-Agent": "Cataclismo-NRT/1.0"})
-        with urllib.request.urlopen(req, timeout=timeout_sec) as resp:
+        with urllib.request.urlopen(req, timeout=timeout_sec) as resp:  # noqa: S310
             data = json.loads(resp.read().decode("utf-8"))
         cur = data.get("current") or {}
         temp = float(cur.get("temperature_2m", 22.0))
         rh = float(cur.get("relative_humidity_2m", 45.0))
         wind = float(cur.get("wind_speed_10m", 4.0))
-        fwi_est = float(np.clip(0.6 * max(temp - 10.0, 0.0) + 0.3 * (100.0 - rh) + 1.2 * wind, 0.0, 60.0))
+        fwi_est = float(
+            np.clip(0.6 * max(temp - 10.0, 0.0) + 0.3 * (100.0 - rh) + 1.2 * wind, 0.0, 60.0)
+        )
         return {"temperature": temp, "humidity": rh, "wind_speed": wind, "fwi": fwi_est}
     except Exception:
         return {"temperature": 22.0, "humidity": 45.0, "wind_speed": 4.0, "fwi": 20.0}
 
 
-def build_live_cell_6h_from_firms(raw_rows: list[dict[str, str]]) -> tuple[pd.DataFrame, list[dict[str, Any]]]:
+def build_live_cell_6h_from_firms(
+    raw_rows: list[dict[str, str]],
+) -> tuple[pd.DataFrame, list[dict[str, Any]]]:
     """Convierte filas CSV de NASA FIRMS NRT en `cell_6h` (EPSG:3035) + meteo Open-Meteo."""
     records = []
     for r in raw_rows:
@@ -132,7 +142,11 @@ def build_live_cell_6h_from_firms(raw_rows: list[dict[str, str]]) -> tuple[pd.Da
             src = str(r.get("_source", ""))
             sensor = "MODIS" if "MODIS" in src else "VIIRS"
             conf_raw = str(r.get("confidence", "n")).strip().lower()
-            conf_rank = 2 if conf_raw in ("h", "high") or (conf_raw.isdigit() and int(conf_raw) >= 80) else 1
+            conf_rank = (
+                2
+                if conf_raw in ("h", "high") or (conf_raw.isdigit() and int(conf_raw) >= 80)
+                else 1
+            )
             frp = float(r.get("frp") or 0.0)
             scan = float(r.get("scan") or 0.5)
             track = float(r.get("track") or 0.5)
@@ -154,7 +168,8 @@ def build_live_cell_6h_from_firms(raw_rows: list[dict[str, str]]) -> tuple[pd.Da
                     "footprint": max(scan, track),
                 }
             )
-        except Exception:
+        except Exception as exc:
+            logger.debug("Fila FIRMS NRT omitida: %s", exc)
             continue
 
     if not records:
@@ -192,14 +207,15 @@ def build_live_cell_6h_from_firms(raw_rows: list[dict[str, str]]) -> tuple[pd.Da
     grp["flags"] = [[] for _ in range(len(grp))]
     grp["parent_ids"] = [
         {
-            f"L{lvl}": f"{CELL_PREFIX}:L{lvl}:Y{int(r.iy) // (2**lvl):05d}:X{int(r.ix) // (2**lvl):05d}"
+            f"L{lvl}": (
+                f"{CELL_PREFIX}:L{lvl}:Y{int(r.iy) // (2**lvl):05d}:X{int(r.ix) // (2**lvl):05d}"
+            )
             for lvl in (1, 2, 3)
         }
         for r in grp.itertuples()
     ]
     grp["cell_centroid_lonlat"] = [
-        list(cell_centroid_lonlat(int(r.iy), int(r.ix), CELL_SIZE_M))
-        for r in grp.itertuples()
+        list(cell_centroid_lonlat(int(r.iy), int(r.ix), CELL_SIZE_M)) for r in grp.itertuples()
     ]
 
     # Enriquecer con meteorología en directo (1 llamada Open-Meteo por bloque 32x32 para no saturar)
@@ -228,13 +244,13 @@ def run_live_nrt_cycle(
         raise RuntimeError("Falta FIRMS_MAP_KEY en variables de entorno o backend/.env.")
 
     raw_rows = fetch_firms_nrt_csv(resolved_key, days=days)
-    now_iso = datetime.now(timezone.utc).isoformat()
+    now_iso = datetime.now(UTC).isoformat()
     if not raw_rows:
         status = {
             "status": "no_active_fires_in_iberia",
             "checked_at": now_iso,
             "firms_detections": 0,
-            "message": "Sin detecciones térmicas activas en la Península Ibérica en las últimas horas.",
+            "message": "Sin detecciones térmicas activas en la Península Ibérica recientemente.",
         }
         os.makedirs(os.path.dirname(LIVE_STATUS_PATH), exist_ok=True)
         with open(LIVE_STATUS_PATH, "w", encoding="utf-8") as f:
@@ -243,7 +259,11 @@ def run_live_nrt_cycle(
 
     df_6h, meteo_records = build_live_cell_6h_from_firms(raw_rows)
     if df_6h.empty:
-        return {"status": "no_valid_cells", "checked_at": now_iso, "firms_detections": len(raw_rows)}
+        return {
+            "status": "no_valid_cells",
+            "checked_at": now_iso,
+            "firms_detections": len(raw_rows),
+        }
 
     os.makedirs(os.path.dirname(LIVE_CELL_6H_PATH), exist_ok=True)
     df_6h.to_parquet(LIVE_CELL_6H_PATH, index=False)
@@ -252,7 +272,11 @@ def run_live_nrt_cycle(
 
     # Ejecutar CATA y LUCIA sobre la ventana en directo
     from app.cata import config as cata_config
-    from app.cata.model import export_cata_predictions_for_lucia, extract_model_config, load_fire_model
+    from app.cata.model import (
+        export_cata_predictions_for_lucia,
+        extract_model_config,
+        load_fire_model,
+    )
     from app.cata.train import load_contract_cell_day
     from app.lucia import config as lucia_config
     from app.lucia.router import generate_lucia_geojson_from_cata
@@ -269,12 +293,24 @@ def run_live_nrt_cycle(
         return_patch_meta=True,
         target_date=latest_slot,
     )
-    all_x = np.concatenate([x_tr, x_va], axis=0) if len(x_tr) and len(x_va) else (x_tr if len(x_tr) else x_va)
-    all_y = np.concatenate([y_tr, y_va], axis=0) if len(y_tr) and len(y_va) else (y_tr if len(y_tr) else y_va)
+    all_x = (
+        np.concatenate([x_tr, x_va], axis=0)
+        if len(x_tr) and len(x_va)
+        else (x_tr if len(x_tr) else x_va)
+    )
+    all_y = (
+        np.concatenate([y_tr, y_va], axis=0)
+        if len(y_tr) and len(y_va)
+        else (y_tr if len(y_tr) else y_va)
+    )
     all_meta = (meta_tr + meta_va) if (meta_tr or meta_va) else []
 
     if len(all_x) == 0:
-        return {"status": "insufficient_live_window", "checked_at": now_iso, "firms_detections": len(raw_rows)}
+        return {
+            "status": "insufficient_live_window",
+            "checked_at": now_iso,
+            "firms_detections": len(raw_rows),
+        }
 
     scores_act = all_x[:, -1, :, :, 0].sum(axis=(1, 2))
     top_idx = np.argsort(scores_act)[::-1][: min(len(all_x), max_zones)]
@@ -315,7 +351,9 @@ def run_live_nrt_cycle(
 
 def main() -> None:
     logging.basicConfig(level=logging.INFO, format="%(asctime)s | %(levelname)-7s | %(message)s")
-    p = argparse.ArgumentParser(description="Ingesta Near Real-Time (NASA FIRMS + Open-Meteo -> CATA -> LUCIA)")
+    p = argparse.ArgumentParser(
+        description="Ingesta Near Real-Time (NASA FIRMS + Open-Meteo -> CATA -> LUCIA)"
+    )
     p.add_argument("--days", type=int, default=2, help="Días NRT hacia atrás (1..10, defecto 2)")
     p.add_argument("--max-zones", type=int, default=8)
     args = p.parse_args()

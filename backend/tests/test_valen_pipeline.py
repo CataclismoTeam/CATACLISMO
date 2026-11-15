@@ -3,10 +3,9 @@
 from __future__ import annotations
 
 import json
-import math
-from pathlib import Path
 import tempfile
 import unittest
+from pathlib import Path
 
 import numpy as np
 import pandas as pd
@@ -31,7 +30,7 @@ class TestValenLaeaProjection(unittest.TestCase):
             (-6.54, 37.95),  # Huelva / Aracena
             (-3.70, 40.42),  # Madrid
             (-6.35, 41.78),  # Zamora / Sierra de la Culebra
-            (2.17, 41.39),   # Barcelona
+            (2.17, 41.39),  # Barcelona
         ]
         for lon, lat in points:
             x, y = laea.lonlat_to_epsg3035(lon, lat)
@@ -62,12 +61,27 @@ class TestValenLaeaProjection(unittest.TestCase):
 
 class TestValenScoringClient(unittest.TestCase):
     def test_normalize_value_modes_and_nan(self) -> None:
-        self.assertEqual(scoring_client.normalize_value(None, {"type": "minmax", "min": 0, "max": 10}), 0.0)
-        self.assertEqual(scoring_client.normalize_value(float("nan"), {"type": "minmax", "min": 0, "max": 10}), 0.0)
-        self.assertAlmostEqual(scoring_client.normalize_value(5, {"type": "minmax", "min": 0, "max": 10}), 0.5)
-        self.assertAlmostEqual(scoring_client.normalize_value(20, {"type": "minmax", "min": 0, "max": 10}), 1.0)
-        self.assertAlmostEqual(scoring_client.normalize_value(10, {"type": "inverse_minmax", "min": 10, "max": 90}), 1.0)
-        self.assertAlmostEqual(scoring_client.normalize_value(90, {"type": "inverse_minmax", "min": 10, "max": 90}), 0.0)
+        self.assertEqual(
+            scoring_client.normalize_value(None, {"type": "minmax", "min": 0, "max": 10}), 0.0
+        )
+        self.assertEqual(
+            scoring_client.normalize_value(float("nan"), {"type": "minmax", "min": 0, "max": 10}),
+            0.0,
+        )
+        self.assertAlmostEqual(
+            scoring_client.normalize_value(5, {"type": "minmax", "min": 0, "max": 10}), 0.5
+        )
+        self.assertAlmostEqual(
+            scoring_client.normalize_value(20, {"type": "minmax", "min": 0, "max": 10}), 1.0
+        )
+        self.assertAlmostEqual(
+            scoring_client.normalize_value(10, {"type": "inverse_minmax", "min": 10, "max": 90}),
+            1.0,
+        )
+        self.assertAlmostEqual(
+            scoring_client.normalize_value(90, {"type": "inverse_minmax", "min": 10, "max": 90}),
+            0.0,
+        )
         self.assertEqual(scoring_client.normalize_value(1, {"type": "binary"}), 1.0)
         self.assertEqual(scoring_client.normalize_value(0, {"type": "binary"}), 0.0)
         self.assertAlmostEqual(scoring_client.normalize_value(1.5, {"type": "direct"}), 1.0)
@@ -112,7 +126,9 @@ class TestValenScoringClient(unittest.TestCase):
                 "product_mix": 0.0,
             }
         )
-        score_low = scoring_client.valen_compute_score(scoring_client.extract_features(low_risk_row))
+        score_low = scoring_client.valen_compute_score(
+            scoring_client.extract_features(low_risk_row)
+        )
         self.assertLess(score_low, 0.35)
         self.assertEqual(scoring_client.valen_decide(score_low), "RECHAZA")
         self.assertEqual(scoring_client.valen_decide(0.50), "REVISAR_MANUAL")
@@ -154,9 +170,19 @@ class TestValenElevationAndRoads(unittest.TestCase):
             self.assertEqual(len(rc.get(bbox)), 1)
 
             mc = meteomatics_client.MeteomaticsCache(db_path=tmp_path / "meteo.sqlite")
-            mc.set("t_2m:C", 37.95, -6.54, "2026-07-18T00:00Z", "2026-07-18T12:00Z", "PT1H", {"val": 31.2})
+            mc.set(
+                "t_2m:C",
+                37.95,
+                -6.54,
+                "2026-07-18T00:00Z",
+                "2026-07-18T12:00Z",
+                "PT1H",
+                {"val": 31.2},
+            )
             self.assertEqual(
-                mc.get("t_2m:C", 37.95, -6.54, "2026-07-18T00:00Z", "2026-07-18T12:00Z", "PT1H")["val"],
+                mc.get("t_2m:C", 37.95, -6.54, "2026-07-18T00:00Z", "2026-07-18T12:00Z", "PT1H")[
+                    "val"
+                ],
                 31.2,
             )
 
@@ -169,7 +195,9 @@ class TestValenElevationAndRoads(unittest.TestCase):
         min_lon, min_lat, max_lon, max_lat = vegetation_client.tile_to_bbox(tx, ty)
         self.assertTrue(min_lon <= -6.54 <= max_lon)
         self.assertTrue(min_lat <= 37.95 <= max_lat)
-        self.assertIn("ESA_WorldCover_10m_2021_v100_", vegetation_client.get_worldcover_tile_url(tx, ty))
+        self.assertIn(
+            "ESA_WorldCover_10m_2021_v100_", vegetation_client.get_worldcover_tile_url(tx, ty)
+        )
 
         # Phase 2 aggregation (cell_id + acq_date + sensor -> 15 campos)
         cid = laea.lonlat_to_cell_id(-6.54, 37.95)
@@ -225,8 +253,12 @@ class TestValenPhase1AndJsonOutput(unittest.TestCase):
         self.assertEqual(phase1_projection.confidence_to_rank("VIIRS", "nominal"), 1)
         self.assertEqual(phase1_projection.confidence_to_rank("VIIRS", "l"), 0)
 
-        self.assertEqual(phase1_projection.infer_product_from_filename("firms_archive_2022.json"), "SP")
-        self.assertEqual(phase1_projection.infer_product_from_filename("firms_nrt_live.json"), "NRT")
+        self.assertEqual(
+            phase1_projection.infer_product_from_filename("firms_archive_2022.json"), "SP"
+        )
+        self.assertEqual(
+            phase1_projection.infer_product_from_filename("firms_nrt_live.json"), "NRT"
+        )
 
     def test_json_array_writer_direct_and_jsonl_conversion(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
@@ -244,7 +276,9 @@ class TestValenPhase1AndJsonOutput(unittest.TestCase):
             converted = tmp_path / "sample.json"
             count = json_output.jsonl_to_json_array(jsonl_file, converted)
             self.assertEqual(count, 2)
-            self.assertEqual(json.loads(converted.read_text(encoding="utf-8")), [{"k": 1}, {"k": 2}])
+            self.assertEqual(
+                json.loads(converted.read_text(encoding="utf-8")), [{"k": 1}, {"k": 2}]
+            )
 
     def test_json_array_output_helper_enters_context(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:

@@ -9,9 +9,10 @@ LUCIA es el tercer eslabón de la pipeline **VALEN -> CATA -> LUCIA**:
      A* espacio-temporal que calcula el camino más corto y seguro hacia una
      **zona libre de peligro** para personas y animales, teniendo en cuenta:
        - Zonas **ya quemadas** (`CONFIRMED_BURNED` / `'F'`).
-       - Zonas **quemándose activamente o de ignición inminente** (`CONFIRMED_AND_CONTINUES` / `'B'`, `PREDICTED_FIRE` / `'P'`).
-       - Zonas **sin quemar** (`SAFE` / `'.'`) filtradas mediante un **threshold seguro al fuego** (`SAFE_FIRE_THRESHOLD`).
-     Exporta las rutas y zonas en formato **GeoJSON (WGS84 / EPSG:4326)** listo para el Frontend (CesiumJS / deck.gl).
+       - Zonas **quemándose o en ignición** (`CONFIRMED_AND_CONTINUES` / `'B'`,
+         `PREDICTED_FIRE` / `'P'`).
+       - Zonas **sin quemar** (`SAFE` / `'.'`) con **threshold seguro** (`SAFE_FIRE_THRESHOLD`).
+     Exporta rutas y zonas en **GeoJSON (WGS84 / EPSG:4326)** para Frontend (CesiumJS/deck.gl).
 """
 
 from __future__ import annotations
@@ -41,28 +42,34 @@ GRID_SIZE: int = 32
 # ---------------------------------------------------------------------------
 # Estados de celda procedentes de CATA y clasificación térmica de LUCIA
 # ---------------------------------------------------------------------------
-QUADRANT_STATE_SAFE: int = 0          # '.' -> Sin quemar
-QUADRANT_STATE_PREDICTED: int = 1     # 'P' -> Predicción de nuevo fuego en t+1
-QUADRANT_STATE_BURNED_REAL: int = 2   # 'F' -> Ya quemado (confirmado por satélite)
-QUADRANT_STATE_PERSISTENT: int = 3    # 'B' -> Quemándose activamente y continúa en t+1
+QUADRANT_STATE_SAFE: int = 0  # '.' -> Sin quemar
+QUADRANT_STATE_PREDICTED: int = 1  # 'P' -> Predicción de nuevo fuego en t+1
+QUADRANT_STATE_BURNED_REAL: int = 2  # 'F' -> Ya quemado (confirmado por satélite)
+QUADRANT_STATE_PERSISTENT: int = 3  # 'B' -> Quemándose activamente y continúa en t+1
 
 # Categorías semánticas de peligro térmico que LUCIA distingue explícitamente
-FIRE_ZONE_SAFE_UNBURNED: str = "SAFE_UNBURNED"                  # Sin quemar y por debajo del threshold seguro
-FIRE_ZONE_THRESHOLD_BUFFER: str = "THRESHOLD_BUFFER_UNSAFE"     # Sin quemar pero supera el threshold seguro al fuego
-FIRE_ZONE_ALREADY_BURNED: str = "ALREADY_BURNED"                # Ya quemado (estado 2='F': brasas, humo, caída árboles)
-FIRE_ZONE_BURNING_ACTIVE: str = "BURNING_ACTIVE"                # Quemándose ahora o en ignición (estados 3='B' y 1='P')
+FIRE_ZONE_SAFE_UNBURNED: str = "SAFE_UNBURNED"  # Sin quemar y por debajo del threshold seguro
+FIRE_ZONE_THRESHOLD_BUFFER: str = (
+    "THRESHOLD_BUFFER_UNSAFE"  # Sin quemar pero supera el threshold seguro al fuego
+)
+FIRE_ZONE_ALREADY_BURNED: str = (
+    "ALREADY_BURNED"  # Ya quemado (estado 2='F': brasas, humo, caída árboles)
+)
+FIRE_ZONE_BURNING_ACTIVE: str = (
+    "BURNING_ACTIVE"  # Quemándose ahora o en ignición (estados 3='B' y 1='P')
+)
 
 # ---------------------------------------------------------------------------
 # Umbrales de seguridad frente al fuego (configurables)
 # ---------------------------------------------------------------------------
 # Threshold seguro al fuego: cualquier celda sin quemar cuya probabilidad de fuego
-# predicha por CATA supere este valor se descarta como ruta segura (más estricto que el 0.50 de CATA).
+# predicha por CATA supere este valor se descarta como ruta segura (CATA usa 0.50).
 SAFE_FIRE_THRESHOLD: float = 0.25
 
 # Probabilidad máxima permitida en la celda destino ("zona libre de peligro / refugio")
 SAFE_HAVEN_MAX_PROB: float = 0.10
 
-# Distancia mínima (en celdas de 1 km) desde la "zona libre de peligro" a cualquier foco quemado/ardiendo
+# Distancia mínima (en celdas de 1 km) desde la zona segura a cualquier foco ardiendo
 MIN_SAFE_DISTANCE_CELLS: float = 3.0
 
 # Margen temporal mínimo (en horas) entre la llegada del evacuado a una celda y la llegada del fuego
@@ -78,24 +85,24 @@ ANIMAL_BASE_SPEED_KMH: float = 6.0
 # Soporta expansión modular de canales (`expand_lucia_channels`) igual que CATA.
 LUCIA_CHANNEL_REGISTRY: tuple[str, ...] = (
     # --- Bloque 1: Estado de quemado y predicción de CATA (canales 0..5) ---
-    "is_safe_unburned",       # 0: 1.0 si sin quemar y prob_t1 < safe_fire_threshold
-    "is_burning_active",      # 1: 1.0 si quemándose activo (estado 3='B' o 1='P')
-    "is_already_burned",      # 2: 1.0 si ya quemado (estado 2='F')
-    "fire_probability_t1",    # 3: Probabilidad continua [0, 1] predicha por CATA
-    "fire_proximity_risk",    # 4: exp(-distancia_euclidea_al_fuego / 3.0)
-    "arrival_urgency",        # 5: 1.0 - clip(estimated_fire_arrival_hours / 24.0, 0, 1)
+    "is_safe_unburned",  # 0: 1.0 si sin quemar y prob_t1 < safe_fire_threshold
+    "is_burning_active",  # 1: 1.0 si quemándose activo (estado 3='B' o 1='P')
+    "is_already_burned",  # 2: 1.0 si ya quemado (estado 2='F')
+    "fire_probability_t1",  # 3: Probabilidad continua [0, 1] predicha por CATA
+    "fire_proximity_risk",  # 4: exp(-distancia_euclidea_al_fuego / 3.0)
+    "arrival_urgency",  # 5: 1.0 - clip(estimated_fire_arrival_hours / 24.0, 0, 1)
     # --- Bloque 2: Costes físicos y variables ambientales de VALEN (canales 6..11) ---
-    "human_base_cost_norm",   # 6: Coste físico humano de CATA normalizado a [0, 1]
+    "human_base_cost_norm",  # 6: Coste físico humano de CATA normalizado a [0, 1]
     "animal_base_cost_norm",  # 7: Coste físico animal de CATA normalizado a [0, 1]
-    "veg_flammability",       # 8: Inflamabilidad vegetal VALEN (WorldCover + IFN3)
-    "meteo_wind_speed",       # 9: Velocidad del viento VALEN (Meteomatics)
-    "meteo_fwi_temp",         # 10: Índice FWI / temperatura VALEN combinados
-    "border_escape_affinity", # 11: Afinidad espacial hacia zonas exteriores despejadas
+    "veg_flammability",  # 8: Inflamabilidad vegetal VALEN (WorldCover + IFN3)
+    "meteo_wind_speed",  # 9: Velocidad del viento VALEN (Meteomatics)
+    "meteo_fwi_temp",  # 10: Índice FWI / temperatura VALEN combinados
+    "border_escape_affinity",  # 11: Afinidad espacial hacia zonas exteriores despejadas
     # --- Bloque 3: Red viaria OSM de VALEN (canal 12) ---
-    "road_access",            # 12: road_access_score VALEN/OSM (densidad viaria ponderada, [0, 1])
+    "road_access",  # 12: road_access_score VALEN/OSM (densidad viaria ponderada, [0, 1])
     # --- Bloque 4: Topografía y elevación Open-Elevation de VALEN (canales 13..14) ---
-    "elevation_norm",         # 13: Altitud relativa normalizada en la zona [0, 1] (Open-Elevation)
-    "slope_steepness",        # 14: Pendiente topográfica normalizada [0, 1] (slope_pct / 35.0)
+    "elevation_norm",  # 13: Altitud relativa normalizada en la zona [0, 1] (Open-Elevation)
+    "slope_steepness",  # 14: Pendiente topográfica normalizada [0, 1] (slope_pct / 35.0)
 )
 
 BASE_NUM_CHANNELS: int = 6
@@ -130,7 +137,7 @@ DEFAULT_CATA_PREDICTIONS_PATH: str = os.path.join(
 )
 # Red viaria OSM rasterizada por VALEN (`python -m app.valen.roads_client --from-cata ...`)
 DEFAULT_VALEN_ROADS_PATH: str = os.path.join(_APP_DIR, "valen", "output", "cell_roads.json")
-# Elevación y pendientes Open-Elevation de VALEN (`python -m app.valen.elevation_client --from-cata ...`)
+# Elevación y pendientes Open-Elevation de VALEN (`app.valen.elevation_client --from-cata ...`)
 DEFAULT_VALEN_ELEVATION_PATH: str = os.path.join(_APP_DIR, "valen", "output", "cell_elevation.json")
 # Si una zona no está en cell_roads.json, LUCIA puede pedir a VALEN que la descargue de OSM al vuelo
 FETCH_MISSING_ROADS_ONLINE: bool = os.environ.get("LUCIA_FETCH_ROADS", "0") == "1"

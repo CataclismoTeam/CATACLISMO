@@ -8,34 +8,34 @@ Entradas desde VALEN (`backend/app/valen/output/`):
   1. `cell_day` (`cell_day.parquet` / `cell_day.json`): 13 canales térmicos MODIS/VIIRS.
   2. `meteo` (`cell_day_meteo.json`): 4 canales meteorológicos (FWI, viento, humedad, temperatura).
   3. `rainfall` (`cell_day_rainfall.json`): 3 canales de sequía y precipitación acumulada.
-  4. `vegetation` (`cell_day_vegetation.json`): inflamabilidad del combustible (WorldCover + IFN3).
-  5. `validated_cell_day` (`validated_cell_day.json` / `.parquet`): filtrado de ruido (`decision != RECHAZA`)
+  4. `vegetation` (`cell_day_vegetation.json`): inflamabilidad (WorldCover + IFN3).
+  5. `validated_cell_day` (`validated_cell_day.json`/`.parquet`): filtro (`!= RECHAZA`)
      y score global de confianza `valen_score`.
 
 Salida de predicciones de CATA para LUCIA:
   - Archivo JSON (`artifacts/predictions/cata_predictions.json` o `--predictions-output`)
-    con cuadrículas diferenciadas (`SAFE`, `PREDICTED_FIRE`, `CONFIRMED_BURNED`, `CONFIRMED_AND_CONTINUES`),
-    tiempos estimados de llegada del fuego y costes de tránsito para personas y animales.
+    con cuadrículas (`SAFE`, `PREDICTED_FIRE`, `CONFIRMED_BURNED`,
+    `CONFIRMED_AND_CONTINUES`), llegada del fuego y costes de tránsito.
 
 Modos:
   scratch   Entrena un modelo CATA nuevo con C canales (por defecto C=22 con todo VALEN).
   finetune  Carga un checkpoint (.keras/.h5) y continúa entrenando sus pesos.
   expand    Channel surgery sobre un checkpoint (C_old -> C_new) + entrenamiento en 2 fases.
-  predict   Carga un modelo CATA y datos de VALEN (o sintéticos) y exporta predicciones para LUCIA.
-  demo      Smoke test end-to-end: scratch(C=1) -> finetune -> expand(C=22) -> exporta predicciones para LUCIA.
+  predict   Carga un modelo CATA y datos de VALEN (o sintéticos) y exporta para LUCIA.
+  demo      Smoke test: scratch(C=1) -> finetune -> expand(C=22) -> exporta para LUCIA.
 """
 
 from __future__ import annotations
 
 import argparse
-from collections.abc import Sequence
-from dataclasses import asdict
 import gc
 import json
 import logging
 import os
 import re
 import time
+from collections.abc import Sequence
+from dataclasses import asdict
 
 import keras
 import numpy as np
@@ -101,7 +101,7 @@ def parse_cell_id(cell_id: str) -> tuple[int, int, int]:
     m = _CELL_ID_RE.match(str(cell_id).strip())
     if not m:
         raise ValueError(
-            f"cell_id inválido según contrato normalizado 1000x1000m ({config.CELL_PREFIX}): {cell_id!r}"
+            f"cell_id inválido según contrato 1000x1000m ({config.CELL_PREFIX}): {cell_id!r}"
         )
     return int(m.group(1)), int(m.group(2)), int(m.group(3))
 
@@ -117,7 +117,7 @@ def format_cell_id(
 
 
 def normalize_contract_channels(raw: dict[str, np.ndarray], num_channels: int) -> np.ndarray:
-    """Convierte las métricas crudas de VALEN (`cell_day` + `meteo` + `rainfall` + `vegetation`) a [0, 1].
+    """Normaliza métricas de VALEN (`cell_day` + `meteo` + `rainfall` + `veg`) a [0, 1].
 
     `raw` contiene arrays de igual shape `(..., H, W)` con:
       - Bloque 1 (`cell_day`): frp_sum_mw, frp_max_mw, frp_mean_mw, frp_p50_mw,
@@ -220,9 +220,7 @@ def normalize_contract_channels(raw: dict[str, np.ndarray], num_channels: int) -
         # Bloque 1: Cell Day (0..12)
         "frp_sum_mw": np.clip(np.log1p(np.maximum(raw["frp_sum_mw"], 0.0)) / frp_scale, 0.0, 1.0),
         "frp_max_mw": np.clip(np.log1p(np.maximum(raw["frp_max_mw"], 0.0)) / frp_scale, 0.0, 1.0),
-        "frp_mean_mw": np.clip(
-            np.log1p(np.maximum(raw["frp_mean_mw"], 0.0)) / frp_scale, 0.0, 1.0
-        ),
+        "frp_mean_mw": np.clip(np.log1p(np.maximum(raw["frp_mean_mw"], 0.0)) / frp_scale, 0.0, 1.0),
         "frp_p50_mw": np.clip(np.log1p(np.maximum(raw["frp_p50_mw"], 0.0)) / frp_scale, 0.0, 1.0),
         "n_obs": np.clip(np.log1p(n_obs_raw) / obs_scale, 0.0, 1.0),
         "n_high_conf": np.clip(np.log1p(np.maximum(raw["n_high_conf"], 0.0)) / obs_scale, 0.0, 1.0),
@@ -384,9 +382,21 @@ def _enrich_cell_day_with_valen(
         key3 = (str(row.get("cell_id", "")), dt_day, str(row.get("sensor", "")))
         key2 = (str(row.get("cell_id", "")), dt_day)
         vr = val_lookup.get(key3) or val_cell_date_lookup.get(key2) or {}
-        dec = row.get("decision") if "decision" in row and pd.notna(row.get("decision")) else vr.get("decision", "ACEPTA")
-        sc = row.get("score") if "score" in row and pd.notna(row.get("score")) else vr.get("score", 0.5)
-        feats = row.get("features") if "features" in row and isinstance(row.get("features"), dict) else (vr.get("features") or {})
+        dec = (
+            row.get("decision")
+            if "decision" in row and pd.notna(row.get("decision"))
+            else vr.get("decision", "ACEPTA")
+        )
+        sc = (
+            row.get("score")
+            if "score" in row and pd.notna(row.get("score"))
+            else vr.get("score", 0.5)
+        )
+        feats = (
+            row.get("features")
+            if "features" in row and isinstance(row.get("features"), dict)
+            else (vr.get("features") or {})
+        )
         decisions.append(str(dec))
         scores.append(float(sc) if sc is not None else 0.5)
         val_feats.append(feats if isinstance(feats, dict) else {})
@@ -399,7 +409,7 @@ def _enrich_cell_day_with_valen(
         kept = df[df["valen_decision"].isin(config.VALEN_ACCEPTED_DECISIONS)]
         if len(kept) > 0:
             logger.info(
-                "Filtro VALEN aplicado: %d/%d registros aceptados/revisables (descartados %d RECHAZA)",
+                "Filtro VALEN aplicado: %d/%d registros válidos (descartados %d RECHAZA)",
                 len(kept),
                 len(df),
                 len(df) - len(kept),
@@ -461,6 +471,27 @@ def _enrich_cell_day_with_valen(
     meteo_by_cell_date: dict[tuple[str, str], dict[str, float]] = {}
     meteo_by_cell: dict[str, dict[str, float]] = {}
     if meteo_path and os.path.exists(meteo_path):
+
+        def _extract_param(
+            rec: dict,
+            rec_params: dict,
+            p_key: str,
+            flat_key: str,
+        ) -> float | None:
+            if flat_key in rec and rec[flat_key] is not None:
+                return float(rec[flat_key])
+            p_obj = rec_params.get(p_key)
+            if isinstance(p_obj, dict):
+                dates_list = p_obj.get("dates") or []
+                vals = [
+                    d.get("value")
+                    for d in dates_list
+                    if isinstance(d, dict) and d.get("value") is not None
+                ]
+                if vals:
+                    return float(np.mean(vals))
+            return None
+
         for r in _read_json_or_jsonl_records(meteo_path):
             cid = str(r.get("cell_id", ""))
             dt = str(r.get("date", ""))
@@ -468,21 +499,10 @@ def _enrich_cell_day_with_valen(
                 continue
             params = r.get("parameters") or {}
 
-            def _extract_param(p_key: str, flat_key: str) -> float | None:
-                if flat_key in r and r[flat_key] is not None:
-                    return float(r[flat_key])
-                p_obj = params.get(p_key)
-                if isinstance(p_obj, dict):
-                    dates_list = p_obj.get("dates") or []
-                    vals = [d.get("value") for d in dates_list if isinstance(d, dict) and d.get("value") is not None]
-                    if vals:
-                        return float(np.mean(vals))
-                return None
-
-            fwi_v = _extract_param("fire_weather_index:idx", "fwi")
-            wind_v = _extract_param("wind_speed_10m:ms", "wind_speed")
-            hum_v = _extract_param("relative_humidity_2m:p", "humidity")
-            temp_v = _extract_param("t_2m:C", "temperature")
+            fwi_v = _extract_param(r, params, "fire_weather_index:idx", "fwi")
+            wind_v = _extract_param(r, params, "wind_speed_10m:ms", "wind_speed")
+            hum_v = _extract_param(r, params, "relative_humidity_2m:p", "humidity")
+            temp_v = _extract_param(r, params, "t_2m:C", "temperature")
 
             norm_m = {
                 "meteo_fwi": (
@@ -524,7 +544,7 @@ def _enrich_cell_day_with_valen(
             if dt:
                 meteo_by_cell_date[(cid, dt)] = norm_m
 
-    # Ensamblar columnas normalizadas [0, 1] para cada fila con fallback a `validated_cell_day.features`
+    # Ensamblar columnas [0, 1] con fallback a `validated_cell_day.features`
     col_fwi, col_wind, col_hum, col_temp = [], [], [], []
     col_dsr, col_dsm, col_p30, col_veg = [], [], [], []
 
@@ -554,7 +574,7 @@ def _enrich_cell_day_with_valen(
         if temp_val is None:
             temp_val = float(np.clip(0.5 * fwi_val + 0.5 * hum_val, 0.0, 1.0))
 
-        # Modulación diurna por turno táctico de 6h (00=Madrugada, 06=Mañana, 12=Tarde 30-30-30, 18=Noche)
+        # Modulación diurna por turno 6h (00=Madrugada, 06=Mañana, 12=Tarde 30-30-30, 18=Noche)
         if slot_h is not None:
             if slot_h < 6:
                 temp_val = float(np.clip(temp_val * 0.82, 0.0, 1.0))
@@ -629,7 +649,7 @@ def load_contract_cell_day(
     return_patch_meta: bool = False,
     target_date: str | None = None,
 ):
-    """Carga y cruza los artefactos de VALEN (`cell_day`, `meteo`, `rainfall`, `vegetation`, `validated`)."""
+    """Carga y cruza los artefactos de VALEN (`cell_day`, `meteo`, `rainfall`, `veg`)."""
     import pandas as pd
 
     resolved = _resolve_valen_paths(
@@ -648,7 +668,9 @@ def load_contract_cell_day(
     elif cd_path.endswith(".jsonl") or cd_path.endswith(".json"):
         df = pd.DataFrame(_read_json_or_jsonl_records(cd_path))
     else:
-        raise ValueError(f"Formato no soportado: {cd_path} (use carpeta VALEN, .parquet, .json, .csv.gz o .npz)")
+        raise ValueError(
+            f"Formato no soportado: {cd_path} (use carpeta VALEN, .parquet, .json, .csv.gz o .npz)"
+        )
 
     is_subdaily = len(df) > 0 and " " in str(df["date"].iloc[0])
     step_hours = getattr(config, "STEP_HOURS", 6) if is_subdaily else 24
@@ -656,7 +678,7 @@ def load_contract_cell_day(
     if target_date:
         target_str = str(target_date).strip()
         if is_subdaily and len(target_str) == 10:
-            # Si se pasa solo YYYY-MM-DD en modo 6h, elegir el último turno con actividad de ese día (o 12:00 UTC)
+            # Si es solo YYYY-MM-DD en modo 6h, usar último turno activo del día (o 12:00 UTC)
             day_matches = df[df["date"].astype(str).str.startswith(target_str)]["date"].astype(str)
             target_str = str(day_matches.max()) if len(day_matches) > 0 else f"{target_str} 12:00"
         dt_target = pd.Timestamp(target_str)
@@ -668,9 +690,7 @@ def load_contract_cell_day(
         df_dates = pd.to_datetime(df["date"], errors="coerce")
         df = df[(df_dates >= dt_start) & (df_dates <= dt_target)].copy()
         if df.empty:
-            raise ValueError(
-                f"No hay datos de VALEN en el rango [{dt_start} .. {dt_target}]"
-            )
+            raise ValueError(f"No hay datos de VALEN en el rango [{dt_start} .. {dt_target}]")
         target_date = target_str
 
     df = _enrich_cell_day_with_valen(
@@ -752,7 +772,9 @@ def _build_patches_from_cell_day_df(
     # Mapa de centroides WGS84 por celda (iy, ix) para exportar a LUCIA
     centroids_by_cell: dict[tuple[int, int], list[float]] = {}
     if "cell_centroid_lonlat" in df.columns:
-        for _, r in df[["iy", "ix", "cell_centroid_lonlat"]].drop_duplicates(subset=["iy", "ix"]).iterrows():
+        for _, r in (
+            df[["iy", "ix", "cell_centroid_lonlat"]].drop_duplicates(subset=["iy", "ix"]).iterrows()
+        ):
             c_lonlat = r["cell_centroid_lonlat"]
             if isinstance(c_lonlat, (list, tuple, np.ndarray)) and len(c_lonlat) >= 2:
                 centroids_by_cell[(int(r["iy"]), int(r["ix"]))] = [
@@ -810,7 +832,9 @@ def _build_patches_from_cell_day_df(
     date_to_idx = {d: i for i, d in enumerate(dates)}
     n_days = len(dates)
     if n_days <= time_steps:
-        raise ValueError(f"Serie temporal insuficiente ({n_days} días) para time_steps={time_steps}")
+        raise ValueError(
+            f"Serie temporal insuficiente ({n_days} días) para time_steps={time_steps}"
+        )
 
     # Partición espacial por bloques de celdas (evita fuga entre train y val, §6)
     unique_cells = grouped[["iy", "ix"]].drop_duplicates().to_numpy()
@@ -895,7 +919,7 @@ def _build_patches_from_cell_day_df(
         if len(active_ti) == 0:
             continue
 
-        # En modo táctico 6h, incluir el turno intermedio cuando hay confirmación satelital en t-1 y t+1 (12h VIIRS)
+        # En modo 6h, incluir el turno intermedio si hay confirmación en t-1 y t+1 (12h VIIRS)
         if is_subdaily and len(active_ti) > 1:
             bridged_ti = set(int(t) for t in active_ti)
             for idx_a in range(len(active_ti) - 1):
@@ -920,7 +944,9 @@ def _build_patches_from_cell_day_df(
 
         # Alocar raw_cube solo sobre los días activos necesarios (en vez de los ~2100 días globales)
         raw_cube = {k: np.zeros((n_local, grid_size, grid_size), np.float32) for k in raw_keys}
-        for _, v_row in sub[["iy", "ix", "veg_flammability"]].drop_duplicates(subset=["iy", "ix"]).iterrows():
+        for _, v_row in (
+            sub[["iy", "ix", "veg_flammability"]].drop_duplicates(subset=["iy", "ix"]).iterrows()
+        ):
             vy = int(v_row["iy"]) - y0
             vx = int(v_row["ix"]) - x0
             raw_cube["veg_flammability"][:, vy, vx] = float(v_row["veg_flammability"])
@@ -936,15 +962,24 @@ def _build_patches_from_cell_day_df(
         for k in raw_keys:
             raw_cube[k][ti_local, yi, xi] = sub_active[k].to_numpy(np.float32)
 
-        # Puente de persistencia orbital 6h (evita falsos negativos en turnos MODIS-Terra sin añadir falsos positivos)
+        # Puente persistencia 6h (evita falsos negativos MODIS-Terra sin añadir falsos positivos)
         if is_subdaily and n_local >= 3:
+
             def _pool3x3(arr2d: np.ndarray) -> np.ndarray:
                 p = np.pad(arr2d, 1, mode="edge")
-                return np.maximum.reduce([
-                    p[0:-2, 0:-2], p[0:-2, 1:-1], p[0:-2, 2:],
-                    p[1:-1, 0:-2], p[1:-1, 1:-1], p[1:-1, 2:],
-                    p[2:,   0:-2], p[2:,   1:-1], p[2:,   2:],
-                ])
+                return np.maximum.reduce(
+                    [
+                        p[0:-2, 0:-2],
+                        p[0:-2, 1:-1],
+                        p[0:-2, 2:],
+                        p[1:-1, 0:-2],
+                        p[1:-1, 1:-1],
+                        p[1:-1, 2:],
+                        p[2:, 0:-2],
+                        p[2:, 1:-1],
+                        p[2:, 2:],
+                    ]
+                )
 
             for l_t in range(1, n_local - 1):
                 if needed_t[l_t] - needed_t[l_t - 1] != 1 or needed_t[l_t + 1] - needed_t[l_t] != 1:
@@ -963,9 +998,13 @@ def _build_patches_from_cell_day_df(
                 for k in raw_keys:
                     if k == "veg_flammability":
                         continue
-                    v_interp = 0.85 * 0.5 * (
-                        _pool3x3(raw_cube[k][l_t - 1])[bridge_mask]
-                        + _pool3x3(raw_cube[k][l_t + 1])[bridge_mask]
+                    v_interp = (
+                        0.85
+                        * 0.5
+                        * (
+                            _pool3x3(raw_cube[k][l_t - 1])[bridge_mask]
+                            + _pool3x3(raw_cube[k][l_t + 1])[bridge_mask]
+                        )
                     )
                     raw_cube[k][l_t][bridge_mask] = v_interp
                 raw_cube["n_obs"][l_t][bridge_mask] = np.maximum(
@@ -1196,9 +1235,9 @@ class SyntheticContractGenerator:
                 ),
                 0.0,
             ).astype(np.float32)
-            frp_p50 = (
-                frp_mean * np.clip(self.rng.normal(0.82, 0.08, (n, n)), 0.5, 1.0)
-            ).astype(np.float32)
+            frp_p50 = (frp_mean * np.clip(self.rng.normal(0.82, 0.08, (n, n)), 0.5, 1.0)).astype(
+                np.float32
+            )
 
             high_frac = np.clip(0.2 + 0.65 * vigor + self.rng.normal(0, 0.1, (n, n)), 0.0, 1.0)
             n_high = np.minimum(n_obs, np.round(n_obs * high_frac)).astype(np.float32)
@@ -1213,7 +1252,10 @@ class SyntheticContractGenerator:
             footprint = np.where(
                 observed,
                 np.clip(
-                    0.5 + (1.0 - viirs_share) * 2.2 + 0.9 * vigor + self.rng.uniform(0, 0.6, (n, n)),
+                    0.5
+                    + (1.0 - viirs_share) * 2.2
+                    + 0.9 * vigor
+                    + self.rng.uniform(0, 0.6, (n, n)),
                     0.37,
                     4.8,
                 ),
@@ -1483,7 +1525,10 @@ def fit(model, train_ds, val_ds, epochs: int, out_path: str, tag: str, patience:
     except KeyboardInterrupt:
         os.makedirs(CHECKPOINTS_DIR, exist_ok=True)
         interrupted_path = os.path.join(CHECKPOINTS_DIR, "interrupted_model.keras")
-        print(f"\n[CATA] Entrenamiento interrumpido manualmente (Ctrl+C). Guardando estado en '{interrupted_path}'...")
+        print(
+            f"\n[CATA] Entrenamiento interrumpido manualmente (Ctrl+C). "
+            f"Guardando estado en '{interrupted_path}'..."
+        )
         model.save(interrupted_path)
         print(f"[CATA] Modelo guardado limpiamente en '{interrupted_path}'. Saliendo sin errores.")
         return {}
@@ -1549,7 +1594,12 @@ def _maybe_export_predictions_for_lucia(
     if not data_source and os.path.exists(config.DEFAULT_VALEN_CELL_DAY_PATH):
         data_source = config.VALEN_OUTPUT_DIR
 
-    if data_source and not data_source.endswith(".npz") and not data_source.endswith(".csv") and not data_source.endswith(".csv.gz"):
+    if (
+        data_source
+        and not data_source.endswith(".npz")
+        and not data_source.endswith(".csv")
+        and not data_source.endswith(".csv.gz")
+    ):
         try:
             x_tr, y_tr, x_va, y_va, meta_tr, meta_va = load_contract_cell_day(
                 data_source,
@@ -1566,8 +1616,16 @@ def _maybe_export_predictions_for_lucia(
                 target_date=getattr(args, "date", None),
             )
             # Tomamos las últimas ventanas temporales activas de cada bloque para predecir t+1
-            all_x = np.concatenate([x_tr, x_va], axis=0) if len(x_tr) and len(x_va) else (x_tr if len(x_tr) else x_va)
-            all_y = np.concatenate([y_tr, y_va], axis=0) if len(y_tr) and len(y_va) else (y_tr if len(y_tr) else y_va)
+            all_x = (
+                np.concatenate([x_tr, x_va], axis=0)
+                if len(x_tr) and len(x_va)
+                else (x_tr if len(x_tr) else x_va)
+            )
+            all_y = (
+                np.concatenate([y_tr, y_va], axis=0)
+                if len(y_tr) and len(y_va)
+                else (y_tr if len(y_tr) else y_va)
+            )
             all_meta = (meta_tr + meta_va) if (meta_tr or meta_va) else []
             if len(all_x) > 0:
                 max_zones = min(len(all_x), getattr(args, "max_prediction_zones", 8))
@@ -1719,7 +1777,7 @@ def run_predict(args) -> str:
 
 
 def run_demo(args) -> None:
-    """Smoke test rápido de los modos encadenados (C=1 -> C=22 con VALEN) + predicción para LUCIA."""
+    """Smoke test encadenado (C=1 -> C=22 con VALEN) + predicción para LUCIA."""
     demo_dir = os.path.join(config.MODEL_DIR, "demo")
     base = os.path.join(demo_dir, "cata_c1.keras")
 
@@ -1772,15 +1830,25 @@ def _require_checkpoint(args):
 # ===========================================================================
 def parse_args(argv=None):
     p = argparse.ArgumentParser(
-        description="Entrenamiento y predicción del algoritmo CATA (integrado con VALEN -> salida para LUCIA)"
+        description="Entrenamiento y predicción de CATA (VALEN -> salida para LUCIA)"
     )
     p.add_argument(
         "--mode",
         choices=["scratch", "finetune", "expand", "predict", "demo"],
         default="scratch",
     )
-    p.add_argument("--channels", type=int, default=config.NUM_CHANNELS, help="C para modo scratch (defecto: 22 canales VALEN)")
-    p.add_argument("--new-channels", type=int, default=None, help="C nuevo para modo expand (defecto: 22 canales VALEN)")
+    p.add_argument(
+        "--channels",
+        type=int,
+        default=config.NUM_CHANNELS,
+        help="C para modo scratch (defecto: 22 canales VALEN)",
+    )
+    p.add_argument(
+        "--new-channels",
+        type=int,
+        default=None,
+        help="C nuevo para modo expand (defecto: 22 canales VALEN)",
+    )
     p.add_argument(
         "--init",
         choices=["zeros", "glorot_uniform", "he_normal"],
@@ -1793,25 +1861,55 @@ def parse_args(argv=None):
         "--predictions-output",
         type=str,
         default=None,
-        help="Ruta del archivo JSON de predicciones de CATA para LUCIA (defecto: artifacts/predictions/cata_predictions.json)",
+        help=(
+            "Ruta del JSON de predicciones CATA para LUCIA "
+            "(defecto: artifacts/predictions/cata_predictions.json)"
+        ),
     )
     p.add_argument(
         "--data",
         type=str,
         default=None,
-        help="Carpeta output de VALEN, archivo cell_day/validated_cell_day (.parquet/.json) o dataset .npz",
+        help=(
+            "Carpeta output de VALEN, archivo cell_day/validated_cell_day "
+            "(.parquet/.json) o dataset .npz"
+        ),
     )
-    p.add_argument("--meteo", type=str, default=None, help="Ruta opcional a cell_day_meteo.json de VALEN")
-    p.add_argument("--rainfall", type=str, default=None, help="Ruta opcional a cell_day_rainfall.json de VALEN")
-    p.add_argument("--vegetation", type=str, default=None, help="Ruta opcional a cell_day_vegetation.json de VALEN")
-    p.add_argument("--validated", type=str, default=None, help="Ruta opcional a validated_cell_day.json/.parquet de VALEN")
+    p.add_argument(
+        "--meteo", type=str, default=None, help="Ruta opcional a cell_day_meteo.json de VALEN"
+    )
+    p.add_argument(
+        "--rainfall", type=str, default=None, help="Ruta opcional a cell_day_rainfall.json de VALEN"
+    )
+    p.add_argument(
+        "--vegetation",
+        type=str,
+        default=None,
+        help="Ruta opcional a cell_day_vegetation.json de VALEN",
+    )
+    p.add_argument(
+        "--validated",
+        type=str,
+        default=None,
+        help="Ruta opcional a validated_cell_day.json/.parquet de VALEN",
+    )
     p.add_argument(
         "--include-rejected",
         action="store_true",
         help="Si se indica, incluye también las celdas descartadas como RECHAZA por VALEN",
     )
-    p.add_argument("--max-prediction-zones", type=int, default=8, help="Nº máximo de zonas activas a exportar para LUCIA")
-    p.add_argument("--date", type=str, default=None, help="Fecha objetivo (YYYY-MM-DD) para --mode predict (toma los 5 días previos)")
+    p.add_argument(
+        "--max-prediction-zones",
+        type=int,
+        default=8,
+        help="Nº máximo de zonas activas a exportar para LUCIA",
+    )
+    p.add_argument(
+        "--date",
+        type=str,
+        default=None,
+        help="Fecha objetivo (YYYY-MM-DD) para --mode predict (toma los 5 días previos)",
+    )
     p.add_argument("--samples", type=int, default=config.SYNTH_NUM_SAMPLES)
     p.add_argument("--grid", type=int, default=config.GRID_SIZE)
     p.add_argument("--time-steps", type=int, default=config.TIME_STEPS)

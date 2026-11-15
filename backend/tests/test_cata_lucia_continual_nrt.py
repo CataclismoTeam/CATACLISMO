@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-import json
 import os
 import tempfile
 import unittest
@@ -63,14 +62,16 @@ class TestCataPipeline(unittest.TestCase):
         seq = np.zeros((5, 4, 4, 22), dtype=np.float32)
         seq[-1, 0, 0, 0] = 0.6  # Quemado real que persiste
         seq[-1, 0, 1, 0] = 0.5  # Quemado real que se apaga
-        seq[0, 1, 0, 0] = 0.4   # Quemado histórico en t=0
+        seq[0, 1, 0, 0] = 0.4  # Quemado histórico en t=0
 
         probs = np.zeros((4, 4), dtype=np.float32)
         probs[0, 0] = 0.85  # estado 3 (PERSISTENT)
         probs[0, 1] = 0.10  # estado 2 (CONFIRMED_BURNED)
         probs[2, 2] = 0.75  # estado 1 (PREDICTED_FIRE)
 
-        res_hist = cata_model.classify_cata_quadrants(seq, probs, threshold=0.5, include_history_burned=True)
+        res_hist = cata_model.classify_cata_quadrants(
+            seq, probs, threshold=0.5, include_history_burned=True
+        )
         sm = res_hist["state_matrix"]
         self.assertEqual(int(sm[0, 0]), cata_config.QUADRANT_STATE_PERSISTENT)
         self.assertEqual(int(sm[0, 1]), cata_config.QUADRANT_STATE_BURNED_REAL)
@@ -78,7 +79,9 @@ class TestCataPipeline(unittest.TestCase):
         self.assertEqual(int(sm[2, 2]), cata_config.QUADRANT_STATE_PREDICTED)
         self.assertEqual(int(sm[3, 3]), cata_config.QUADRANT_STATE_SAFE)
 
-        res_last = cata_model.classify_cata_quadrants(seq, probs, threshold=0.5, include_history_burned=False)
+        res_last = cata_model.classify_cata_quadrants(
+            seq, probs, threshold=0.5, include_history_burned=False
+        )
         self.assertEqual(int(res_last["state_matrix"][1, 0]), cata_config.QUADRANT_STATE_SAFE)
 
     def test_build_cata_model_forward_loss_and_export(self) -> None:
@@ -113,7 +116,13 @@ class TestCataPipeline(unittest.TestCase):
                     model=model,
                     sequence=x,
                     output_path=out_json,
-                    patch_origins=[{"zone_id": "ES1K_block_1750_2850_test", "origin_iy": 1750, "origin_ix": 2850}],
+                    patch_origins=[
+                        {
+                            "zone_id": "ES1K_block_1750_2850_test",
+                            "origin_iy": 1750,
+                            "origin_ix": 2850,
+                        }
+                    ],
                 )
             self.assertTrue(os.path.exists(out_json))
             self.assertEqual(len(payload["zones"]), 1)
@@ -193,7 +202,9 @@ class TestLuciaRouting(unittest.TestCase):
             ".S.....",
             "......E",
         ]
-        geo = prototype_astar.GeoReferencia(lat_origen=37.95, lon_origen=-6.54, resolucion_metros=1000.0)
+        geo = prototype_astar.GeoReferencia(
+            lat_origen=37.95, lon_origen=-6.54, resolucion_metros=1000.0
+        )
         lat, lon = geo.grid_a_latlon(1, 2)
         self.assertEqual(geo.latlon_a_grid(lat, lon), (1, 2))
         ruta, tiempo_fuego = prototype_astar.encontrar_via_escape(mapa, velocidad_persona=4.0)
@@ -211,7 +222,9 @@ class TestContinualLearningAndLiveNRT(unittest.TestCase):
             state_path = os.path.join(tmp, "continual_state.json")
             engine = continual_adapter.ContinualLearningEngine(state_path=state_path)
 
-            fb1 = engine.register_field_feedback("ES1K_block_1750_2850_t1", "confirmed_fire", intensity=1.5)
+            fb1 = engine.register_field_feedback(
+                "ES1K_block_1750_2850_t1", "confirmed_fire", intensity=1.5
+            )
             bias1 = fb1["block_state"]["logit_bias"]
             self.assertGreater(bias1, 0.0)
 
@@ -221,9 +234,11 @@ class TestContinualLearningAndLiveNRT(unittest.TestCase):
             self.assertGreater(float(cal[0, 0, 0]), float(probs[0, 0, 0]))
 
             # Feedback falsa alarma reduce el sesgo
-            fb2 = engine.register_field_feedback("ES1K_block_1750_2850_t1", "false_alarm", intensity=2.0)
+            fb2 = engine.register_field_feedback(
+                "ES1K_block_1750_2850_t1", "false_alarm", intensity=2.0
+            )
             self.assertLess(fb2["block_state"]["logit_bias"], bias1)
-            # Regresión: register_field_feedback no debe exponer/mutar la misma referencia en fb1 y fb2
+            # Regresión: register_field_feedback no debe compartir referencia entre fb1 y fb2
             self.assertIsNot(fb1["block_state"], fb2["block_state"])
 
             # Target futuro todo a cero debe devolver updated=False

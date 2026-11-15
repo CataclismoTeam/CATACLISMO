@@ -545,10 +545,7 @@ def classify_cata_quadrants(
     predicted_only = state == config.QUADRANT_STATE_PREDICTED
 
     def _to_symbols(mat_2d: np.ndarray) -> list[list[str]]:
-        return [
-            [config.QUADRANT_SYMBOLS[int(val)] for val in row]
-            for row in mat_2d
-        ]
+        return [[config.QUADRANT_SYMBOLS[int(val)] for val in row] for row in mat_2d]
 
     if single:
         return {
@@ -595,22 +592,23 @@ def export_cata_predictions_for_lucia(
     patch_origins: Sequence[dict] | None = None,
     y_true_batch: np.ndarray | None = None,
 ) -> dict:
-    """Ejecuta CATA sobre secuencias validadas por VALEN y guarda el archivo de predicciones para LUCIA.
+    """Ejecuta CATA sobre secuencias de VALEN y guarda las predicciones para LUCIA.
 
     Genera un artefacto JSON estructurado (`cata_predictions.json`) pensado para que
     el futuro algoritmo **LUCIA** calcule vías de escape de **personas** y **animales**:
       - `zones`: por cada sub-rejilla táctica (H x W de 1000x1000m), incluye:
           * `symbol_grid`: matriz 2D de caracteres (`'.'`, `'P'`, `'F'`, `'B'`).
-          * `state_matrix`: matriz 2D de estados (`0=SAFE`, `1=PREDICTED_FIRE`, `2=CONFIRMED_BURNED`, `3=CONFIRMED_AND_CONTINUES`).
+          * `state_matrix`: matriz 2D de estados (`0=SAFE`, `1=PREDICTED_FIRE`,
+            `2=CONFIRMED_BURNED`, `3=CONFIRMED_AND_CONTINUES`).
           * `fire_probability_grid`: matriz 2D de probabilidad de fuego en `t+1` `[0, 1]`.
-          * `estimated_fire_arrival_hours`: matriz 2D con el tiempo estimado de llegada del frente de fuego
-            (0.0 en celdas ya quemadas `F`/`B`, inversamente proporcional a `prob_t1`, viento e inflamabilidad en celdas `P`).
-          * `human_traversal_cost_grid`: factor de coste de paso a pie para **personas** (penaliza humo/calor,
-            vegetación densa y proximidad a focos).
-          * `animal_traversal_cost_grid`: factor de coste de paso para **animales** (fauna/ganado: mejor movilidad
-            en monte/matorral que humanos, pero alta aversión térmica y al viento de cara al fuego).
-      - `active_and_predicted_cells`: lista plana georreferenciada (`cell_id`, `iy`, `ix`, `centroid_lonlat`,
-        estado, probabilidad CATA y variables ambientales de VALEN: `meteo`, `rainfall`, `vegetation`, `valen_score`).
+          * `estimated_fire_arrival_hours`: matriz 2D con horas estimadas de llegada
+            (0.0 en celdas `F`/`B`, inversa a `prob_t1`, viento e inflamabilidad en `P`).
+          * `human_traversal_cost_grid`: coste de paso a pie para **personas**
+            (penaliza humo/calor, vegetación densa y proximidad a focos).
+          * `animal_traversal_cost_grid`: coste de paso para **animales** (mejor paso en
+            monte que humanos, pero alta aversión térmica y al viento de cara al fuego).
+      - `active_and_predicted_cells`: lista georreferenciada (`cell_id`, `iy`, `ix`,
+        `centroid_lonlat`, estado, probabilidad y variables `meteo`/`rainfall`/`veg`).
     """
     import json
     import time
@@ -631,7 +629,7 @@ def export_cata_predictions_for_lucia(
     probs_batch = q_res["probabilities"]
     symbols_batch = q_res["symbol_grid"]
 
-    # Aprendizaje continuo: calibración recursiva por bloque + actualización si existe observación real t+1
+    # Aprendizaje continuo: calibración por bloque + update si hay observación real t+1
     try:
         from app.continual import continual_engine
 
@@ -719,7 +717,7 @@ def export_cata_predictions_for_lucia(
             1.0 + 0.7 * veg_flam_norm + 0.4 * temp_norm + 2.5 * probs_2d,
             3,
         )
-        # - Animales (fauna/ganado): mejor paso por matorral/bosque (0.3 * veg), pero mayor sensibilidad al calor/viento
+        # - Animales: mejor paso por matorral (0.3 * veg), mayor sensibilidad al calor/viento
         animal_cost = np.round(
             0.85 + 0.3 * veg_flam_norm + 0.6 * wind_norm + 3.0 * probs_2d,
             3,

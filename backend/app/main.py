@@ -1,10 +1,11 @@
 """Punto de entrada de la API: uvicorn app.main:app --reload"""
 
 import asyncio
-from contextlib import asynccontextmanager
 import json
+import logging
 import os
-from typing import Literal
+from contextlib import asynccontextmanager
+from typing import Annotated, Literal
 
 from fastapi import FastAPI, HTTPException, Query, WebSocket, WebSocketDisconnect
 from fastapi.middleware.cors import CORSMiddleware
@@ -26,6 +27,20 @@ from app.lucia.router import (
 )
 from app.ws import manager
 
+_LOGGER = logging.getLogger(__name__)
+
+
+def _read_json_file(path: str) -> dict:
+    with open(path, encoding="utf-8") as f:
+        return json.load(f)
+
+
+def _read_json_if_exists(path: str) -> dict | None:
+    if not os.path.exists(path):
+        return None
+    return _read_json_file(path)
+
+
 async def _broadcast_proof_of_life_events(events: list[dict]) -> None:
     """Emite por /ws y /ws/chat cualquier aviso nuevo o resolución de prueba de vida."""
     if not events:
@@ -36,8 +51,8 @@ async def _broadcast_proof_of_life_events(events: list[dict]) -> None:
     for event in events:
         try:
             await manager.broadcast(event)
-        except Exception:
-            pass
+        except Exception as exc:
+            _LOGGER.debug("Fallo enviando evento proof-of-life por WS: %s", exc)
 
 
 async def _proof_of_life_monitor() -> None:
@@ -48,8 +63,8 @@ async def _proof_of_life_monitor() -> None:
             await _broadcast_proof_of_life_events(pol_events["events"])
         except asyncio.CancelledError:
             raise
-        except Exception:
-            pass
+        except Exception as exc:
+            _LOGGER.debug("Error en ciclo monitor proof-of-life: %s", exc)
         await asyncio.sleep(juli_config.PROOF_OF_LIFE_CHECK_INTERVAL_S)
 
 
@@ -95,10 +110,15 @@ app.add_middleware(
 class LuciaMeetingPointInput(BaseModel):
     """Punto de Encuentro explícito enviado por el usuario/operador o por el Frontend."""
 
-    id: str | None = Field(default=None, description="Identificador opcional del Punto de Encuentro")
+    id: str | None = Field(
+        default=None, description="Identificador opcional del Punto de Encuentro"
+    )
     name: str = Field(
         default="Punto de Encuentro",
-        description="Nombre descriptivo del Punto de Encuentro (ej. 'Polideportivo Municipal', 'Cruce N-435')",
+        description=(
+            "Nombre descriptivo del Punto de Encuentro "
+            "(ej. 'Polideportivo Municipal', 'Cruce N-435')"
+        ),
     )
     lon: float | None = Field(default=None, description="Longitud WGS84 del Punto de Encuentro")
     lat: float | None = Field(default=None, description="Latitud WGS84 del Punto de Encuentro")
@@ -116,13 +136,15 @@ class LuciaMeetingPointInput(BaseModel):
     )
     kind: str = Field(
         default="official_assembly_point",
-        description="Categoría del Punto de Encuentro (ej. 'shelter', 'road_junction_assembly', 'heliport')",
+        description=(
+            "Categoría del Punto de Encuentro (ej. 'shelter', 'road_junction_assembly', 'heliport')"
+        ),
     )
     capacity: int = Field(default=500, ge=1, description="Capacidad estimada de personas/animales")
 
 
 class LuciaRouteRequest(BaseModel):
-    """Petición interactiva desde el Frontend para calcular ruta segura hacia un Punto de Encuentro."""
+    """Petición desde el Frontend para calcular ruta segura hacia un Punto de Encuentro."""
 
     lon: float | None = Field(
         default=None, description="Longitud WGS84 de inicio (opcional si se pasa quadrant_id)"
@@ -138,7 +160,10 @@ class LuciaRouteRequest(BaseModel):
         default=None, ge=0.0, lt=1000.0, description="Metros al este dentro del cuadrante [0, 1000)"
     )
     offset_y_m: float | None = Field(
-        default=None, ge=0.0, lt=1000.0, description="Metros al norte dentro del cuadrante [0, 1000)"
+        default=None,
+        ge=0.0,
+        lt=1000.0,
+        description="Metros al norte dentro del cuadrante [0, 1000)",
     )
     sub_x_norm: float | None = Field(
         default=None, ge=0.0, lt=1.0, description="Subcoordenada X normalizada [0, 1)"
@@ -191,7 +216,9 @@ async def get_lucia_routes(
     ),
     include_fire_polygons: bool = Query(
         default=True,
-        description="Incluir polígonos 1kmx1km de zonas quemadas, quemándose y buffer del threshold",
+        description=(
+            "Incluir polígonos 1kmx1km de zonas quemadas, quemándose y buffer del threshold"
+        ),
     ),
 ) -> dict:
     """Devuelve el GeoJSON (`FeatureCollection`, WGS84) de rutas de evacuación seguras de LUCIA.
@@ -207,11 +234,12 @@ async def get_lucia_routes(
         and abs(safe_fire_threshold - lucia_config.SAFE_FIRE_THRESHOLD) < 1e-6
         and include_fire_polygons
     )
-    if is_default_query and os.path.exists(default_path):
-        with open(default_path, encoding="utf-8") as f:
-            return json.load(f)
+    if is_default_query:
+        cached = await asyncio.to_thread(_read_json_if_exists, default_path)
+        if cached is not None:
+            return cached
 
-    if not os.path.exists(lucia_config.DEFAULT_CATA_PREDICTIONS_PATH):
+    if not await asyncio.to_thread(os.path.exists, lucia_config.DEFAULT_CATA_PREDICTIONS_PATH):
         raise HTTPException(
             status_code=404,
             detail="No se encontró cata_predictions.json. Ejecuta primero CATA.",
@@ -231,8 +259,8 @@ async def get_lucia_routes(
 
 @app.post("/api/lucia/route")
 async def compute_lucia_interactive_route(req: LuciaRouteRequest) -> dict:
-    """Calcula en tiempo real una ruta GeoJSON desde `(lon, lat)` hacia el Punto de Encuentro más seguro."""
-    if not os.path.exists(lucia_config.DEFAULT_CATA_PREDICTIONS_PATH):
+    """Calcula una ruta GeoJSON desde `(lon, lat)` hacia el Punto de Encuentro más seguro."""
+    if not await asyncio.to_thread(os.path.exists, lucia_config.DEFAULT_CATA_PREDICTIONS_PATH):
         raise HTTPException(
             status_code=404,
             detail="No se encontró cata_predictions.json. Ejecuta primero CATA.",
@@ -252,7 +280,9 @@ async def compute_lucia_interactive_route(req: LuciaRouteRequest) -> dict:
     if lon is None or lat is None:
         raise HTTPException(
             status_code=400,
-            detail="Se requiere (lon, lat) o quadrant_id (ES1K:L0:Y...:X...) para calcular la ruta.",
+            detail=(
+                "Se requiere (lon, lat) o quadrant_id (ES1K:L0:Y...:X...) para calcular la ruta."
+            ),
         )
     custom_mps = (
         [mp.model_dump(exclude_none=True) for mp in req.meeting_points]
@@ -274,9 +304,9 @@ async def get_lucia_meeting_points(
 ) -> dict:
     """Devuelve todos los Puntos de Encuentro (Meeting Points) activos en las zonas de LUCIA."""
     default_path = lucia_config.DEFAULT_GEOJSON_OUTPUT_PATH
-    if os.path.exists(default_path):
-        with open(default_path, encoding="utf-8") as f:
-            data = json.load(f)
+    cached_data = await asyncio.to_thread(_read_json_if_exists, default_path)
+    if cached_data is not None:
+        data = cached_data
     else:
         data = generate_lucia_geojson_from_cata(output_geojson_path=None)
 
@@ -297,18 +327,24 @@ async def get_lucia_meeting_points(
 async def get_cata_predictions() -> dict:
     """Devuelve el JSON de predicciones de CATA (`cata_predictions.json`) que alimenta a LUCIA."""
     path = lucia_config.DEFAULT_CATA_PREDICTIONS_PATH
-    if not os.path.exists(path):
+    data = await asyncio.to_thread(_read_json_if_exists, path)
+    if data is None:
         raise HTTPException(status_code=404, detail="No se encontró cata_predictions.json.")
-    with open(path, encoding="utf-8") as f:
-        return json.load(f)
+    return data
 
 
 class ContinualFeedbackInput(BaseModel):
     """Feedback en vivo desde el terreno (First Responders / JULI) para calibrar CATA y LUCIA."""
 
-    zone_or_block_id: str = Field(..., description="ID de zona o bloque (ej. 'ES1K_block_138_187_2022-07-18 06:00' o '138_187')")
+    zone_or_block_id: str = Field(
+        ...,
+        description="ID de zona o bloque (ej. 'ES1K_block_138_187_2022-07-18 06:00' o '138_187')",
+    )
     feedback_type: Literal["confirmed_fire", "false_alarm"] = Field(
-        ..., description="'confirmed_fire' si hay fuego real no detectado; 'false_alarm' si es falsa alarma"
+        ...,
+        description=(
+            "'confirmed_fire' si hay fuego real no detectado; 'false_alarm' si es falsa alarma"
+        ),
     )
     intensity: float = Field(default=1.0, ge=0.1, le=2.0, description="Peso del ajuste (0.1 a 2.0)")
 
@@ -333,9 +369,9 @@ async def post_continual_feedback(req: ContinualFeedbackInput) -> dict:
 @app.get("/api/live/status")
 async def get_live_nrt_status() -> dict:
     """Devuelve el estado de la última consulta Near Real-Time a NASA FIRMS."""
-    if os.path.exists(LIVE_STATUS_PATH):
-        with open(LIVE_STATUS_PATH, encoding="utf-8") as f:
-            return json.load(f)
+    status = await asyncio.to_thread(_read_json_if_exists, LIVE_STATUS_PATH)
+    if status is not None:
+        return status
     return {
         "status": "idle",
         "firms_key_configured": bool(settings.firms_map_key or os.environ.get("FIRMS_MAP_KEY")),
@@ -367,12 +403,14 @@ class JuliTeamInput(BaseModel):
     unit_code: str = Field(default="BRIF-1", description="Código táctico corto (ej. 'BRIF-HU-01')")
     vehicle_type: str = Field(default="Autobomba 4x4", description="Vehículo o dotación del equipo")
     zone_assigned: str = Field(default="Sector General", description="Sector o cuadrante asignado")
-    color: str | None = Field(default=None, description="Color hexadecimal opcional (ej. '#06b6d4')")
+    color: str | None = Field(
+        default=None, description="Color hexadecimal opcional (ej. '#06b6d4')"
+    )
     radio_channel: str = Field(default="VHF-01", description="Canal de radio asignado")
 
 
 class JuliOperatorInput(BaseModel):
-    """Petición para dar de alta o actualizar un operario por WGS84 o por cuadrante + subcoordenadas."""
+    """Petición para alta o actualización de operario por WGS84 o cuadrante y subcoordenadas."""
 
     operator_id: str | None = Field(
         default=None,
@@ -380,21 +418,43 @@ class JuliOperatorInput(BaseModel):
     )
     name: str = Field(..., description="Nombre y apellidos del operario")
     team_id: str = Field(..., description="ID del equipo al que pertenece")
-    lon: float | None = Field(default=None, description="Longitud WGS84 absoluta (opcional si se pasa quadrant_id)")
-    lat: float | None = Field(default=None, description="Latitud WGS84 absoluta (opcional si se pasa quadrant_id)")
-    quadrant_id: str | None = Field(default=None, description="Cuadrante 1000x1000m (ej. 'ES1K:L0:Y02209:X02996')")
-    offset_x_m: float | None = Field(default=None, ge=0.0, lt=1000.0, description="Metros al este dentro del cuadrante [0, 1000)")
-    offset_y_m: float | None = Field(default=None, ge=0.0, lt=1000.0, description="Metros al norte dentro del cuadrante [0, 1000)")
-    sub_x_norm: float | None = Field(default=None, ge=0.0, lt=1.0, description="Subcoordenada X normalizada [0, 1)")
-    sub_y_norm: float | None = Field(default=None, ge=0.0, lt=1.0, description="Subcoordenada Y normalizada [0, 1)")
+    lon: float | None = Field(
+        default=None, description="Longitud WGS84 absoluta (opcional si se pasa quadrant_id)"
+    )
+    lat: float | None = Field(
+        default=None, description="Latitud WGS84 absoluta (opcional si se pasa quadrant_id)"
+    )
+    quadrant_id: str | None = Field(
+        default=None, description="Cuadrante 1000x1000m (ej. 'ES1K:L0:Y02209:X02996')"
+    )
+    offset_x_m: float | None = Field(
+        default=None, ge=0.0, lt=1000.0, description="Metros al este dentro del cuadrante [0, 1000)"
+    )
+    offset_y_m: float | None = Field(
+        default=None,
+        ge=0.0,
+        lt=1000.0,
+        description="Metros al norte dentro del cuadrante [0, 1000)",
+    )
+    sub_x_norm: float | None = Field(
+        default=None, ge=0.0, lt=1.0, description="Subcoordenada X normalizada [0, 1)"
+    )
+    sub_y_norm: float | None = Field(
+        default=None, ge=0.0, lt=1.0, description="Subcoordenada Y normalizada [0, 1)"
+    )
     elevation_m: float = Field(default=0.0, description="Altitud sobre el nivel del mar (m)")
     role: juli_config.OperatorRole = Field(
         default="brigadista",
-        description="Rol ('jefe_cuadrilla', 'brigadista', 'conductor_autobomba', 'sanitario', 'piloto_dron', 'coordinador')",
+        description=(
+            "Rol ('jefe_cuadrilla', 'brigadista', 'conductor_autobomba', "
+            "'sanitario', 'piloto_dron', 'coordinador')"
+        ),
     )
     status: juli_config.OperatorStatus = Field(
         default="en_terreno",
-        description="Estado operativo ('en_terreno', 'en_ruta', 'en_descanso', 'alerta', 'inactivo')",
+        description=(
+            "Estado operativo ('en_terreno', 'en_ruta', 'en_descanso', 'alerta', 'inactivo')"
+        ),
     )
     callsign: str | None = Field(default=None, description="Indicativo de radio (ej. 'ALFA-1')")
     battery_pct: int = Field(default=100, ge=0, le=100, description="Batería del emisor GPS (%)")
@@ -402,17 +462,30 @@ class JuliOperatorInput(BaseModel):
 
 
 class JuliLocationPatchInput(BaseModel):
-    """Actualización rápida de posición por WGS84 o por cuadrante + subcoordenadas dentro del 1000x1000m."""
+    """Actualización rápida de posición por WGS84 o subcoordenadas en el cuadrante 1000x1000m."""
 
     lon: float | None = Field(default=None, description="Nueva longitud WGS84 absoluta")
     lat: float | None = Field(default=None, description="Nueva latitud WGS84 absoluta")
     quadrant_id: str | None = Field(default=None, description="Nuevo cuadrante ES1K 1000x1000m")
-    offset_x_m: float | None = Field(default=None, ge=0.0, lt=1000.0, description="Metros al este dentro del cuadrante [0, 1000)")
-    offset_y_m: float | None = Field(default=None, ge=0.0, lt=1000.0, description="Metros al norte dentro del cuadrante [0, 1000)")
-    sub_x_norm: float | None = Field(default=None, ge=0.0, lt=1.0, description="Subcoordenada X normalizada [0, 1)")
-    sub_y_norm: float | None = Field(default=None, ge=0.0, lt=1.0, description="Subcoordenada Y normalizada [0, 1)")
+    offset_x_m: float | None = Field(
+        default=None, ge=0.0, lt=1000.0, description="Metros al este dentro del cuadrante [0, 1000)"
+    )
+    offset_y_m: float | None = Field(
+        default=None,
+        ge=0.0,
+        lt=1000.0,
+        description="Metros al norte dentro del cuadrante [0, 1000)",
+    )
+    sub_x_norm: float | None = Field(
+        default=None, ge=0.0, lt=1.0, description="Subcoordenada X normalizada [0, 1)"
+    )
+    sub_y_norm: float | None = Field(
+        default=None, ge=0.0, lt=1.0, description="Subcoordenada Y normalizada [0, 1)"
+    )
     elevation_m: float | None = Field(default=None, description="Nueva altitud (m)")
-    status: juli_config.OperatorStatus | None = Field(default=None, description="Nuevo estado operativo")
+    status: juli_config.OperatorStatus | None = Field(
+        default=None, description="Nuevo estado operativo"
+    )
     battery_pct: int | None = Field(default=None, ge=0, le=100, description="Nivel de batería (%)")
     heart_rate_bpm: int | None = Field(default=None, description="Pulso cardíaco (bpm)")
     team_id: str | None = Field(default=None, description="Cambio opcional de equipo")
@@ -420,16 +493,26 @@ class JuliLocationPatchInput(BaseModel):
 
 @app.get("/api/juli/geojson")
 async def get_juli_geojson(
-    team_id: str | None = Query(default=None, description="Filtrar por ID de equipo (ej. 'team_brif_huelva')"),
-    status: juli_config.OperatorStatus | None = Query(
-        default=None, description="Filtrar operarios por estado ('active', 'en_route', 'resting', 'alert', 'offline')"
+    team_id: str | None = Query(
+        default=None, description="Filtrar por ID de equipo (ej. 'team_brif_huelva')"
     ),
+    status: Annotated[
+        juli_config.OperatorStatus | None,
+        Query(
+            description=(
+                "Filtrar operarios por estado ('active', 'en_route', 'resting', 'alert', 'offline')"
+            ),
+        ),
+    ] = None,
     include_team_features: bool = Query(
         default=True,
-        description="Incluir centroide y líneas de formación del equipo además de los puntos de cada persona",
+        description=(
+            "Incluir centroide y líneas de formación del equipo "
+            "además de los puntos de cada persona"
+        ),
     ),
 ) -> dict:
-    """Devuelve el GeoJSON (`FeatureCollection`, `EPSG:4326`) de JULI con los operarios y equipos en el terreno."""
+    """Devuelve el GeoJSON (`FeatureCollection`, `EPSG:4326`) de JULI con operarios y equipos."""
     return juli_tracker.build_geojson(
         team_filter=team_id,
         status_filter=status,
@@ -469,7 +552,7 @@ async def upsert_juli_team(req: JuliTeamInput) -> dict:
 
 @app.post("/api/juli/operators")
 async def upsert_juli_operator(req: JuliOperatorInput) -> dict:
-    """Añade o actualiza una persona dentro de un equipo en JULI y devuelve el GeoJSON actualizado."""
+    """Añade o actualiza una persona en un equipo de JULI y devuelve el GeoJSON actualizado."""
     try:
         op = juli_tracker.upsert_operator(
             operator_id=req.operator_id,
@@ -509,7 +592,7 @@ async def upsert_juli_operator(req: JuliOperatorInput) -> dict:
 
 @app.patch("/api/juli/operators/{operator_id}/location")
 async def update_juli_operator_location(operator_id: str, req: JuliLocationPatchInput) -> dict:
-    """Actualiza en tiempo real la posición GPS/subcoordenadas de un operario y emite por WebSocket."""
+    """Actualiza en tiempo real la posición GPS/subcoordenadas de un operario y emite por WS."""
     try:
         op = juli_tracker.update_operator_location(
             operator_id=operator_id,
@@ -572,7 +655,9 @@ async def delete_juli_operator(operator_id: str) -> dict:
     """Da de baja a un operario del terreno y actualiza el GeoJSON."""
     removed = juli_tracker.remove_operator(operator_id)
     if not removed:
-        raise HTTPException(status_code=404, detail=f"No existe el operario '{operator_id}' en JULI.")
+        raise HTTPException(
+            status_code=404, detail=f"No existe el operario '{operator_id}' en JULI."
+        )
     geojson_payload = juli_tracker.export_geojson()
     return {
         "status": "ok",

@@ -4,7 +4,7 @@ Cubre:
   1. Concurrencia WebSocket en `ConnectionManager` (`app/ws.py`) y `ChatConnectionManager`
      (`app/juli/chat.py`): ráfagas simultáneas con `asyncio.gather`, desconexiones concurrentes
      y aislamiento/limpieza ante excepciones en `send_json` a mitad de broadcast.
-  2. Concurrencia y consistencia en `JuliChatManager`: idempotencia por `(sender_id, client_msg_id)`,
+  2. Concurrencia en `JuliChatManager`: idempotencia por `(sender_id, client_msg_id)`,
      recorte exacto en `CHAT_MAX_MESSAGES_PER_CHANNEL` (500), rotación de `key_epoch` y fusión de
      `wrapped_keys`, acceso omnisciente de `central` en equipos dinámicos/DM/incidentes,
      subida/descarga autorizada e integridad SHA-256 de adjuntos, y recuperación ante JSON corrupto.
@@ -19,7 +19,6 @@ from __future__ import annotations
 
 import asyncio
 import base64
-from datetime import datetime, timedelta, timezone
 import importlib
 import importlib.util
 import io
@@ -28,8 +27,9 @@ import os
 import sys
 import tempfile
 import types
-from typing import Any
 import unittest
+from datetime import UTC, datetime, timedelta
+from typing import Any
 from unittest import mock
 
 from PIL import Image
@@ -105,8 +105,8 @@ def _make_encrypted_envelope(
     scheme: str = "e2ee-room-aes256gcm",
     seed: int = 1,
 ) -> dict[str, Any]:
-    ct_raw = f"cipher_payload_{seed:06d}_authenticated_tag_16b".encode("utf-8")
-    iv_raw = f"iv_{seed:09d}".encode("utf-8")[:12]
+    ct_raw = f"cipher_payload_{seed:06d}_authenticated_tag_16b".encode()
+    iv_raw = f"iv_{seed:09d}".encode()[:12]
     return {
         "scheme": scheme,
         "ciphertext_b64": base64.b64encode(ct_raw).decode("ascii"),
@@ -118,7 +118,7 @@ def _make_encrypted_envelope(
 
 def _make_wrapped_key_bundle(seed: int = 1, ephemeral_scalar: int = 10) -> dict[str, Any]:
     wrapped_raw = (f"wrapped_aes256_key_{seed:04d}_" + "X" * 32).encode("utf-8")[:48]
-    iv_raw = f"wk_{seed:09d}".encode("utf-8")[:12]
+    iv_raw = f"wk_{seed:09d}".encode()[:12]
     return {
         "wrapped_key_b64": base64.b64encode(wrapped_raw).decode("ascii"),
         "iv_b64": base64.b64encode(iv_raw).decode("ascii"),
@@ -205,11 +205,7 @@ class TestWebSocketConcurrency(unittest.IsolatedAsyncioTestCase):
         }
 
         await asyncio.gather(
-            *(
-                mgr.connect(pid, ws)
-                for pid, ws_list in sockets_by_pid.items()
-                for ws in ws_list
-            )
+            *(mgr.connect(pid, ws) for pid, ws_list in sockets_by_pid.items() for ws in ws_list)
         )
         self.assertEqual(mgr.online_participants(), sorted(participants))
         for ws_list in sockets_by_pid.values():
@@ -258,7 +254,7 @@ class TestWebSocketConcurrency(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(mgr.online_participants(), [])
 
     async def test_chat_connection_manager_broken_socket_cleanup_mid_broadcast(self) -> None:
-        """Verifica que sockets fallidos en `ChatConnectionManager` se limpian sin romper el broadcast."""
+        """Verifica que sockets fallidos en `ChatConnectionManager` se limpian al emitir."""
         mgr = ChatConnectionManager()
         ws_central_ok = _MockAsyncWebSocket("central_ok")
         ws_central_fail = _MockAsyncWebSocket("central_fail", fail_on_send_call=1)
@@ -368,7 +364,7 @@ class TestJuliChatConcurrencyAndState(unittest.IsolatedAsyncioTestCase):
         self._tmp.cleanup()
 
     async def test_concurrent_burst_client_msg_id_idempotency_and_receipts(self) -> None:
-        """Ráfagas concurrentes con reintentos `client_msg_id`: unicidad de `server_seq` y acuses."""
+        """Ráfagas con reintentos `client_msg_id`: unicidad de `server_seq` y acuses."""
         cid = team_channel_id("team_brif_huelva")
         unique_ids = [f"cmsg_burst_{i:03d}" for i in range(25)]
 
@@ -417,9 +413,7 @@ class TestJuliChatConcurrencyAndState(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(seqs, list(range(1, 31)))
 
         # Acuses de entrega y lectura actualizan unread_count
-        channels_before = {
-            c["channel_id"]: c for c in self.chat.list_channels("op_hu_03")
-        }
+        channels_before = {c["channel_id"]: c for c in self.chat.list_channels("op_hu_03")}
         self.assertEqual(channels_before[cid]["unread_count"], 30)
 
         all_msg_ids = [m["message_id"] for m in history["messages"]]
@@ -427,9 +421,7 @@ class TestJuliChatConcurrencyAndState(unittest.IsolatedAsyncioTestCase):
             cid, participant_id="op_hu_03", message_ids=all_msg_ids[:10], status="read"
         )
         self.assertEqual(len(receipt["message_ids"]), 10)
-        channels_after = {
-            c["channel_id"]: c for c in self.chat.list_channels("op_hu_03")
-        }
+        channels_after = {c["channel_id"]: c for c in self.chat.list_channels("op_hu_03")}
         self.assertEqual(channels_after[cid]["unread_count"], 20)
 
     def test_exact_trimming_above_chat_max_messages_per_channel_and_reload(self) -> None:
@@ -479,7 +471,7 @@ class TestJuliChatConcurrencyAndState(unittest.IsolatedAsyncioTestCase):
         jwk_hu1_v2 = _make_valid_p256_jwk(3)
         jwk_hu2 = _make_valid_p256_jwk(4)
 
-        rec_c = self.chat.register_identity_key("central", jwk_central, device_label="CMD-01")
+        self.chat.register_identity_key("central", jwk_central, device_label="CMD-01")
         rec_1a = self.chat.register_identity_key("op_hu_01", jwk_hu1_v1, device_label="MDT-A1")
         # Re-registro idempotente de la misma clave mantiene key_version == 1
         rec_1b = self.chat.register_identity_key("op_hu_01", jwk_hu1_v1, device_label="MDT-A1")
@@ -488,7 +480,9 @@ class TestJuliChatConcurrencyAndState(unittest.IsolatedAsyncioTestCase):
         self.assertIsNone(rec_1b["previous_fingerprint"])
 
         # Rotación de clave de identidad incrementa key_version y guarda previous_fingerprint
-        rec_1_rot = self.chat.register_identity_key("op_hu_01", jwk_hu1_v2, device_label="MDT-A1-NEW")
+        rec_1_rot = self.chat.register_identity_key(
+            "op_hu_01", jwk_hu1_v2, device_label="MDT-A1-NEW"
+        )
         self.assertEqual(rec_1_rot["key_version"], 2)
         self.assertEqual(rec_1_rot["previous_fingerprint"], rec_1a["fingerprint"])
 
@@ -676,9 +670,7 @@ class TestJuliChatConcurrencyAndState(unittest.IsolatedAsyncioTestCase):
                 channel_id=cid_hu,
             )
         with self.assertRaises(PermissionError):
-            self.chat.get_attachment_content(
-                att_img["attachment_id"], participant_id="op_za_01"
-            )
+            self.chat.get_attachment_content(att_img["attachment_id"], participant_id="op_za_01")
 
         # Otro miembro no puede adjuntar en send_message un archivo subido por op_hu_01
         with self.assertRaises(PermissionError):
@@ -719,7 +711,7 @@ class TestJuliChatConcurrencyAndState(unittest.IsolatedAsyncioTestCase):
             self.chat.get_attachment_content(att_pdf["attachment_id"], participant_id="central")
 
     def test_recovery_from_corrupt_juli_chat_state_json(self) -> None:
-        """Verifica que `JuliChatManager` se recupera limpiamente ante `juli_chat_state.json` corrupto."""
+        """Verifica que `JuliChatManager` se recupera ante `juli_chat_state.json` corrupto."""
         corrupt_payloads = [
             "{corrupt_json_without_closing_brace",
             "[]",
@@ -796,17 +788,17 @@ class TestWalkieRadioAndTrackerState(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(len(q_list["frequencies"]), 3)
 
         ble_hex_ume = "41542b435447533d32303032"  # "AT+CTGS=2002"
-        ble_hex_tac_prefixed = "0x" + "AT+CTSG=team_first_response_live".encode("utf-8").hex()
+        ble_hex_tac_prefixed = "0x" + b"AT+CTSG=team_first_response_live".hex()
 
         switch_modes = [
-            {"at_command": "AT+CTGS=2002"},                       # Talkgroup UME
-            {"at_command": "AT+CFREQ=154.5250"},                  # VHF MHz BRIF Huelva
-            {"at_command": "AT+CTSG=team_first_response_live"},   # Team ID directo
-            {"at_command": "AT+CFREQ=391.2500"},                  # TETRA MHz UME
-            {"at_command": "AT+CTGS=VHF-01"},                     # Nombre de canal BRIF
-            {"ble_payload_hex": ble_hex_ume},                     # Trama BLE GATT hex sin 0x
-            {"ble_payload_hex": ble_hex_tac_prefixed},            # Trama BLE GATT hex con 0x
-            {"at_command": "AT+CTSG=team_brif_huelva"},           # Retorno a BRIF Huelva
+            {"at_command": "AT+CTGS=2002"},  # Talkgroup UME
+            {"at_command": "AT+CFREQ=154.5250"},  # VHF MHz BRIF Huelva
+            {"at_command": "AT+CTSG=team_first_response_live"},  # Team ID directo
+            {"at_command": "AT+CFREQ=391.2500"},  # TETRA MHz UME
+            {"at_command": "AT+CTGS=VHF-01"},  # Nombre de canal BRIF
+            {"ble_payload_hex": ble_hex_ume},  # Trama BLE GATT hex sin 0x
+            {"ble_payload_hex": ble_hex_tac_prefixed},  # Trama BLE GATT hex con 0x
+            {"at_command": "AT+CTSG=team_brif_huelva"},  # Retorno a BRIF Huelva
         ]
 
         total_switches = 212
@@ -847,7 +839,8 @@ class TestWalkieRadioAndTrackerState(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(reloaded_radio.history[0]["switch_id"], all_switch_ids[12])
         self.assertEqual(reloaded_radio.history[-1]["switch_id"], all_switch_ids[-1])
 
-        # El cambio 212 (índice 211 -> 211 % 8 == 3 -> AT+CFREQ=391.2500) dejó a op_hu_01 en team_ume_zamora
+        # El cambio 212 (índice 211 -> 211 % 8 == 3 -> AT+CFREQ=391.2500)
+        # dejó a op_hu_01 en team_ume_zamora
         op_reloaded = reloaded_tracker.operators["op_hu_01"]
         self.assertEqual(op_reloaded.team_id, "team_ume_zamora")
         self.assertEqual(op_reloaded.talkgroup_id, "2002")
@@ -857,9 +850,9 @@ class TestWalkieRadioAndTrackerState(unittest.IsolatedAsyncioTestCase):
         self.assertNotIn("team:team_brif_huelva", op_channels)
 
     async def test_interleaved_proof_of_life_transitions_and_squadron_handover(self) -> None:
-        """Valida transiciones intercaladas de Prueba de Vida y cambio de destinatarios de escuadrón."""
+        """Valida transiciones de Prueba de Vida y cambio de destinatarios de escuadrón."""
         op = self.tracker.operators["op_hu_01"]
-        t0 = datetime(2026, 7, 15, 10, 0, 0, tzinfo=timezone.utc)
+        t0 = datetime(2026, 7, 15, 10, 0, 0, tzinfo=UTC)
         op.updated_at = t0.isoformat()
         op.last_moved_at = t0.isoformat()
         op.last_proof_of_life_at = t0.isoformat()
@@ -881,9 +874,7 @@ class TestWalkieRadioAndTrackerState(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(len(hu1_alerts), 1)
         self.assertEqual(hu1_alerts[0]["reasons"], ["immobile_timeout"])
         self.assertEqual(hu1_alerts[0]["priority"], "high")
-        self.assertEqual(
-            hu1_alerts[0]["recipients"]["squadron"]["team_id"], "team_brif_huelva"
-        )
+        self.assertEqual(hu1_alerts[0]["recipients"]["squadron"]["team_id"], "team_brif_huelva")
         self.assertEqual(
             sorted(hu1_alerts[0]["recipients"]["squadron"]["member_ids"]),
             ["op_hu_02", "op_hu_03", "op_hu_04"],
@@ -899,21 +890,24 @@ class TestWalkieRadioAndTrackerState(unittest.IsolatedAsyncioTestCase):
 
         # 3. Entra fuego activo (estado 2) en el cuadrante de op_hu_01 Y el operario conmuta su
         #    walkie-talkie al escuadrón team_ume_zamora. La nueva razón ("quadrant_burning")
-        #    escala la alerta a "critical" y cambia los destinatarios de escuadrón a team_ume_zamora.
-        with open(self.cata_pred_path, "w", encoding="utf-8") as f:
-            json.dump(
-                {
-                    "active_and_predicted_cells": [
-                        {
-                            "quadrant_id": qid,
-                            "quadrant_state": 2,
-                            "state_label": "En llamas",
-                            "fire_probability_t1": 0.94,
-                        }
-                    ]
-                },
-                f,
-            )
+        #    escala la alerta a "critical" y mueve los destinatarios a team_ume_zamora.
+        def _write_cata_state(payload: dict[str, Any]) -> None:
+            with open(self.cata_pred_path, "w", encoding="utf-8") as f:
+                json.dump(payload, f)
+
+        await asyncio.to_thread(
+            _write_cata_state,
+            {
+                "active_and_predicted_cells": [
+                    {
+                        "quadrant_id": qid,
+                        "quadrant_state": 2,
+                        "state_label": "En llamas",
+                        "fire_probability_t1": 0.94,
+                    }
+                ]
+            },
+        )
 
         self.radio.switch_frequency(
             operator_id="op_hu_01",
@@ -933,9 +927,7 @@ class TestWalkieRadioAndTrackerState(unittest.IsolatedAsyncioTestCase):
             ["immobile_timeout", "quadrant_burning"],
         )
         self.assertEqual(alert_escalated["priority"], "critical")
-        self.assertEqual(
-            alert_escalated["recipients"]["squadron"]["team_id"], "team_ume_zamora"
-        )
+        self.assertEqual(alert_escalated["recipients"]["squadron"]["team_id"], "team_ume_zamora")
         self.assertEqual(
             sorted(alert_escalated["recipients"]["squadron"]["member_ids"]),
             ["op_za_01", "op_za_02", "op_za_03"],
@@ -977,15 +969,14 @@ class TestWalkieRadioAndTrackerState(unittest.IsolatedAsyncioTestCase):
         self.assertNotIn("op_hu_01", poll_3["resolved_operator_ids"])
 
         # 5. Extinción del fuego en el cuadrante (fire_clear): la alerta de op_hu_01 queda resuelta
-        with open(self.cata_pred_path, "w", encoding="utf-8") as f:
-            json.dump(
-                {
-                    "active_and_predicted_cells": [
-                        {"quadrant_id": qid, "quadrant_state": 0, "state_label": "Controlado"}
-                    ]
-                },
-                f,
-            )
+        await asyncio.to_thread(
+            _write_cata_state,
+            {
+                "active_and_predicted_cells": [
+                    {"quadrant_id": qid, "quadrant_state": 0, "state_label": "Controlado"}
+                ]
+            },
+        )
 
         t4 = t3 + timedelta(minutes=1)
         poll_4 = self.tracker.poll_proof_of_life_events(
@@ -1001,7 +992,7 @@ class TestWalkieRadioAndTrackerState(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(resolved_events[0]["team_id"], "team_ume_zamora")
 
     def test_subcoordinate_clamping_and_corrupt_state_recovery(self) -> None:
-        """Verifica clamping de subcoordenadas [0, 1000) y [0, 1) y recuperación ante JSON corrupto."""
+        """Verifica clamping de [0, 1000) y [0, 1) y recuperación ante JSON corrupto."""
         qid = "ES1K:L0:Y02209:X02996"
 
         # Clamping en quadrant_subcoords_to_lonlat para offset_x_m / offset_y_m fuera de [0, 1000)
@@ -1041,7 +1032,7 @@ class TestWalkieRadioAndTrackerState(unittest.IsolatedAsyncioTestCase):
         self.assertGreaterEqual(loc["sub_y_norm"], 0.0)
         self.assertLess(loc["sub_y_norm"], 1.0)
 
-        # Recuperación ante archivos de estado JSON corruptos en JuliTracker, WalkieRadioManager y CATA
+        # Recuperación ante JSON corrupto en JuliTracker, WalkieRadioManager y CATA
         with open(self.tracker_state, "w", encoding="utf-8") as f:
             f.write("{corrupt_tracker_state")
         with open(self.radio_log, "w", encoding="utf-8") as f:

@@ -69,7 +69,9 @@ def lonlat_to_epsg3035(lon_deg: float, lat_deg: float) -> tuple[float, float]:
     lon, lat = math.radians(float(lon_deg)), math.radians(float(lat_deg))
     beta = math.asin(max(-1.0, min(1.0, _q(math.sin(lat)) / _QP)))
     dlon = lon - _LON0
-    denom = 1.0 + math.sin(_BETA0) * math.sin(beta) + math.cos(_BETA0) * math.cos(beta) * math.cos(dlon)
+    denom = (
+        1.0 + math.sin(_BETA0) * math.sin(beta) + math.cos(_BETA0) * math.cos(beta) * math.cos(dlon)
+    )
     b = _RQ * math.sqrt(2.0 / max(1e-12, denom))
     x = _FE + (b * _D) * (math.cos(beta) * math.sin(dlon))
     y = _FN + (b / _D) * (
@@ -79,7 +81,7 @@ def lonlat_to_epsg3035(lon_deg: float, lat_deg: float) -> tuple[float, float]:
 
 
 def format_cell_id(iy: int, ix: int) -> str:
-    """Formatea índices globales `(iy, ix)` al cuadrante 1000×1000m `ES1K:L0:Y{iy:05d}:X{ix:05d}`."""
+    """Formatea índices `(iy, ix)` al cuadrante 1000×1000m `ES1K:L0:Y{iy:05d}:X{ix:05d}`."""
     return f"{CELL_PREFIX}:L{GRID_LEVEL}:Y{int(iy):05d}:X{int(ix):05d}"
 
 

@@ -16,7 +16,8 @@ de modo que LUCIA siempre cuente con altitudes y pendientes continuas y coherent
 
 Uso:
     # 1. Enriquecer todas las celdas de las zonas predichas por CATA:
-    python -m app.valen.elevation_client --from-cata app/cata/artifacts/predictions/cata_predictions.json
+    python -m app.valen.elevation_client --from-cata \\
+        app/cata/artifacts/predictions/cata_predictions.json
 
     # 2. O enriquecer desde cell_day.parquet:
     python -m app.valen.elevation_client --cell-day app/valen/output/cell_day.parquet
@@ -32,7 +33,7 @@ import time
 import urllib.error
 import urllib.request
 from contextlib import closing
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
 
@@ -125,7 +126,7 @@ class ElevationCache:
     def set_many(self, records: list[dict[str, Any]]) -> None:
         if not records:
             return
-        now = datetime.now(timezone.utc).isoformat()
+        now = datetime.now(UTC).isoformat()
         with closing(sqlite3.connect(self.db_path)) as conn, conn:
             conn.executemany(
                 """
@@ -152,7 +153,8 @@ class ElevationCache:
     def stats(self) -> dict[str, Any]:
         with closing(sqlite3.connect(self.db_path)) as conn, conn:
             total, api_cnt = conn.execute(
-                "SELECT COUNT(*), COALESCE(SUM(CASE WHEN source = 'open_elevation_api' THEN 1 ELSE 0 END), 0) "
+                "SELECT COUNT(*), "
+                "COALESCE(SUM(CASE WHEN source = 'open_elevation_api' THEN 1 ELSE 0 END), 0) "
                 "FROM cell_elevation"
             ).fetchone()
         size_mb = self.db_path.stat().st_size / (1024 * 1024) if self.db_path.exists() else 0.0
@@ -186,9 +188,7 @@ def estimate_iberian_elevation_m(lon: float, lat: float, iy: int, ix: int) -> fl
     sierra_morena = 480.0 * math.exp(-(((lon + 6.4) / 1.4) ** 2 + ((lat - 37.95) / 0.42) ** 2))
 
     # Sistema Central (Gredos / Guadarrama, lat ~40.1-40.7, lon ~-5.5..-3.5)
-    sistema_central = 920.0 * math.exp(
-        -(((lon + 4.7) / 1.2) ** 2 + ((lat - 40.35) / 0.32) ** 2)
-    )
+    sistema_central = 920.0 * math.exp(-(((lon + 4.7) / 1.2) ** 2 + ((lat - 40.35) / 0.32) ** 2))
 
     # Cordillera Cantábrica / Montes de León (NO, lat ~42.2-43.2)
     cantabrica = 860.0 * math.exp(-(((lon + 5.8) / 1.8) ** 2 + ((lat - 42.7) / 0.45) ** 2))
@@ -251,8 +251,10 @@ def compute_slope_cost_multiplier(
     return round(float(np.clip(tobler_animal + cliff_penalty, 0.85, 5.0)), 4)
 
 
-def compute_block_slope_metrics(elev_grid: np.ndarray, cell_size_m: float = CELL_SIZE_M) -> dict[str, np.ndarray]:
-    """Calcula pendiente media, pendiente máxima a los 8 vecinos y orientación a partir de `elev_grid (H, W)`."""
+def compute_block_slope_metrics(
+    elev_grid: np.ndarray, cell_size_m: float = CELL_SIZE_M
+) -> dict[str, np.ndarray]:
+    """Calcula pendiente media, máxima a 8 vecinos y orientación desde `elev_grid (H, W)`."""
     gy, gx = np.gradient(elev_grid.astype(np.float32), float(cell_size_m))
     slope_rad = np.arctan(np.hypot(gx, gy))
     slope_deg = np.degrees(slope_rad).astype(np.float32)
@@ -332,7 +334,9 @@ class ElevationClient:
             }
         ).encode("utf-8")
 
-        req = urllib.request.Request(
+        if not str(self.api_url).startswith(("https://", "http://")):
+            raise ValueError(f"Esquema de URL no permitido: {self.api_url}")
+        req = urllib.request.Request(  # noqa: S310
             self.api_url,
             data=payload,
             headers={
@@ -389,9 +393,7 @@ class ElevationClient:
                     src = "open_elevation_api"
                 else:
                     src = "open_elevation_fallback_dem"
-                    elevs = [
-                        estimate_iberian_elevation_m(m[3], m[4], m[1], m[2]) for m in batch
-                    ]
+                    elevs = [estimate_iberian_elevation_m(m[3], m[4], m[1], m[2]) for m in batch]
 
                 for (cid, iy, ix, lon, lat), elev_val in zip(batch, elevs, strict=False):
                     rec = {
@@ -531,7 +533,9 @@ def build_arg_parser() -> argparse.ArgumentParser:
     p.add_argument("--output", type=Path, default=DEFAULT_OUTPUT_PATH)
     p.add_argument("--limit-blocks", type=int, default=None)
     p.add_argument("--no-cache", action="store_true")
-    p.add_argument("--offline", action="store_true", help="Usar modelo DEM local sin llamar a la API")
+    p.add_argument(
+        "--offline", action="store_true", help="Usar modelo DEM local sin llamar a la API"
+    )
     p.add_argument("--api-url", default=OPEN_ELEVATION_URL)
     return p
 

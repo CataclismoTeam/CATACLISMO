@@ -2,13 +2,13 @@
 
 from __future__ import annotations
 
-from datetime import datetime, timedelta, timezone
 import importlib.util
 import os
 import sys
 import tempfile
 import types
 import unittest
+from datetime import datetime, timedelta
 from unittest import mock
 
 from app.juli import config as juli_config
@@ -50,7 +50,9 @@ class TestJuliCoordsAndTracker(unittest.TestCase):
             pred_path = os.path.join(tmp, "cata_predictions.json")
             tracker = JuliTracker(state_path=state_path, geojson_path=geojson_path)
 
-            team = tracker.upsert_team("team_alpha", "Alfa Test", unit_code="ALF-1", radio_channel="VHF-07")
+            team = tracker.upsert_team(
+                "team_alpha", "Alfa Test", unit_code="ALF-1", radio_channel="VHF-07"
+            )
             self.assertEqual(team.team_id, "team_alpha")
 
             op = tracker.upsert_operator(
@@ -64,7 +66,9 @@ class TestJuliCoordsAndTracker(unittest.TestCase):
 
             # Confirmar prueba de vida reinicia alerta de inmovilidad
             tracker.confirm_proof_of_life("op_alpha_1", note="OK en radio")
-            future_dt = datetime.fromisoformat(tracker.operators["op_alpha_1"].last_moved_at) + timedelta(minutes=20)
+            future_dt = datetime.fromisoformat(
+                tracker.operators["op_alpha_1"].last_moved_at
+            ) + timedelta(minutes=20)
             res = tracker.evaluate_proof_of_life(now=future_dt, cata_predictions_path=pred_path)
             alpha_alerts = [a for a in res["alerts"] if a["operator_id"] == "op_alpha_1"]
             self.assertEqual(len(alpha_alerts), 1)
@@ -171,7 +175,11 @@ class TestAppCoreWithMocks(unittest.IsolatedAsyncioTestCase):
             def __init__(self, **kwargs) -> None:
                 for cls in reversed(self.__class__.__mro__):
                     for k, v in cls.__dict__.items():
-                        if not k.startswith("_") and not callable(v) and not isinstance(v, (staticmethod, classmethod, property)):
+                        if (
+                            not k.startswith("_")
+                            and not callable(v)
+                            and not isinstance(v, (staticmethod, classmethod, property))
+                        ):
                             setattr(self, k, v)
                 for k, v in kwargs.items():
                     setattr(self, k, v)
@@ -188,7 +196,11 @@ class TestAppCoreWithMocks(unittest.IsolatedAsyncioTestCase):
         class _BaseSettings:
             def __init__(self, **kwargs) -> None:
                 for k, v in self.__class__.__dict__.items():
-                    if not k.startswith("_") and not isinstance(v, (staticmethod, classmethod, property)) and not callable(v):
+                    if (
+                        not k.startswith("_")
+                        and not isinstance(v, (staticmethod, classmethod, property))
+                        and not callable(v)
+                    ):
                         setattr(self, k, kwargs.get(k, v))
 
         pydantic_settings_mod.BaseSettings = _BaseSettings
@@ -276,7 +288,7 @@ class TestAppCoreWithMocks(unittest.IsolatedAsyncioTestCase):
                     self.assertEqual(h["status"], "ok")
                     self.assertEqual(h["pipeline"], ["valen", "cata", "lucia"])
 
-                    # 2. Simulación radio vía endpoint handler + difusión al WS /ws principal via hook
+                    # 2. Simulación radio vía endpoint handler + difusión al WS /ws principal
                     received_ws: list[dict] = []
 
                     class _CapturingWS:
@@ -296,11 +308,16 @@ class TestAppCoreWithMocks(unittest.IsolatedAsyncioTestCase):
                         )
                         res = await app_juli_main.simulate_juli_radio_switch(req)
                         self.assertEqual(res["current"]["team_id"], "team_ume_zamora")
-                        self.assertTrue(any(ev.get("event") == "juli_radio_frequency_switched" for ev in received_ws))
+                        self.assertTrue(
+                            any(
+                                ev.get("event") == "juli_radio_frequency_switched"
+                                for ev in received_ws
+                            )
+                        )
                     finally:
                         app_main.manager.disconnect(ws_client)
 
-                    # 3. Rechazo 400 cuando compute_lucia_interactive_route recibe cuadrante inválido
+                    # 3. Rechazo 400 si compute_lucia_interactive_route recibe cuadrante inválido
                     bad_route_req = app_main.LuciaRouteRequest(quadrant_id="INVALIDO")
                     with self.assertRaises(app_main.HTTPException) as ctx:
                         await app_main.compute_lucia_interactive_route(bad_route_req)
@@ -309,7 +326,9 @@ class TestAppCoreWithMocks(unittest.IsolatedAsyncioTestCase):
                     for mod_name in ("app.main", "app.juli.main"):
                         sys.modules.pop(mod_name, None)
 
-    @unittest.skipUnless(_HAS_FASTAPI, "Requiere fastapi instalado en .venv para TestClient en vivo")
+    @unittest.skipUnless(
+        _HAS_FASTAPI, "Requiere fastapi instalado en .venv para TestClient en vivo"
+    )
     def test_live_fastapi_health_endpoint(self) -> None:
         from fastapi.testclient import TestClient
 

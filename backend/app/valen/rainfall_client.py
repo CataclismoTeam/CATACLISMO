@@ -17,9 +17,8 @@ import hashlib
 import json
 import sqlite3
 from contextlib import closing
-from datetime import datetime, timedelta, timezone
+from datetime import UTC, datetime, timedelta
 from pathlib import Path
-from typing import Any
 
 import numpy as np
 import pandas as pd
@@ -34,18 +33,18 @@ ALGORITHM_NAME: str = "valen"
 # NASA POWER API
 POWER_BASE_URL = "https://power.larc.nasa.gov/api/temporal/daily/point"
 POWER_PARAMETERS = [
-    "PRECTOTCORR",   # Precipitación corregida (mm/day)
-    "T2M",           # Temperatura 2m (°C)
-    "T2M_MAX",       # Temp máx 2m (°C)
-    "T2M_MIN",       # Temp mín 2m (°C)
-    "RH2M",          # Humedad relativa 2m (%)
-    "WS2M",          # Velocidad viento 2m (m/s)
-    "WD2M",          # Dirección viento 2m (°)
-    "ALLSKY_SFC_SW_DWN", # Radiación solar superficie (kWh/m2/day)
+    "PRECTOTCORR",  # Precipitación corregida (mm/day)
+    "T2M",  # Temperatura 2m (°C)
+    "T2M_MAX",  # Temp máx 2m (°C)
+    "T2M_MIN",  # Temp mín 2m (°C)
+    "RH2M",  # Humedad relativa 2m (%)
+    "WS2M",  # Velocidad viento 2m (m/s)
+    "WD2M",  # Dirección viento 2m (°)
+    "ALLSKY_SFC_SW_DWN",  # Radiación solar superficie (kWh/m2/day)
 ]
 
 # Thresholds para análisis
-RAIN_THRESHOLD_MM = 1.0      # Día de lluvia si >= 1mm
+RAIN_THRESHOLD_MM = 1.0  # Día de lluvia si >= 1mm
 HEAVY_RAIN_THRESHOLD_MM = 10.0  # Lluvia significativa
 
 DEFAULT_CACHE_DIR = Path(__file__).parent / "cache"
@@ -54,6 +53,7 @@ DEFAULT_CACHE_DB = DEFAULT_CACHE_DIR / "rainfall_cache.sqlite"
 # ---------------------------------------------------------------------------
 # Cache SQLite
 # ---------------------------------------------------------------------------
+
 
 class RainfallCache:
     """Cache persistente para datos de precipitación."""
@@ -111,8 +111,7 @@ class RainfallCache:
         with closing(sqlite3.connect(self.db_path)) as conn, conn:
             conn.row_factory = sqlite3.Row
             row = conn.execute(
-                "SELECT params_json FROM power_daily WHERE cache_key = ?",
-                (key,)
+                "SELECT params_json FROM power_daily WHERE cache_key = ?", (key,)
             ).fetchone()
             if row:
                 return json.loads(row["params_json"])
@@ -121,12 +120,14 @@ class RainfallCache:
     def set_power_daily(self, lon: float, lat: float, date: str, params: dict) -> None:
         key = self._make_key(lon, lat, date, "power")
         with closing(sqlite3.connect(self.db_path)) as conn, conn:
-            conn.execute("""
+            conn.execute(
+                """
                 INSERT OR REPLACE INTO power_daily
                 (cache_key, lon, lat, date, params_json, created_at)
                 VALUES (?, ?, ?, ?, ?, ?)
-            """, (key, lon, lat, date, json.dumps(params),
-                  datetime.now(timezone.utc).isoformat()))
+            """,
+                (key, lon, lat, date, json.dumps(params), datetime.now(UTC).isoformat()),
+            )
             conn.commit()
 
     # Rainfall metrics
@@ -139,7 +140,7 @@ class RainfallCache:
                           precip_7d_mm, precip_30d_mm, precip_90d_mm,
                           dry_spell_max_days, rain_days_30d
                    FROM rainfall_metrics WHERE cache_key = ?""",
-                (key,)
+                (key,),
             ).fetchone()
             if row:
                 return dict(row)
@@ -148,24 +149,30 @@ class RainfallCache:
     def set_metrics(self, lon: float, lat: float, reference_date: str, metrics: dict) -> None:
         key = self._make_key(lon, lat, reference_date, "metrics")
         with closing(sqlite3.connect(self.db_path)) as conn, conn:
-            conn.execute("""
+            conn.execute(
+                """
                 INSERT OR REPLACE INTO rainfall_metrics
                 (cache_key, lon, lat, reference_date,
                  days_since_rain_1mm, days_since_rain_10mm,
                  precip_7d_mm, precip_30d_mm, precip_90d_mm,
                  dry_spell_max_days, rain_days_30d, created_at)
                 VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-            """, (
-                key, lon, lat, reference_date,
-                metrics.get("days_since_rain_1mm"),
-                metrics.get("days_since_rain_10mm"),
-                metrics.get("precip_7d_mm"),
-                metrics.get("precip_30d_mm"),
-                metrics.get("precip_90d_mm"),
-                metrics.get("dry_spell_max_days"),
-                metrics.get("rain_days_30d"),
-                datetime.now(timezone.utc).isoformat()
-            ))
+            """,
+                (
+                    key,
+                    lon,
+                    lat,
+                    reference_date,
+                    metrics.get("days_since_rain_1mm"),
+                    metrics.get("days_since_rain_10mm"),
+                    metrics.get("precip_7d_mm"),
+                    metrics.get("precip_30d_mm"),
+                    metrics.get("precip_90d_mm"),
+                    metrics.get("dry_spell_max_days"),
+                    metrics.get("rain_days_30d"),
+                    datetime.now(UTC).isoformat(),
+                ),
+            )
             conn.commit()
 
     def stats(self) -> dict:
@@ -179,6 +186,7 @@ class RainfallCache:
 # ---------------------------------------------------------------------------
 # Cliente NASA POWER
 # ---------------------------------------------------------------------------
+
 
 class RainfallClient:
     """Cliente NASA POWER + cálculo métricas de sequía/lluvia."""
@@ -257,11 +265,15 @@ class RainfallClient:
                 cached = self.cache.get_power_daily(lon, lat, current)
                 if cached:
                     results.append(cached)
-                    current = (datetime.fromisoformat(current) + timedelta(days=1)).strftime("%Y-%m-%d")
+                    current = (datetime.fromisoformat(current) + timedelta(days=1)).strftime(
+                        "%Y-%m-%d"
+                    )
                     continue
 
             # Fetch en bloques de hasta 365 días (límite POWER)
-            block_end = min(end, (datetime.fromisoformat(current) + timedelta(days=300)).strftime("%Y-%m-%d"))
+            block_end = min(
+                end, (datetime.fromisoformat(current) + timedelta(days=300)).strftime("%Y-%m-%d")
+            )
             data = self._fetch_power_daily(lon, lat, current, block_end)
 
             try:
@@ -349,7 +361,11 @@ class RainfallClient:
                 current_dry = 0
 
         # Días de lluvia en últimos 30 días
-        rain_days_30d = int(np.sum(precip[-30:] >= RAIN_THRESHOLD_MM)) if len(precip) >= 30 else int(np.sum(precip >= RAIN_THRESHOLD_MM))
+        rain_days_30d = (
+            int(np.sum(precip[-30:] >= RAIN_THRESHOLD_MM))
+            if len(precip) >= 30
+            else int(np.sum(precip >= RAIN_THRESHOLD_MM))
+        )
 
         metrics = {
             "reference_date": reference_date,
@@ -399,7 +415,8 @@ class RainfallClient:
 
         print(
             f"Calculando métricas lluvia para {len(unique_cells)} celdas-día "
-            f"(orden descendente: {unique_cells['date'].iloc[0]} -> {unique_cells['date'].iloc[-1]})..."
+            f"(orden descendente: {unique_cells['date'].iloc[0]} -> "
+            f"{unique_cells['date'].iloc[-1]})..."
         )
 
         # Extraer coordenadas y agrupar por nodo de malla NASA POWER (0.5°)
@@ -422,7 +439,7 @@ class RainfallClient:
 
         print(f"Nodos únicos NASA POWER (malla {grid_deg}°): {len(grid_ranges)}")
 
-        # Descargar serie diaria completa por cada nodo de 0.5° (empezando por los nodos más recientes)
+        # Descargar serie diaria completa por cada nodo de 0.5° (nodos más recientes primero)
         node_order = sorted(
             grid_ranges.keys(),
             key=lambda k: max(grid_ranges[k]),
@@ -433,7 +450,9 @@ class RainfallClient:
         def _fetch_node(node: tuple[float, float]):
             glon, glat = node
             dates_list = grid_ranges[node]
-            d_min = (datetime.strptime(min(dates_list), "%Y-%m-%d") - timedelta(days=lookback_days)).strftime("%Y-%m-%d")
+            d_min = (
+                datetime.strptime(min(dates_list), "%Y-%m-%d") - timedelta(days=lookback_days)
+            ).strftime("%Y-%m-%d")
             d_max = max(dates_list)
             try:
                 data = self._fetch_power_daily(glon, glat, d_min, d_max)
@@ -528,8 +547,10 @@ class RainfallClient:
 # CLI
 # ---------------------------------------------------------------------------
 
+
 def build_arg_parser():
     import argparse
+
     p = argparse.ArgumentParser(description="Algoritmo VALEN — Cliente Lluvia NASA POWER")
     p.add_argument("--cell-day", type=Path, help="cell_day.parquet a enriquecer")
     p.add_argument("--output", type=Path, help="JSONL salida enriquecido")
@@ -544,7 +565,7 @@ def build_arg_parser():
 
 
 def main(argv: list[str] | None = None) -> int:
-    import argparse
+
     args = build_arg_parser().parse_args(argv)
 
     cache = RainfallCache(args.cache_dir / "rainfall_cache.sqlite")
@@ -573,4 +594,5 @@ def main(argv: list[str] | None = None) -> int:
 
 if __name__ == "__main__":
     import sys
+
     sys.exit(main())

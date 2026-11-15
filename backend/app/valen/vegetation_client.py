@@ -13,12 +13,11 @@ from __future__ import annotations
 
 import hashlib
 import json
-import os
+import logging
 import sqlite3
 from contextlib import closing
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from pathlib import Path
-from typing import Any, Literal
 
 import numpy as np
 import pandas as pd
@@ -26,11 +25,13 @@ import requests
 
 try:
     from pyproj import Transformer
+
     TRANSFORMER_3035_TO_4326 = Transformer.from_crs("EPSG:3035", "EPSG:4326", always_xy=True)
 except ImportError:
     TRANSFORMER_3035_TO_4326 = None
 
 ALGORITHM_NAME: str = "valen"
+logger = logging.getLogger("valen.vegetation_client")
 
 # ---------------------------------------------------------------------------
 # Configuración
@@ -62,46 +63,46 @@ WORLDCOVER_CLASSES = {
 # Inflamabilidad relativa por clase WorldCover (1-5, 5=más inflamable)
 # Basado en literatura de incendios mediterráneos
 FLAMMABILITY_WORLDCOVER = {
-    10: 4,   # Tree cover (bosque) - depende de especie
-    20: 5,   # Shrubland (matorral) - muy inflamable
-    30: 3,   # Grassland (pastizal) - estacional
-    40: 2,   # Cropland (cultivos) - bajo salvo rastrojos
-    50: 1,   # Built-up (urbano) - muy bajo
-    60: 2,   # Bare/sparse - bajo
-    70: 1,   # Snow/ice - nulo
-    80: 1,   # Water - nulo
-    90: 2,   # Wetland - bajo
-    95: 3,   # Mangroves - medio
+    10: 4,  # Tree cover (bosque) - depende de especie
+    20: 5,  # Shrubland (matorral) - muy inflamable
+    30: 3,  # Grassland (pastizal) - estacional
+    40: 2,  # Cropland (cultivos) - bajo salvo rastrojos
+    50: 1,  # Built-up (urbano) - muy bajo
+    60: 2,  # Bare/sparse - bajo
+    70: 1,  # Snow/ice - nulo
+    80: 1,  # Water - nulo
+    90: 2,  # Wetland - bajo
+    95: 3,  # Mangroves - medio
     100: 1,  # Moss/lichen - muy bajo
 }
 
 # Especies forestales IFN3 principales en España y su inflamabilidad (1-5)
 IFN3_SPECIES_FLAMMABILITY = {
     # Coníferas (alta inflamabilidad)
-    "Pinus halepensis": 5,      # Pino carrasco
-    "Pinus pinaster": 5,        # Pino rodeno
-    "Pinus pinea": 4,           # Pino piñonero
-    "Pinus sylvestris": 4,      # Pino silvestre
-    "Pinus nigra": 4,           # Pino laricio
-    "Pinus uncinata": 3,        # Pino negro
-    "Abies alba": 3,            # Abeto
+    "Pinus halepensis": 5,  # Pino carrasco
+    "Pinus pinaster": 5,  # Pino rodeno
+    "Pinus pinea": 4,  # Pino piñonero
+    "Pinus sylvestris": 4,  # Pino silvestre
+    "Pinus nigra": 4,  # Pino laricio
+    "Pinus uncinata": 3,  # Pino negro
+    "Abies alba": 3,  # Abeto
     # Quercus (media-alta)
-    "Quercus ilex": 4,          # Encina
-    "Quercus suber": 4,         # Alcornoque
-    "Quercus pyrenaica": 3,     # Roble melojo
-    "Quercus faginea": 3,       # Quejigo
-    "Quercus pubescens": 3,     # Roble pubescente
+    "Quercus ilex": 4,  # Encina
+    "Quercus suber": 4,  # Alcornoque
+    "Quercus pyrenaica": 3,  # Roble melojo
+    "Quercus faginea": 3,  # Quejigo
+    "Quercus pubescens": 3,  # Roble pubescente
     # Otras frondosas (media-baja)
-    "Fagus sylvatica": 2,       # Haya
-    "Castanea sativa": 2,       # Castaño
-    "Betula pendula": 2,        # Abedul
-    "Populus sp.": 2,           # Chopo/álamo
-    "Eucalyptus sp.": 5,        # Eucalipto (muy inflamable)
+    "Fagus sylvatica": 2,  # Haya
+    "Castanea sativa": 2,  # Castaño
+    "Betula pendula": 2,  # Abedul
+    "Populus sp.": 2,  # Chopo/álamo
+    "Eucalyptus sp.": 5,  # Eucalipto (muy inflamable)
     # Matorrales
-    "Cistus sp.": 5,            # Jara
-    "Erica sp.": 4,             # Brezo
-    "Genista sp.": 4,           # Retama
-    "Ulex sp.": 5,              # Aulaga
+    "Cistus sp.": 5,  # Jara
+    "Erica sp.": 4,  # Brezo
+    "Genista sp.": 4,  # Retama
+    "Ulex sp.": 5,  # Aulaga
 }
 
 DEFAULT_CACHE_DIR = Path(__file__).parent / "cache"
@@ -111,6 +112,7 @@ DEFAULT_CACHE_DB = DEFAULT_CACHE_DIR / "vegetation_cache.sqlite"
 # ---------------------------------------------------------------------------
 # Cache SQLite
 # ---------------------------------------------------------------------------
+
 
 class VegetationCache:
     """Cache persistente para consultas de vegetación."""
@@ -165,8 +167,9 @@ class VegetationCache:
         with closing(sqlite3.connect(self.db_path)) as conn, conn:
             conn.row_factory = sqlite3.Row
             row = conn.execute(
-                "SELECT class_id, class_name, flammability FROM worldcover_lookup WHERE cache_key = ?",
-                (key,)
+                "SELECT class_id, class_name, flammability FROM worldcover_lookup "
+                "WHERE cache_key = ?",
+                (key,),
             ).fetchone()
             if row:
                 return dict(row)
@@ -177,12 +180,23 @@ class VegetationCache:
         class_name = WORLDCOVER_CLASSES.get(class_id, "Unknown")
         flammability = FLAMMABILITY_WORLDCOVER.get(class_id, 1)
         with closing(sqlite3.connect(self.db_path)) as conn, conn:
-            conn.execute("""
+            conn.execute(
+                """
                 INSERT OR REPLACE INTO worldcover_lookup
                 (cache_key, lon, lat, class_id, class_name, flammability, tile_url, created_at)
                 VALUES (?, ?, ?, ?, ?, ?, ?, ?)
-            """, (key, lon, lat, class_id, class_name, flammability, tile_url,
-                  datetime.now(timezone.utc).isoformat()))
+            """,
+                (
+                    key,
+                    lon,
+                    lat,
+                    class_id,
+                    class_name,
+                    flammability,
+                    tile_url,
+                    datetime.now(UTC).isoformat(),
+                ),
+            )
             conn.commit()
 
     # IFN3
@@ -191,23 +205,35 @@ class VegetationCache:
         with closing(sqlite3.connect(self.db_path)) as conn, conn:
             conn.row_factory = sqlite3.Row
             row = conn.execute(
-                "SELECT species_list, dominant_species, max_flammability FROM ifn3_lookup WHERE cache_key = ?",
-                (key,)
+                "SELECT species_list, dominant_species, max_flammability FROM ifn3_lookup "
+                "WHERE cache_key = ?",
+                (key,),
             ).fetchone()
             if row:
                 return dict(row)
         return None
 
-    def set_ifn3(self, lon: float, lat: float, species_list: list[str],
-                 dominant: str, max_flammability: int) -> None:
+    def set_ifn3(
+        self, lon: float, lat: float, species_list: list[str], dominant: str, max_flammability: int
+    ) -> None:
         key = self._make_key(lon, lat, "ifn3")
         with closing(sqlite3.connect(self.db_path)) as conn, conn:
-            conn.execute("""
+            conn.execute(
+                """
                 INSERT OR REPLACE INTO ifn3_lookup
                 (cache_key, lon, lat, species_list, dominant_species, max_flammability, created_at)
                 VALUES (?, ?, ?, ?, ?, ?, ?)
-            """, (key, lon, lat, json.dumps(species_list), dominant, max_flammability,
-                  datetime.now(timezone.utc).isoformat()))
+            """,
+                (
+                    key,
+                    lon,
+                    lat,
+                    json.dumps(species_list),
+                    dominant,
+                    max_flammability,
+                    datetime.now(UTC).isoformat(),
+                ),
+            )
             conn.commit()
 
     def stats(self) -> dict:
@@ -221,6 +247,7 @@ class VegetationCache:
 # ---------------------------------------------------------------------------
 # Utilidades WorldCover
 # ---------------------------------------------------------------------------
+
 
 def lonlat_to_tile(lon: float, lat: float) -> tuple[int, int]:
     """Convierte lon/lat a índices de tile WorldCover (3°x3°)."""
@@ -255,6 +282,7 @@ def get_worldcover_tile_url(tile_x: int, tile_y: int) -> str:
 # ---------------------------------------------------------------------------
 # Cliente principal
 # ---------------------------------------------------------------------------
+
 
 class VegetationClient:
     """Cliente unificado ESA WorldCover + IFN3."""
@@ -333,7 +361,7 @@ class VegetationClient:
             "LAYERS": "Masa_Forestal,Especie_Principal",
             "QUERY_LAYERS": "Masa_Forestal,Especie_Principal",
             "CRS": "EPSG:4326",
-            "BBOX": f"{lon-0.001},{lat-0.001},{lon+0.001},{lat+0.001}",
+            "BBOX": f"{lon - 0.001},{lat - 0.001},{lon + 0.001},{lat + 0.001}",
             "WIDTH": 10,
             "HEIGHT": 10,
             "X": 5,
@@ -383,8 +411,8 @@ class VegetationClient:
                         sp = str(props[key]).strip()
                         if sp and sp not in species:
                             species.append(sp)
-        except Exception:
-            pass
+        except Exception as exc:
+            logger.debug("Error parseando respuesta IFN3: %s", exc)
         return species
 
     # ---- Combinado ----
@@ -417,7 +445,7 @@ class VegetationClient:
             "worldcover": wc,
             "ifn3": ifn3,
             "combined_flammability": combined_flammability,
-            "queried_at": datetime.now(timezone.utc).isoformat(),
+            "queried_at": datetime.now(UTC).isoformat(),
         }
 
     def enrich_cell_day(
@@ -428,7 +456,7 @@ class VegetationClient:
         use_cache: bool = True,
         use_ifn3_wms: bool = False,
     ) -> pd.DataFrame:
-        """Enriquece cell_day.parquet con perfil de vegetación (ordenado de más nuevo a más antiguo)."""
+        """Enriquece cell_day.parquet con perfil vegetal (orden más nuevo a más antiguo)."""
         cell_day = pd.read_parquet(cell_day_path)
         print(f"Cargados {len(cell_day)} cell-days")
 
@@ -484,9 +512,13 @@ class VegetationClient:
 # CLI
 # ---------------------------------------------------------------------------
 
+
 def build_arg_parser():
     import argparse
-    p = argparse.ArgumentParser(description="Algoritmo VALEN — Cliente Vegetación WorldCover + IFN3")
+
+    p = argparse.ArgumentParser(
+        description="Algoritmo VALEN — Cliente Vegetación WorldCover + IFN3"
+    )
     p.add_argument("--cell-day", type=Path, help="cell_day.parquet a enriquecer")
     p.add_argument("--output", type=Path, help="JSONL salida enriquecido")
     p.add_argument("--cache-dir", type=Path, default=DEFAULT_CACHE_DIR, help="Directorio cache")
@@ -498,7 +530,7 @@ def build_arg_parser():
 
 
 def main(argv: list[str] | None = None) -> int:
-    import argparse
+
     args = build_arg_parser().parse_args(argv)
 
     cache = VegetationCache(args.cache_dir / "vegetation_cache.sqlite")
@@ -524,4 +556,5 @@ def main(argv: list[str] | None = None) -> int:
 
 if __name__ == "__main__":
     import sys
+
     sys.exit(main())

@@ -12,10 +12,10 @@ Reglas de seguridad frente al fuego aplicadas por LUCIA:
      de árboles. Si un evacuado nace completamente rodeado, sólo en modo de rescate de
      último recurso (`emergency_burned_fallback=True`) se permite salir cruzando el mínimo
      número de celdas ya quemadas enfriadas, jamás entrando en fuego activo (`B`/`P`).
-  3. **Zonas sin quemar (`SAFE` — estado `0='.'`) con Threshold Seguro al Fuego (`safe_fire_threshold`)**:
-     - Si `fire_probability_t1 >= safe_fire_threshold`: clasificada como `THRESHOLD_BUFFER_UNSAFE`
-       y bloqueada para garantizar un colchón de seguridad frente al avance del fuego.
-     - Si `fire_probability_t1 < safe_fire_threshold`: clasificada como `SAFE_UNBURNED` (transitable).
+  3. **Zonas sin quemar (`SAFE` — `'0'`) con Threshold (`safe_fire_threshold`)**:
+     - Si `fire_probability_t1 >= safe_fire_threshold`: `THRESHOLD_BUFFER_UNSAFE`
+       (bloqueada para garantizar un colchón de seguridad frente al avance del fuego).
+     - Si `fire_probability_t1 < safe_fire_threshold`: `SAFE_UNBURNED` (transitable).
   4. **Zona libre de peligro (`SAFE_HAVEN` / destino de evacuación)**:
      Celda `SAFE_UNBURNED` con `fire_probability_t1 <= safe_haven_max_prob`, alejada al menos
      `min_safe_distance_cells` del frente de fuego/quemado y con alto `safe_haven_score` neuronal.
@@ -214,14 +214,14 @@ def load_zone_elevation_grids(
     elevation_index: dict[str, dict[str, Any]] | None,
     fetch_missing_online: bool = config.FETCH_MISSING_ELEVATION_ONLINE,
 ) -> dict[str, Any]:
-    """Construye las rejillas de altitud y pendiente `(H, W)` de una zona desde VALEN/Open-Elevation.
+    """Construye rejillas de altitud y pendiente `(H, W)` desde VALEN/Open-Elevation.
 
     Devuelve:
       - `elevation_m`: altitud sobre el nivel del mar (metros) `(H, W)`.
       - `elevation_norm`: altitud relativa normalizada en `[0, 1]` dentro de la zona (canal 13 TF).
       - `slope_pct`: pendiente media de cada celda en porcentaje `(H, W)`.
       - `slope_steepness`: pendiente normalizada en `[0, 1]` (`slope_pct / 35.0`, canal 14 TF).
-      - `elevation_source`: fuente predominante (`"open_elevation_api"` o `"open_elevation_fallback_dem"`).
+      - `elevation_source`: fuente (`"open_elevation_api"` o `"open_elevation_fallback_dem"`).
     """
     y0 = int(zone.get("origin_iy", 0))
     x0 = int(zone.get("origin_ix", 0))
@@ -277,10 +277,10 @@ def classify_zone_fire_safety(
 ) -> dict[str, np.ndarray]:
     """Clasifica cada celda `(r, c)` de una zona de CATA en las 4 categorías térmicas de LUCIA:
 
-      - `SAFE_UNBURNED` (código 0): Sin quemar (`state == 0`) y `prob_t1 < safe_fire_threshold`.
-      - `THRESHOLD_BUFFER_UNSAFE` (código 1): Sin quemar (`state == 0`) pero `prob_t1 >= safe_fire_threshold`.
-      - `ALREADY_BURNED` (código 2): Ya quemada (`state == 2 = 'F'`).
-      - `BURNING_ACTIVE` (código 3): Quemándose ahora o predicha en llamas (`state == 3 = 'B'` o `state == 1 = 'P'`).
+    - `SAFE_UNBURNED` (código 0): Sin quemar (`state == 0`) y `prob_t1 < safe_fire_threshold`.
+    - `THRESHOLD_BUFFER_UNSAFE` (1): Sin quemar (`state == 0`), `prob_t1 >= safe_fire_threshold`.
+    - `ALREADY_BURNED` (código 2): Ya quemada (`state == 2 = 'F'`).
+    - `BURNING_ACTIVE` (3): Ardiendo o predicha (`state == 3 = 'B'` o `state == 1 = 'P'`).
     """
     state_2d = np.asarray(zone["state_matrix"], dtype=np.int8)
     probs_2d = np.asarray(zone["fire_probability_grid"], dtype=np.float32)
@@ -295,9 +295,7 @@ def classify_zone_fire_safety(
         & (~burning_active_mask)
         & (probs_2d >= safe_fire_threshold)
     )
-    safe_unburned_mask = (
-        (state_2d == config.QUADRANT_STATE_SAFE) & (probs_2d < safe_fire_threshold)
-    )
+    safe_unburned_mask = (state_2d == config.QUADRANT_STATE_SAFE) & (probs_2d < safe_fire_threshold)
 
     category_code = np.zeros(state_2d.shape, dtype=np.int8)
     category_code[threshold_unsafe_mask] = 1
@@ -327,7 +325,7 @@ def identify_safe_havens(
     min_safe_distance_cells: float = config.MIN_SAFE_DISTANCE_CELLS,
     safe_haven_max_prob: float = config.SAFE_HAVEN_MAX_PROB,
 ) -> set[tuple[int, int]]:
-    """Determina el conjunto de celdas que califican como **Zona Libre de Peligro** (`SAFE_HAVEN`)."""
+    """Determina el conjunto de celdas **Zona Libre de Peligro** (`SAFE_HAVEN`)."""
     safe_mask = safety_info["safe_unburned_mask"]
     dist_to_hazard = safety_info["dist_to_hazard"]
 
@@ -354,10 +352,10 @@ def select_threatened_origins(
     probs_2d: np.ndarray,
     max_origins: int = 2,
 ) -> list[tuple[int, int]]:
-    """Selecciona automáticamente puntos de inicio críticos (personas/animales cerca del frente de fuego).
+    """Selecciona puntos de inicio críticos (personas/animales cerca del frente de fuego).
 
-    Busca celdas `SAFE_UNBURNED` situadas a distancia `[1.0, 2.5]` celdas del frente de fuego
-    (zonas en peligro inminente que necesitan evacuación inmediata), suficientemente separadas entre sí.
+    Busca celdas `SAFE_UNBURNED` a distancia `[1.0, 2.5]` del frente de fuego
+    (zonas en peligro inminente que necesitan evacuación), separadas entre sí.
     """
     safe_mask = safety_info["safe_unburned_mask"]
     dist = safety_info["dist_to_hazard"]
@@ -399,14 +397,14 @@ def resolve_zone_meeting_points(
 ) -> list[dict[str, Any]]:
     """Resuelve y valida los **Puntos de Encuentro (`meeting_point`)** explícitos de una zona.
 
-    1. Si el usuario o Frontend pasa `custom_meeting_points` (con `lon`/`lat`, `cell_id` o `grid_rc`),
-       los proyecta sobre la zona y verifica si cada uno está libre de peligro (`is_safe = True`,
-       `status = "SAFE_ACTIVE"`) o comprometido por el fuego/umbral (`status = "COMPROMISED_BY_FIRE"`).
-    2. Además (o si no se especificaron puntos personalizados seguros), designa automáticamente
-       hasta `max_auto_meeting_points` **Puntos de Encuentro Oficiales** en la zona, priorizando:
+    1. Si se pasa `custom_meeting_points` (`lon`/`lat`, `cell_id` o `grid_rc`), los proyecta
+       sobre la zona y verifica si cada uno está libre de peligro (`is_safe = True`,
+       `status = "SAFE_ACTIVE"`) o comprometido (`status = "COMPROMISED_BY_FIRE"`).
+    2. Además (o si no hay puntos personalizados seguros), designa automáticamente
+       hasta `max_auto_meeting_points` **Puntos de Encuentro Oficiales**, priorizando:
          - Celdas seguras y alejadas del frente de fuego (`identify_safe_havens`).
          - Terreno llano según **Open-Elevation** (`slope_pct <= MEETING_POINT_MAX_SLOPE_PCT`).
-         - Conexión directa a la red viaria de **OpenStreetMap** (`major`/`secondary`/`local`/`track`).
+         - Acceso directo a red viaria **OpenStreetMap** (`major`/`secondary`/`local`).
     """
     zone_id = str(zone["zone_id"])
     y0 = int(zone.get("origin_iy", 0))
@@ -512,7 +510,9 @@ def resolve_zone_meeting_points(
             if not (0 <= r_c < h and 0 <= c_c < w) or (r_c, c_c) in seen_rc:
                 continue
             seen_rc.add((r_c, c_c))
-            mp_id = str(raw_mp.get("id") or raw_mp.get("meeting_point_id") or f"{zone_id}_mp_custom_{idx}")
+            mp_id = str(
+                raw_mp.get("id") or raw_mp.get("meeting_point_id") or f"{zone_id}_mp_custom_{idx}"
+            )
             mp_name = str(raw_mp.get("name") or f"Punto de Encuentro Personalizado #{idx + 1}")
             mp_kind = str(raw_mp.get("kind") or "custom_user_meeting_point")
             mp_cap = int(raw_mp.get("capacity", 300))
@@ -520,7 +520,7 @@ def resolve_zone_meeting_points(
                 _build_mp_entry(r_c, c_c, mp_id, mp_name, mp_kind, is_custom=True, capacity=mp_cap)
             )
 
-    # 2. Completar con Puntos de Encuentro Oficiales óptimos (carretera OSM + llano Open-Elevation + lejos del fuego)
+    # 2. Completar con Puntos de Encuentro Oficiales (OSM + llano Open-Elevation + seguro)
     safe_custom_count = sum(1 for mp in meeting_points if mp["is_safe"])
     if safe_custom_count < max_auto_meeting_points:
         candidate_havens = identify_safe_havens(safety_info, probs_2d, safe_haven_score_2d)
@@ -564,9 +564,7 @@ def resolve_zone_meeting_points(
             mp_id = f"{zone_id}_mp_{auto_added}"
             mp_name = f"P.E. #{auto_added} — {label_prefix} ({int(round(elev_2d[hr, hc]))} m)"
             meeting_points.append(
-                _build_mp_entry(
-                    hr, hc, mp_id, mp_name, kind, is_custom=False, capacity=400
-                )
+                _build_mp_entry(hr, hc, mp_id, mp_name, kind, is_custom=False, capacity=400)
             )
             if safe_custom_count + auto_added >= max_auto_meeting_points:
                 break
@@ -598,11 +596,10 @@ def find_safe_evacuation_route(
       - No pisar celdas sin quemar que superen el `safe_fire_threshold` (`THRESHOLD_BUFFER_UNSAFE`).
       - No pisar celdas ya quemadas (`ALREADY_BURNED`: `'F'`) salvo que `allow_already_burned=True`
         o que el punto de inicio esté completamente cercado y se active `emergency_burned_fallback`.
-      - Cumplir la ventana temporal: `tiempo_llegada_horas + safety_time_margin_hours < estimated_fire_arrival_hours`.
-      - Minimizar el funcional híbrido (distancia + coste físico CATA + campo neuronal TensorFlow LUCIA).
-      - Aprovechar carreteras, pistas y senderos OSM de VALEN (`road_grids`): el coste de paso de cada
-        celda se multiplica por su `human_speed_factor` / `animal_speed_factor` (< 1 en vías rápidas,
-        > 1 en autovías valladas para animales). Nunca permite cruzar fuego por ir por carretera.
+      - Ventana temporal: `tiempo_llegada + safety_time_margin < estimated_fire_arrival_hours`.
+      - Minimizar coste híbrido (distancia + coste físico CATA + campo neuronal TF LUCIA).
+      - Aprovechar vías OSM de VALEN (`road_grids`): multiplica por `human_speed_factor` /
+        `animal_speed_factor` (< 1 en vías rápidas, > 1 en autovías). Nunca cruza fuego.
     """
     probs_2d = np.asarray(zone["fire_probability_grid"], dtype=np.float32)
     arrival_2d = np.asarray(zone["estimated_fire_arrival_hours"], dtype=np.float32)
@@ -627,7 +624,7 @@ def find_safe_evacuation_route(
     else:
         elev_2d = np.full_like(base_cost_2d, 500.0, dtype=np.float32)
 
-    # Heurística admisible: escalar por el factor viario más rápido y el mínimo factor de pendiente de Tobler (~0.83)
+    # Heurística admisible: escalar por factor viario mínimo y mínimo de Tobler (~0.82)
     heuristic_scale = float(min(1.0, road_factor_2d.min())) * 0.82 if road_factor_2d.size else 0.82
     tf_risk_2d = np.asarray(
         tf_fields["human_risk_field"] if profile == "human" else tf_fields["animal_risk_field"],
@@ -649,9 +646,7 @@ def find_safe_evacuation_route(
     if not havens:
         return None
 
-    speed_kmh = (
-        config.HUMAN_BASE_SPEED_KMH if profile == "human" else config.ANIMAL_BASE_SPEED_KMH
-    )
+    speed_kmh = config.HUMAN_BASE_SPEED_KMH if profile == "human" else config.ANIMAL_BASE_SPEED_KMH
     cell_size_m = float(zone.get("cell_size_m", config.CELL_SIZE_M))
     cell_km = cell_size_m / 1000.0
 
@@ -745,16 +740,19 @@ def find_safe_evacuation_route(
 
                 # 5. Condición espacio-temporal de supervivencia frente al frente de fuego
                 fire_arrival = float(arrival_2d[nr, nc])
-                if not is_burned_step and next_time_hours + safety_time_margin_hours >= fire_arrival:
+                if (
+                    not is_burned_step
+                    and next_time_hours + safety_time_margin_hours >= fire_arrival
+                ):
                     continue
 
-                # 6. Coste híbrido: tiempo físico (OSM + Tobler Δz) + riesgo neuronal TF + efecto chimenea cuesta arriba
+                # 6. Coste híbrido: tiempo (OSM + Tobler Δz) + riesgo TF + efecto chimenea
                 neural_risk = float(tf_risk_2d[nr, nc])
                 prob_cell = float(probs_2d[nr, nc])
                 dist_f = float(dist_to_hazard[nr, nc])
                 prox_penalty = 1.2 / max(0.5, dist_f)
 
-                # Penalización por subir cuesta arriba cerca de un frente activo (efecto chimenea convectivo)
+                # Penalización por subir cuesta arriba cerca de fuego (efecto chimenea)
                 uphill_chimney_penalty = 0.0
                 if delta_z > 5.0 and dist_f < 4.5:
                     slope_ratio = delta_z / max(1.0, step_dist_m)
@@ -857,9 +855,7 @@ def find_safe_evacuation_route(
         end_elev_m = round(float(elev_2d[dest_r, dest_c]), 1)
 
         mp_meta = (
-            meeting_points_by_rc.get((dest_r, dest_c))
-            if meeting_points_by_rc is not None
-            else None
+            meeting_points_by_rc.get((dest_r, dest_c)) if meeting_points_by_rc is not None else None
         )
 
         return {
@@ -922,7 +918,7 @@ def build_zone_geojson_features(
     roads_index: dict[str, dict[str, Any]] | None = None,
     elevation_index: dict[str, dict[str, Any]] | None = None,
 ) -> tuple[list[dict[str, Any]], dict[str, Any]]:
-    """Genera todos los `Feature` GeoJSON (rutas, orígenes, puntos de encuentro y celdas de fuego) de una zona."""
+    """Genera `Feature` GeoJSON (rutas, orígenes, puntos de encuentro y fuego) de una zona."""
     zone_id = str(zone["zone_id"])
     y0 = int(zone.get("origin_iy", 0))
     x0 = int(zone.get("origin_ix", 0))
@@ -1123,12 +1119,8 @@ def build_zone_geojson_features(
                         "road_cells_used": route_info.get("road_cells_used", 0),
                         "road_share_ratio": route_info.get("road_share_ratio", 0.0),
                         "highway_classes_used": route_info.get("highway_classes_used", []),
-                        "emergency_burned_escape_used": route_info[
-                            "emergency_burned_escape_used"
-                        ],
-                        "destination_safe_haven_score": route_info[
-                            "destination_safe_haven_score"
-                        ],
+                        "emergency_burned_escape_used": route_info["emergency_burned_escape_used"],
+                        "destination_safe_haven_score": route_info["destination_safe_haven_score"],
                         "reference_date": ref_date,
                         "predicted_date": pred_date,
                         "stroke_color": color_hex,
@@ -1222,7 +1214,7 @@ def build_zone_geojson_features(
             for c in range(w):
                 code = int(cat_code[r, c])
                 if code == 0:
-                    continue  # Omitimos las celdas normales sin quemar para que el GeoJSON sea ligero
+                    continue  # Omitimos celdas normales sin quemar para aligerar GeoJSON
 
                 c_iy, c_ix = y0 + r, x0 + c
                 poly_coords = cell_iy_ix_to_polygon_lonlat(c_iy, c_ix, cell_size_m)
@@ -1301,7 +1293,7 @@ def generate_lucia_geojson_from_cata(
 ) -> dict[str, Any]:
     """Ejecuta el eslabón final de la pipeline **VALEN -> CATA -> LUCIA** y exporta el GeoJSON.
 
-    Lee `cata_predictions.json`, aplica el modelo TensorFlow de LUCIA (15 canales con Open-Elevation),
+    Lee `cata_predictions.json`, aplica el modelo TF de LUCIA (15 canales Open-Elevation),
     calcula las rutas más cortas y seguras hacia Puntos de Encuentro (`meeting_point`) teniendo en
     cuenta cambios de elevación (`Δz`) y escribe `lucia_routes.geojson`.
     """
@@ -1373,14 +1365,42 @@ def generate_lucia_geojson_from_cata(
             "total_meeting_points": sum(z["meeting_points_total"] for z in zone_summaries),
             "total_features": len(all_features),
             "frontend_style_guide": {
-                "evacuation_route_human": {"color": "#10b981", "width": 5, "label": "Ruta Segura Personas"},
-                "evacuation_route_animal": {"color": "#38bdf8", "width": 4, "label": "Ruta Segura Animales"},
-                "evacuation_origin": {"color": "#f59e0b", "symbol": "warning", "label": "Punto de Inicio en Riesgo"},
-                "meeting_point": {"color": "#22c55e", "symbol": "meeting-point", "label": "Punto de Encuentro Seguro"},
-                "safe_haven": {"color": "#22c55e", "symbol": "shelter", "label": "Zona Libre de Peligro"},
-                "BURNING_ACTIVE": {"color": "#ef4444", "opacity": 0.65, "label": "Quemándose / Predicción Activa"},
+                "evacuation_route_human": {
+                    "color": "#10b981",
+                    "width": 5,
+                    "label": "Ruta Segura Personas",
+                },
+                "evacuation_route_animal": {
+                    "color": "#38bdf8",
+                    "width": 4,
+                    "label": "Ruta Segura Animales",
+                },
+                "evacuation_origin": {
+                    "color": "#f59e0b",
+                    "symbol": "warning",
+                    "label": "Punto de Inicio en Riesgo",
+                },
+                "meeting_point": {
+                    "color": "#22c55e",
+                    "symbol": "meeting-point",
+                    "label": "Punto de Encuentro Seguro",
+                },
+                "safe_haven": {
+                    "color": "#22c55e",
+                    "symbol": "shelter",
+                    "label": "Zona Libre de Peligro",
+                },
+                "BURNING_ACTIVE": {
+                    "color": "#ef4444",
+                    "opacity": 0.65,
+                    "label": "Quemándose / Predicción Activa",
+                },
                 "ALREADY_BURNED": {"color": "#78350f", "opacity": 0.50, "label": "Zona Ya Quemada"},
-                "THRESHOLD_BUFFER_UNSAFE": {"color": "#f97316", "opacity": 0.35, "label": "Sin Quemar (> Threshold Seguro)"},
+                "THRESHOLD_BUFFER_UNSAFE": {
+                    "color": "#f97316",
+                    "opacity": 0.35,
+                    "label": "Sin Quemar (> Threshold Seguro)",
+                },
             },
             "zones": zone_summaries,
         },
@@ -1412,7 +1432,7 @@ def compute_Interactive_route_from_lonlat(
     cata_predictions_path: str = config.DEFAULT_CATA_PREDICTIONS_PATH,
     model_path: str | None = config.DEFAULT_MODEL_PATH,
 ) -> dict[str, Any]:
-    """Calcula en tiempo real una ruta GeoJSON desde `(lon, lat)` hacia el Punto de Encuentro más seguro."""
+    """Calcula en vivo una ruta GeoJSON desde `(lon, lat)` al Punto de Encuentro más seguro."""
     with open(cata_predictions_path, encoding="utf-8") as f:
         cata_data = json.load(f)
 
