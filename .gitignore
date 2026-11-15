@@ -112,3 +112,7 @@ Thumbs.db
 desktop.ini
 .directory
 .Trash-*
+
+# ── Datos generados y cachés de VALEN ────────────────────────────────────────
+backend/app/valen/output/
+backend/app/valen/cache/
