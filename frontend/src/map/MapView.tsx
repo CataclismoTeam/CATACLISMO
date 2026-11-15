@@ -57,6 +57,13 @@ import {
 setWorkerUrl(workerUrl);
 
 const PITCH_3D = 60;
+/**
+ * Inclinación máxima en 3D. Con 80° el horizonte ocupa media pantalla y es fácil perderse;
+ * 70° deja ver el relieve sin perder el suelo.
+ */
+const MAX_PITCH = 70;
+/** Al girar, por debajo de estos grados se vuelve solo al norte (MapLibre trae 7°) */
+const BEARING_SNAP = 15;
 /** A partir de este zoom las placas de las unidades muestran indicativo y estado */
 const LABEL_ZOOM = 13;
 const SIMULATIONS = Object.values(SCENARIOS);
@@ -170,11 +177,16 @@ export default function MapView() {
       zoom: initialView.zoom ?? camera.zoom,
       bearing: live.current.mode === '3d' ? camera.bearing : 0,
       pitch: live.current.mode === '3d' ? camera.pitch : 0,
-      maxPitch: 80,
+      maxPitch: MAX_PITCH,
+      bearingSnap: BEARING_SNAP,
       attributionControl: { compact: true },
     });
     mapRef.current = map;
+    // La brújula muestra giro e inclinación; pulsarla vuelve al norte y a vista cenital
     map.addControl(new NavigationControl({ visualizePitch: true }), 'top-right');
+    // En táctil, pellizcar solo acerca: girar con dos dedos sin querer desorienta. Se inclina
+    // arrastrando dos dedos en vertical y se gira con la brújula
+    map.touchZoomRotate.disableRotation();
     // Abajo a la derecha: la esquina izquierda es para las fichas y las coordenadas (en móvil no
     // se muestran: no hay cursor y el centro del mapa ya se ve)
     map.addControl(new ScaleControl({ unit: 'metric' }), 'bottom-right');
@@ -291,9 +303,8 @@ export default function MapView() {
       map.easeTo({ pitch: 0, bearing: 0, duration: 500 });
       map.setMaxPitch(0);
     } else {
-      map.setMaxPitch(80);
+      map.setMaxPitch(MAX_PITCH);
       map.dragRotate.enable();
-      map.touchZoomRotate.enableRotation();
       map.setTerrain({ source: 'dem', exaggeration: live.current.exaggeration });
       if (map.getPitch() < 10) map.easeTo({ pitch: PITCH_3D, duration: 500 });
     }

@@ -152,6 +152,7 @@ export function LayersPanel({ detections: load }: { detections: Remote<Detection
               <span className="font-mono">{exaggeration.toFixed(1)}×</span>
             </span>
             <input
+              name="exageracion-relieve"
               type="range"
               min={1}
               max={3}
@@ -161,7 +162,8 @@ export function LayersPanel({ detections: load }: { detections: Remote<Detection
               className="accent-accent pointer-coarse:h-11"
             />
             <span className="text-xs text-ink-muted">
-              Inclina el mapa (clic derecho o dos dedos) para la vista 2.5D.
+              Inclinar y girar: clic derecho (o Ctrl) y arrastrar; en táctil, dos dedos en vertical.
+              La brújula vuelve al norte.
             </span>
           </label>
         )}
