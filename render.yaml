@@ -1,0 +1,25 @@
+# Backend en producción (Render, plan gratuito). Render lo lee al conectar el repositorio
+# (New → Blueprint) y vuelve a desplegar en cada push a main que toque backend/ u ops/docker/.
+# El front de GitHub Pages lo usa solo: su URL va en la variable del repo VITE_API_URL.
+services:
+  - type: web
+    name: cataclismo-api
+    runtime: docker
+    plan: free
+    region: frankfurt
+    branch: main
+    dockerContext: ./backend
+    dockerfilePath: ./ops/docker/backend.Dockerfile
+    healthCheckPath: /health
+    autoDeploy: true
+    buildFilter:
+      paths:
+        - backend/**
+        - ops/docker/backend.Dockerfile
+    envVars:
+      # Orígenes del front con permiso para llamar a la API
+      - key: CORS_ORIGINS
+        value: https://cataclismoteam.github.io,http://localhost:5173,http://localhost:4173
+      # Clave de NASA FIRMS para datos casi en vivo: se pone a mano en Render (no va en git)
+      - key: FIRMS_MAP_KEY
+        sync: false

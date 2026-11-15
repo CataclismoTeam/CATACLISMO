@@ -53,7 +53,7 @@ Estado a 15 nov 2026, 15:50. Hoja de ruta de lo que falta:
 
 El front usa la API de `backend/` cuando se le da su URL (`?api=`, Ajustes → Backend o
 `VITE_API_URL`); sin ella sigue con los datos estáticos, también en GitHub Pages. Cómo
-arrancarlo: [frontend/README.md](../frontend/README.md#conexión-con-el-backend-opcional).
+arrancarlo: [frontend/README.md](../frontend/README.md#conexión-con-el-backend).
 
 - **CATA**: celdas de 1 km por categoría, sacadas de `/api/lucia/routes` (el fichero de
   `/api/cata/predictions` aún no existe en el backend y da 404).

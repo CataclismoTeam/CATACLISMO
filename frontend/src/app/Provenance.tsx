@@ -71,14 +71,22 @@ export function Provenance() {
             }
             className={cn(
               'flex h-full items-center gap-1.5 border-l border-line-strong px-2',
-              backend === 'conectado' ? 'text-accent' : 'text-ink-muted line-through',
+              backend === 'conectado'
+                ? 'text-accent'
+                : backend === 'conectando'
+                  ? 'text-ink-muted'
+                  : 'text-ink-muted line-through',
             )}
           >
             <span
               aria-hidden
               className={cn(
                 'size-2.5 rounded-full',
-                backend === 'conectado' ? 'bg-accent' : 'border border-ink-muted',
+                backend === 'conectado'
+                  ? 'bg-accent'
+                  : backend === 'conectando'
+                    ? 'animate-pulse bg-ink-muted motion-reduce:animate-none'
+                    : 'border border-ink-muted',
               )}
             />
             <span className="max-md:sr-only">API</span>

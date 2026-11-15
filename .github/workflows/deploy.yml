@@ -198,8 +198,11 @@ jobs:
       - name: Build
         # Clave pública de MapTiler restringida por dominio (variable del repo, no secreto).
         # Sin ella el mapa usa fuentes abiertas sin clave.
+        # URL pública del backend (Render): la web publicada se conecta sola. En localhost
+        # (e2e y Lighthouse) no se usa, así que el CI no depende del servidor.
         env:
           VITE_MAPTILER_KEY: ${{ vars.VITE_MAPTILER_KEY }}
+          VITE_API_URL: ${{ vars.VITE_API_URL }}
         run: pnpm build
       - name: Enlaces rotos y build completo
         run: pnpm check:links

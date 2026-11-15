@@ -49,6 +49,11 @@ export const useBackend = create<BackendState>()((set) => ({
 
 /** Cada cuánto se comprueba que el backend sigue vivo */
 const HEALTH_MS = 30_000;
+/**
+ * Primera comprobación: el plan gratuito de Render duerme el servidor y despertarlo tarda
+ * hasta ~1 min. Mientras, se muestra «Conectando…», no «sin conexión».
+ */
+const WAKE_MS = 75_000;
 
 interface Health {
   status: string;
@@ -68,9 +73,12 @@ export function useBackendHealth() {
       return;
     }
     let alive = true;
+    let first = true;
     const check = async () => {
+      const timeout = first ? WAKE_MS : 8000;
+      first = false;
       try {
-        const health = await apiGet<Health>(base, '/health', 5000);
+        const health = await apiGet<Health>(base, '/health', timeout);
         const liveStatus = await apiGet<LiveStatus>(base, '/api/live/status', 5000).catch(
           () => undefined,
         );

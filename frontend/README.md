@@ -29,9 +29,10 @@ El panel de capas permite activar perímetro, unidades, viento y detecciones
 satélite. Los datos del escenario son simulados y se muestran como apoyo visual,
 no como fuente operativa real.
 
-## Conexión con el backend (opcional)
+## Conexión con el backend
 
-Sin backend, la app funciona con sus datos estáticos (también en GitHub Pages). Con la API de
+En la web publicada el front se conecta solo al backend de Render (`render.yaml`, URL en la
+variable del repo `VITE_API_URL`). Si no responde, la app sigue con sus datos estáticos. Con la API de
 `backend/` en marcha, el mapa añade el grupo **Backend** en Capas:
 
 - **CATA**: predicción neuronal por celdas de 1 km (ardiendo, ya quemado y por encima del umbral).

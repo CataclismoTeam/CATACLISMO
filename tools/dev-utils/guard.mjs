@@ -75,6 +75,8 @@ const allowedRoot = new Set([
   'package.json',
   'pnpm-lock.yaml',
   'pnpm-workspace.yaml',
+  // Blueprint de Render: tiene que estar en la raíz
+  'render.yaml',
 ]);
 for (const root of new Set(tracked.map((f) => f.split('/')[0]))) {
   if (!allowedRoot.has(root)) {
@@ -91,6 +93,8 @@ const required = [
   'package.json',
   'pnpm-lock.yaml',
   'pnpm-workspace.yaml',
+  // Blueprint de Render: tiene que estar en la raíz
+  'render.yaml',
   'lefthook.yml',
   'frontend/package.json',
   'frontend/vite.config.ts',

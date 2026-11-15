@@ -13,7 +13,7 @@ export function Briefing() {
   const open = useUi((s) => s.briefingOpen);
   const close = useUi((s) => s.closeBriefing);
   const t = useT();
-  const backendOn = useBackend((s) => s.status === 'conectado');
+  const backend = useBackend((s) => s.status);
   const en = useEnglish();
 
   return (
@@ -68,7 +68,13 @@ export function Briefing() {
       <div className="mt-4 flex flex-wrap gap-2">
         <Tag tone="real">{t('Real · NASA FIRMS')}</Tag>
         <Tag tone="simulado">{t('Escenario simulado')}</Tag>
-        <Tag>{backendOn ? t('Backend conectado') : t('Demo · sin conexión a backend')}</Tag>
+        <Tag>
+          {backend === 'conectado'
+            ? t('Backend conectado')
+            : backend === 'conectando'
+              ? t('Conectando con el backend…')
+              : t('Demo · sin conexión a backend')}
+        </Tag>
       </div>
       <div className="mt-6 flex flex-wrap gap-3">
         <Button variant="primary" size="lg" onClick={close}>

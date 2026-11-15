@@ -1,6 +1,6 @@
-// Cliente del backend (FastAPI). Es opcional: sin URL configurada la app sigue con sus datos
-// estáticos. La URL sale, por orden, de `?api=` en la dirección, de lo guardado en Ajustes o de
-// VITE_API_URL en el build.
+// Cliente del backend (FastAPI). En la web publicada se conecta solo (VITE_API_URL del build);
+// si no responde, la app sigue con sus datos estáticos. La URL sale, por orden, de `?api=` en la
+// dirección, de lo guardado en Ajustes o de VITE_API_URL.
 import { readStored, writeStored } from './storage.ts';
 
 const KEY = 'cataclismo.api';
@@ -36,8 +36,17 @@ export function initialApiBase(): string {
   }
   const stored = normalizeBase(readStored<string>(KEY, ''));
   if (validBase(stored)) return stored;
-  const env = normalizeBase(import.meta.env.VITE_API_URL ?? '');
-  return validBase(env) ? env : '';
+  return defaultApiBase(window.location.hostname, import.meta.env.VITE_API_URL);
+}
+
+/**
+ * URL del build (VITE_API_URL), solo fuera de localhost: en local (desarrollo, e2e y Lighthouse
+ * del CI) la app no depende de un servidor externo salvo que se pida con ?api= o en Ajustes.
+ */
+export function defaultApiBase(hostname: string, env: string | undefined): string {
+  if (hostname === 'localhost' || hostname === '127.0.0.1' || hostname === '[::1]') return '';
+  const base = normalizeBase(env ?? '');
+  return validBase(base) ? base : '';
 }
 
 export function saveApiBase(base: string): void {
