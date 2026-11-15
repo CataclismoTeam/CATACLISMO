@@ -22,7 +22,12 @@ from typing import Any, Literal
 import numpy as np
 import pandas as pd
 import requests
-from pyproj import Transformer
+
+try:
+    from pyproj import Transformer
+    TRANSFORMER_3035_TO_4326 = Transformer.from_crs("EPSG:3035", "EPSG:4326", always_xy=True)
+except ImportError:
+    TRANSFORMER_3035_TO_4326 = None
 
 ALGORITHM_NAME: str = "valen"
 
@@ -37,9 +42,6 @@ WORLDCOVER_RESOLUTION = 10  # metros
 
 # MITECO IFN3 WMS
 IFN3_WMS_URL = "https://www.miteco.gob.es/arcgis/services/IFN3/MapServer/WMSServer"
-
-# Transformador EPSG:3035 -> EPSG:4326 (para WorldCover que está en WGS84)
-TRANSFORMER_3035_TO_4326 = Transformer.from_crs("EPSG:3035", "EPSG:4326", always_xy=True)
 
 # Clases WorldCover 2021 (11 clases)
 WORLDCOVER_CLASSES = {
@@ -386,10 +388,25 @@ class VegetationClient:
 
     # ---- Combinado ----
 
-    def get_vegetation_profile(self, lon: float, lat: float, use_cache: bool = True) -> dict:
+    def get_vegetation_profile(
+        self,
+        lon: float,
+        lat: float,
+        use_cache: bool = True,
+        use_ifn3_wms: bool = False,
+    ) -> dict:
         """Perfil completo de vegetación para una coordenada."""
         wc = self.get_worldcover_class(lon, lat, use_cache)
-        ifn3 = self.get_ifn3_species(lon, lat, use_cache)
+        if use_ifn3_wms:
+            ifn3 = self.get_ifn3_species(lon, lat, use_cache)
+        else:
+            cached_ifn3 = self.cache.get_ifn3(lon, lat) if use_cache else None
+            ifn3 = cached_ifn3 or {
+                "species_list": [],
+                "dominant_species": "",
+                "max_flammability": 1,
+                "source": "MITECO_IFN3_CACHE_ONLY",
+            }
 
         # Combinar inflamabilidad: max de ambas fuentes
         combined_flammability = max(wc["flammability"], ifn3.get("max_flammability", 1))
@@ -408,10 +425,14 @@ class VegetationClient:
         output_path: Path,
         limit: int | None = None,
         use_cache: bool = True,
+        use_ifn3_wms: bool = False,
     ) -> pd.DataFrame:
-        """Enriquece cell_day.parquet con perfil de vegetación."""
+        """Enriquece cell_day.parquet con perfil de vegetación (ordenado de más nuevo a más antiguo)."""
         cell_day = pd.read_parquet(cell_day_path)
         print(f"Cargados {len(cell_day)} cell-days")
+
+        if "date" in cell_day.columns:
+            cell_day = cell_day.sort_values("date", ascending=False)
 
         unique_cells = cell_day.drop_duplicates(subset=["cell_id"])[
             ["cell_id", "cell_centroid_lonlat"]
@@ -423,7 +444,8 @@ class VegetationClient:
         print(f"Consultando vegetación para {len(unique_cells)} celdas únicas...")
 
         enriched = []
-        for _, row in unique_cells.iterrows():
+        total = len(unique_cells)
+        for idx, (_, row) in enumerate(unique_cells.iterrows(), 1):
             cell_id = row["cell_id"]
             centroid = row["cell_centroid_lonlat"]
             if isinstance(centroid, str):
@@ -431,12 +453,13 @@ class VegetationClient:
             lon, lat = centroid[0], centroid[1]
 
             try:
-                profile = self.get_vegetation_profile(lon, lat, use_cache)
+                profile = self.get_vegetation_profile(
+                    lon, lat, use_cache=use_cache, use_ifn3_wms=use_ifn3_wms
+                )
                 profile["cell_id"] = cell_id
                 enriched.append(profile)
-                print(f"  OK {cell_id}: WC={profile['worldcover']['class_name']}, "
-                      f"IFN3={profile['ifn3'].get('dominant_species', 'N/A')}, "
-                      f"Flam={profile['combined_flammability']}")
+                if idx % 15000 == 0 or idx == total:
+                    print(f"  Progreso vegetación: {idx}/{total} celdas")
             except Exception as e:
                 print(f"  ERROR {cell_id}: {e}")
                 enriched.append({"cell_id": cell_id, "error": str(e)})

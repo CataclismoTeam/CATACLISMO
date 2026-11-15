@@ -30,6 +30,7 @@ from __future__ import annotations
 import argparse
 from collections.abc import Sequence
 from dataclasses import asdict
+import gc
 import json
 import logging
 import os
@@ -278,20 +279,31 @@ def _resolve_valen_paths(
     """Descubre automáticamente los 5 archivos de VALEN a partir de una carpeta o ruta base."""
     if os.path.isdir(primary_path):
         base_dir = primary_path
+        cd_6h = os.path.join(base_dir, "cell_6h.parquet")
         cd_parquet = os.path.join(base_dir, "cell_day.parquet")
         cd_json = os.path.join(base_dir, "cell_day.json")
-        cell_day_file = cd_parquet if os.path.exists(cd_parquet) else cd_json
+        if os.path.exists(cd_6h):
+            cell_day_file = cd_6h
+        elif os.path.exists(cd_parquet):
+            cell_day_file = cd_parquet
+        else:
+            cell_day_file = cd_json
     else:
         base_dir = os.path.dirname(os.path.abspath(primary_path))
         fname = os.path.basename(primary_path)
         if fname.startswith("validated_cell_day"):
             validated_path = validated_path or primary_path
+            cd_6h = os.path.join(base_dir, "cell_6h.parquet")
             cd_parquet = os.path.join(base_dir, "cell_day.parquet")
             cd_json = os.path.join(base_dir, "cell_day.json")
             cell_day_file = (
-                cd_parquet
-                if os.path.exists(cd_parquet)
-                else (cd_json if os.path.exists(cd_json) else primary_path)
+                cd_6h
+                if os.path.exists(cd_6h)
+                else (
+                    cd_parquet
+                    if os.path.exists(cd_parquet)
+                    else (cd_json if os.path.exists(cd_json) else primary_path)
+                )
             )
         else:
             cell_day_file = primary_path
@@ -366,8 +378,9 @@ def _enrich_cell_day_with_valen(
     scores = []
     val_feats = []
     for _, row in df.iterrows():
-        key3 = (str(row.get("cell_id", "")), str(row.get("date", "")), str(row.get("sensor", "")))
-        key2 = (str(row.get("cell_id", "")), str(row.get("date", "")))
+        dt_day = str(row.get("date", ""))[:10]
+        key3 = (str(row.get("cell_id", "")), dt_day, str(row.get("sensor", "")))
+        key2 = (str(row.get("cell_id", "")), dt_day)
         vr = val_lookup.get(key3) or val_cell_date_lookup.get(key2) or {}
         dec = row.get("decision") if "decision" in row and pd.notna(row.get("decision")) else vr.get("decision", "ACEPTA")
         sc = row.get("score") if "score" in row and pd.notna(row.get("score")) else vr.get("score", 0.5)
@@ -515,7 +528,9 @@ def _enrich_cell_day_with_valen(
 
     for _, row in df.iterrows():
         cid = str(row.get("cell_id", ""))
-        dt = str(row.get("date", ""))
+        dt_raw = str(row.get("date", ""))
+        dt = dt_raw[:10]
+        slot_h = int(dt_raw[11:13]) if len(dt_raw) >= 13 and dt_raw[11:13].isdigit() else None
         vf = row["_valen_features"]
 
         m_info = meteo_by_cell_date.get((cid, dt)) or meteo_by_cell.get(cid) or {}
@@ -536,6 +551,29 @@ def _enrich_cell_day_with_valen(
         temp_val = m_info.get("meteo_temp")
         if temp_val is None:
             temp_val = float(np.clip(0.5 * fwi_val + 0.5 * hum_val, 0.0, 1.0))
+
+        # Modulación diurna por turno táctico de 6h (00=Madrugada, 06=Mañana, 12=Tarde 30-30-30, 18=Noche)
+        if slot_h is not None:
+            if slot_h < 6:
+                temp_val = float(np.clip(temp_val * 0.82, 0.0, 1.0))
+                hum_val = float(np.clip(hum_val * 0.80, 0.0, 1.0))
+                wind_val = float(np.clip(wind_val * 0.88, 0.0, 1.0))
+                fwi_val = float(np.clip(fwi_val * 0.85, 0.0, 1.0))
+            elif slot_h < 12:
+                temp_val = float(np.clip(temp_val * 0.95, 0.0, 1.0))
+                hum_val = float(np.clip(hum_val * 0.94, 0.0, 1.0))
+                wind_val = float(np.clip(wind_val * 0.96, 0.0, 1.0))
+                fwi_val = float(np.clip(fwi_val * 0.95, 0.0, 1.0))
+            elif slot_h < 18:
+                temp_val = float(np.clip(temp_val * 1.15, 0.0, 1.0))
+                hum_val = float(np.clip(hum_val * 1.15, 0.0, 1.0))
+                wind_val = float(np.clip(wind_val * 1.12, 0.0, 1.0))
+                fwi_val = float(np.clip(fwi_val * 1.12, 0.0, 1.0))
+            else:
+                temp_val = float(np.clip(temp_val * 0.92, 0.0, 1.0))
+                hum_val = float(np.clip(hum_val * 0.90, 0.0, 1.0))
+                wind_val = float(np.clip(wind_val * 0.95, 0.0, 1.0))
+                fwi_val = float(np.clip(fwi_val * 0.92, 0.0, 1.0))
 
         dsr_val = r_info.get("rain_days_since_1mm")
         if dsr_val is None:
@@ -587,6 +625,7 @@ def load_contract_cell_day(
     validated_path: str | None = None,
     include_rejected: bool = False,
     return_patch_meta: bool = False,
+    target_date: str | None = None,
 ):
     """Carga y cruza los artefactos de VALEN (`cell_day`, `meteo`, `rainfall`, `vegetation`, `validated`)."""
     import pandas as pd
@@ -609,6 +648,29 @@ def load_contract_cell_day(
     else:
         raise ValueError(f"Formato no soportado: {cd_path} (use carpeta VALEN, .parquet, .json, .csv.gz o .npz)")
 
+    is_subdaily = len(df) > 0 and " " in str(df["date"].iloc[0])
+    step_hours = getattr(config, "STEP_HOURS", 6) if is_subdaily else 24
+
+    if target_date:
+        target_str = str(target_date).strip()
+        if is_subdaily and len(target_str) == 10:
+            # Si se pasa solo YYYY-MM-DD en modo 6h, elegir el último turno con actividad de ese día (o 12:00 UTC)
+            day_matches = df[df["date"].astype(str).str.startswith(target_str)]["date"].astype(str)
+            target_str = str(day_matches.max()) if len(day_matches) > 0 else f"{target_str} 12:00"
+        dt_target = pd.Timestamp(target_str)
+        dt_start = (
+            dt_target - pd.Timedelta(hours=time_steps * step_hours)
+            if is_subdaily
+            else dt_target - pd.Timedelta(days=time_steps)
+        )
+        df_dates = pd.to_datetime(df["date"], errors="coerce")
+        df = df[(df_dates >= dt_start) & (df_dates <= dt_target)].copy()
+        if df.empty:
+            raise ValueError(
+                f"No hay datos de VALEN en el rango [{dt_start} .. {dt_target}]"
+            )
+        target_date = target_str
+
     df = _enrich_cell_day_with_valen(
         df,
         meteo_path=resolved["meteo"],
@@ -627,6 +689,7 @@ def load_contract_cell_day(
         val_split=val_split,
         seed=seed,
         return_patch_meta=return_patch_meta,
+        target_date=target_date,
     )
 
 
@@ -639,6 +702,8 @@ def _build_patches_from_cell_day_df(
     val_split: float,
     seed: int,
     return_patch_meta: bool = False,
+    max_patches: int = 2500,
+    target_date: str | None = None,
 ):
     import pandas as pd
 
@@ -722,9 +787,24 @@ def _build_patches_from_cell_day_df(
     grouped["frp_p50_mw"] = grouped["w_frp_p50"] / denom
     grouped["product_mix"] = grouped["w_pmix"] / denom
 
-    dates = pd.date_range(grouped["date"].min(), grouped["date"].max(), freq="D").strftime(
-        "%Y-%m-%d"
-    )
+    is_subdaily = len(grouped) > 0 and " " in str(grouped["date"].iloc[0])
+    step_hours = getattr(config, "STEP_HOURS", 6) if is_subdaily else 24
+    freq_str = f"{step_hours}h" if is_subdaily else "D"
+    fmt_str = "%Y-%m-%d %H:00" if is_subdaily else "%Y-%m-%d"
+
+    if target_date:
+        dt_target = pd.Timestamp(target_date)
+        dt_min = (
+            dt_target - pd.Timedelta(hours=time_steps * step_hours)
+            if is_subdaily
+            else dt_target - pd.Timedelta(days=time_steps)
+        )
+        date_min = dt_min.strftime(fmt_str)
+        date_max = dt_target.strftime(fmt_str)
+    else:
+        date_min = grouped["date"].min()
+        date_max = grouped["date"].max()
+    dates = pd.date_range(date_min, date_max, freq=freq_str).strftime(fmt_str)
     date_to_idx = {d: i for i, d in enumerate(dates)}
     n_days = len(dates)
     if n_days <= time_steps:
@@ -765,8 +845,34 @@ def _build_patches_from_cell_day_df(
     ]
 
     x_tr, y_tr, x_va, y_va = [], [], [], []
+    score_tr, score_va = [], []
     meta_tr, meta_va = [], []
     half = grid_size // 2
+    max_s = n_days - time_steps - 1
+    max_val = max(1, int(max_patches * val_split)) if max_patches > 0 else 0
+    max_tr = max(1, max_patches - max_val) if max_patches > 0 else 0
+
+    def _prune_lists(x_list, y_list, scores, metas, cap: int):
+        if cap <= 0 or len(x_list) <= cap:
+            return x_list, y_list, scores, metas
+        order = np.argsort(scores)[::-1]
+        n_top = int(cap * 0.7)
+        top_idx = order[:n_top]
+        rest_idx = order[n_top:]
+        n_rest = cap - n_top
+        rest_sample = (
+            rng.choice(rest_idx, size=n_rest, replace=False)
+            if n_rest > 0 and len(rest_idx) >= n_rest
+            else rest_idx[:n_rest]
+        )
+        keep_idx = np.sort(np.concatenate([top_idx, rest_sample]))
+        new_x = [x_list[i] for i in keep_idx]
+        new_y = [y_list[i] for i in keep_idx]
+        new_s = [scores[i] for i in keep_idx]
+        new_m = [metas[i] for i in keep_idx]
+        del x_list, y_list, scores, metas
+        gc.collect()
+        return new_x, new_y, new_s, new_m
 
     for b_id in unique_blocks:
         by, bx = (int(v) for v in b_id.split("_"))
@@ -781,19 +887,88 @@ def _build_patches_from_cell_day_df(
         if sub.empty:
             continue
 
-        raw_cube = {k: np.zeros((n_days, grid_size, grid_size), np.float32) for k in raw_keys}
-        # La inflamabilidad de la vegetación es una propiedad estática del terreno en cada celda:
-        # la propagamos a todos los pasos temporales de la celda para que CATA conozca el combustible vecino.
+        ti = sub["date"].map(date_to_idx).to_numpy(dtype=np.int64)
+        obs_arr = sub["n_obs"].to_numpy(dtype=np.float32)
+        active_ti = np.unique(ti[obs_arr > 0])
+        if len(active_ti) == 0:
+            continue
+
+        # En modo táctico 6h, incluir el turno intermedio cuando hay confirmación satelital en t-1 y t+1 (12h VIIRS)
+        if is_subdaily and len(active_ti) > 1:
+            bridged_ti = set(int(t) for t in active_ti)
+            for idx_a in range(len(active_ti) - 1):
+                if int(active_ti[idx_a + 1]) - int(active_ti[idx_a]) == 2:
+                    bridged_ti.add(int(active_ti[idx_a]) + 1)
+            active_ti = np.array(sorted(bridged_ti), dtype=np.int64)
+
+        # Identificar únicamente los índices temporales s con actividad en [s, s + time_steps]
+        active_starts_set: set[int] = set()
+        for t_act in active_ti:
+            s_lo = max(0, int(t_act) - time_steps)
+            s_hi = min(max_s, int(t_act))
+            for s_idx in range(s_lo, s_hi + 1):
+                active_starts_set.add(s_idx)
+        if not active_starts_set:
+            continue
+
+        active_starts = sorted(active_starts_set)
+        needed_t = sorted({t for s in active_starts for t in range(s, s + time_steps + 1)})
+        t_global_to_local = {t_g: t_l for t_l, t_g in enumerate(needed_t)}
+        n_local = len(needed_t)
+
+        # Alocar raw_cube solo sobre los días activos necesarios (en vez de los ~2100 días globales)
+        raw_cube = {k: np.zeros((n_local, grid_size, grid_size), np.float32) for k in raw_keys}
         for _, v_row in sub[["iy", "ix", "veg_flammability"]].drop_duplicates(subset=["iy", "ix"]).iterrows():
             vy = int(v_row["iy"]) - y0
             vx = int(v_row["ix"]) - x0
             raw_cube["veg_flammability"][:, vy, vx] = float(v_row["veg_flammability"])
 
-        ti = sub["date"].map(date_to_idx).to_numpy()
-        yi = (sub["iy"] - y0).to_numpy()
-        xi = (sub["ix"] - x0).to_numpy()
+        sub_mask = np.isin(ti, needed_t)
+        if not np.any(sub_mask):
+            del raw_cube
+            continue
+        sub_active = sub.iloc[sub_mask]
+        ti_local = np.array([t_global_to_local[int(t)] for t in ti[sub_mask]], dtype=np.int64)
+        yi = (sub_active["iy"] - y0).to_numpy()
+        xi = (sub_active["ix"] - x0).to_numpy()
         for k in raw_keys:
-            raw_cube[k][ti, yi, xi] = sub[k].to_numpy(np.float32)
+            raw_cube[k][ti_local, yi, xi] = sub_active[k].to_numpy(np.float32)
+
+        # Puente de persistencia orbital 6h (evita falsos negativos en turnos MODIS-Terra sin añadir falsos positivos)
+        if is_subdaily and n_local >= 3:
+            def _pool3x3(arr2d: np.ndarray) -> np.ndarray:
+                p = np.pad(arr2d, 1, mode="edge")
+                return np.maximum.reduce([
+                    p[0:-2, 0:-2], p[0:-2, 1:-1], p[0:-2, 2:],
+                    p[1:-1, 0:-2], p[1:-1, 1:-1], p[1:-1, 2:],
+                    p[2:,   0:-2], p[2:,   1:-1], p[2:,   2:],
+                ])
+
+            for l_t in range(1, n_local - 1):
+                if needed_t[l_t] - needed_t[l_t - 1] != 1 or needed_t[l_t + 1] - needed_t[l_t] != 1:
+                    continue
+                obs_prev = raw_cube["n_obs"][l_t - 1]
+                obs_curr = raw_cube["n_obs"][l_t]
+                obs_next = raw_cube["n_obs"][l_t + 1]
+                if not np.any(obs_prev > 0) or not np.any(obs_next > 0):
+                    continue
+                bridge_mask = (obs_curr == 0) & (
+                    ((obs_prev > 0) & (_pool3x3(obs_next) > 0))
+                    | ((_pool3x3(obs_prev) > 0) & (obs_next > 0))
+                )
+                if not np.any(bridge_mask):
+                    continue
+                for k in raw_keys:
+                    if k == "veg_flammability":
+                        continue
+                    v_interp = 0.85 * 0.5 * (
+                        _pool3x3(raw_cube[k][l_t - 1])[bridge_mask]
+                        + _pool3x3(raw_cube[k][l_t + 1])[bridge_mask]
+                    )
+                    raw_cube[k][l_t][bridge_mask] = v_interp
+                raw_cube["n_obs"][l_t][bridge_mask] = np.maximum(
+                    raw_cube["n_obs"][l_t][bridge_mask], 1.0
+                )
 
         features = normalize_contract_channels(raw_cube, num_channels)
         # Target: actividad térmica validada en t+1 (n_obs > 0)
@@ -806,10 +981,14 @@ def _build_patches_from_cell_day_df(
         }
 
         is_val = b_id in val_blocks
-        for s in range(n_days - time_steps):
-            win_x = features[s : s + time_steps]
-            win_y = burning[s + time_steps][..., None]
-            if win_x[..., 0].sum() == 0 and win_y.sum() == 0:
+        for s in active_starts:
+            l_start = t_global_to_local[s]
+            l_end = l_start + time_steps
+            # Copias explícitas para no retener el array padre `features` / `burning` en memoria
+            win_x = features[l_start:l_end].copy()
+            win_y = burning[l_end][..., None].copy()
+            act_score = float(win_x[..., 0].sum() + 2.0 * win_y.sum())
+            if act_score <= 0.0:
                 continue
             patch_info = {
                 "zone_id": f"ES1K_block_{b_id}_{dates[s + time_steps - 1]}",
@@ -822,28 +1001,50 @@ def _build_patches_from_cell_day_df(
             if is_val:
                 x_va.append(win_x)
                 y_va.append(win_y)
+                score_va.append(act_score)
                 meta_va.append(patch_info)
             else:
                 x_tr.append(win_x)
                 y_tr.append(win_y)
+                score_tr.append(act_score)
                 meta_tr.append(patch_info)
 
-    if return_patch_meta:
-        return (
-            np.asarray(x_tr, np.float32),
-            np.asarray(y_tr, np.float32),
-            np.asarray(x_va, np.float32),
-            np.asarray(y_va, np.float32),
-            meta_tr,
-            meta_va,
-        )
+        del raw_cube, features, burning
+        # Poda incremental dentro del bucle para que x_tr/x_va nunca excedan ~1.2x del límite en RAM
+        if max_tr > 0 and len(x_tr) > int(max_tr * 1.2):
+            x_tr, y_tr, score_tr, meta_tr = _prune_lists(x_tr, y_tr, score_tr, meta_tr, max_tr)
+        if max_val > 0 and len(x_va) > int(max_val * 1.2):
+            x_va, y_va, score_va, meta_va = _prune_lists(x_va, y_va, score_va, meta_va, max_val)
+        gc.collect()
 
-    return (
-        np.asarray(x_tr, np.float32),
-        np.asarray(y_tr, np.float32),
-        np.asarray(x_va, np.float32),
-        np.asarray(y_va, np.float32),
-    )
+    def _cap_and_pack(x_list, y_list, scores, metas, cap: int):
+        x_list, y_list, scores, metas = _prune_lists(x_list, y_list, scores, metas, cap)
+        n_out = len(x_list)
+        if n_out == 0:
+            return (
+                np.empty((0, time_steps, grid_size, grid_size, num_channels), dtype=np.float32),
+                np.empty((0, grid_size, grid_size, 1), dtype=np.float32),
+                metas,
+            )
+        # Pre-alocar buffer con np.empty y liberar cada elemento al copiar para no duplicar RAM
+        x_buf = np.empty((n_out, time_steps, grid_size, grid_size, num_channels), dtype=np.float32)
+        y_buf = np.empty((n_out, grid_size, grid_size, 1), dtype=np.float32)
+        for i in range(n_out):
+            x_buf[i] = x_list[i]
+            y_buf[i] = y_list[i]
+            x_list[i] = None
+            y_list[i] = None
+        del x_list, y_list, scores
+        gc.collect()
+        return x_buf, y_buf, metas
+
+    x_tr_arr, y_tr_arr, meta_tr = _cap_and_pack(x_tr, y_tr, score_tr, meta_tr, max_tr)
+    x_va_arr, y_va_arr, meta_va = _cap_and_pack(x_va, y_va, score_va, meta_va, max_val)
+
+    if return_patch_meta:
+        return x_tr_arr, y_tr_arr, x_va_arr, y_va_arr, meta_tr, meta_va
+
+    return x_tr_arr, y_tr_arr, x_va_arr, y_va_arr
 
 
 # ===========================================================================
@@ -1359,6 +1560,7 @@ def _maybe_export_predictions_for_lucia(
                 validated_path=getattr(args, "validated", None),
                 include_rejected=getattr(args, "include_rejected", False),
                 return_patch_meta=True,
+                target_date=getattr(args, "date", None),
             )
             # Tomamos las últimas ventanas temporales activas de cada bloque para predecir t+1
             all_x = np.concatenate([x_tr, x_va], axis=0) if len(x_tr) and len(x_va) else (x_tr if len(x_tr) else x_va)
@@ -1603,6 +1805,7 @@ def parse_args(argv=None):
         help="Si se indica, incluye también las celdas descartadas como RECHAZA por VALEN",
     )
     p.add_argument("--max-prediction-zones", type=int, default=8, help="Nº máximo de zonas activas a exportar para LUCIA")
+    p.add_argument("--date", type=str, default=None, help="Fecha objetivo (YYYY-MM-DD) para --mode predict (toma los 5 días previos)")
     p.add_argument("--samples", type=int, default=config.SYNTH_NUM_SAMPLES)
     p.add_argument("--grid", type=int, default=config.GRID_SIZE)
     p.add_argument("--time-steps", type=int, default=config.TIME_STEPS)

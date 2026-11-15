@@ -374,46 +374,152 @@ class RainfallClient:
         limit: int | None = None,
         lookback_days: int = 90,
         use_cache: bool = True,
+        grid_deg: float = 0.5,
     ) -> pd.DataFrame:
-        """Enriquece cell_day.parquet con métricas de lluvia."""
+        """Enriquece cell_day.parquet con métricas de lluvia de más nuevo a más antiguo.
+
+        Si `grid_deg > 0` (por defecto 0.5°, resolución nativa de NASA POWER), agrupa
+        las consultas por nodo de malla y descarga la serie temporal completa una sola vez
+        por nodo, reduciendo ~75k peticiones a ~300 peticiones.
+        """
         cell_day = pd.read_parquet(cell_day_path)
         print(f"Cargados {len(cell_day)} cell-days")
 
-        unique_cells = cell_day.drop_duplicates(subset=["cell_id", "date"])[
-            ["cell_id", "date", "cell_centroid_lonlat"]
-        ].copy()
+        unique_cells = (
+            cell_day.sort_values("date", ascending=False)
+            .drop_duplicates(subset=["cell_id", "date"])[
+                ["cell_id", "date", "cell_centroid_lonlat"]
+            ]
+            .copy()
+        )
 
         if limit:
             unique_cells = unique_cells.head(limit)
 
-        print(f"Calculando métricas lluvia para {len(unique_cells)} celdas-día...")
+        print(
+            f"Calculando métricas lluvia para {len(unique_cells)} celdas-día "
+            f"(orden descendente: {unique_cells['date'].iloc[0]} -> {unique_cells['date'].iloc[-1]})..."
+        )
 
-        enriched = []
+        # Extraer coordenadas y agrupar por nodo de malla NASA POWER (0.5°)
+        rows_meta = []
+        grid_ranges: dict[tuple[float, float], list[str]] = {}
         for _, row in unique_cells.iterrows():
             cell_id = row["cell_id"]
             date_str = str(row["date"])
             centroid = row["cell_centroid_lonlat"]
             if isinstance(centroid, str):
                 centroid = json.loads(centroid)
-            lon, lat = centroid[0], centroid[1]
+            lon, lat = float(centroid[0]), float(centroid[1])
+            if grid_deg and grid_deg > 0:
+                glon = round(round(lon / grid_deg) * grid_deg, 4)
+                glat = round(round(lat / grid_deg) * grid_deg, 4)
+            else:
+                glon, glat = round(lon, 4), round(lat, 4)
+            rows_meta.append((cell_id, date_str, glon, glat))
+            grid_ranges.setdefault((glon, glat), []).append(date_str)
 
+        print(f"Nodos únicos NASA POWER (malla {grid_deg}°): {len(grid_ranges)}")
+
+        # Descargar serie diaria completa por cada nodo de 0.5° (empezando por los nodos más recientes)
+        node_order = sorted(
+            grid_ranges.keys(),
+            key=lambda k: max(grid_ranges[k]),
+            reverse=True,
+        )
+        series_by_node: dict[tuple[float, float], dict[str, float]] = {}
+
+        def _fetch_node(node: tuple[float, float]):
+            glon, glat = node
+            dates_list = grid_ranges[node]
+            d_min = (datetime.strptime(min(dates_list), "%Y-%m-%d") - timedelta(days=lookback_days)).strftime("%Y-%m-%d")
+            d_max = max(dates_list)
             try:
-                metrics = self.calculate_rainfall_metrics(lon, lat, date_str, lookback_days, use_cache)
-                metrics["cell_id"] = cell_id
-                enriched.append(metrics)
-                print(f"  OK {cell_id} {date_str}: dry_1mm={metrics['days_since_rain_1mm']}, "
-                      f"precip_30d={metrics['precip_30d_mm']}mm, rain_days_30d={metrics['rain_days_30d']}")
-            except Exception as e:
-                print(f"  ERROR {cell_id} {date_str}: {e}")
-                enriched.append({"cell_id": cell_id, "date": date_str, "error": str(e)})
+                data = self._fetch_power_daily(glon, glat, d_min, d_max)
+                precip = data.get("properties", {}).get("parameter", {}).get("PRECTOTCORR", {})
+                clean = {
+                    f"{k[:4]}-{k[4:6]}-{k[6:8]}": (0.0 if (v is None or float(v) < 0) else float(v))
+                    for k, v in precip.items()
+                    if len(str(k)) == 8
+                }
+                return node, clean, None
+            except Exception as exc:
+                return node, {}, str(exc)
+
+        from concurrent.futures import ThreadPoolExecutor, as_completed
+
+        with ThreadPoolExecutor(max_workers=8) as pool:
+            futs = {pool.submit(_fetch_node, n): n for n in node_order}
+            done_cnt = 0
+            for fut in as_completed(futs):
+                node, clean, err = fut.result()
+                series_by_node[node] = clean
+                done_cnt += 1
+                if err:
+                    print(f"  [{done_cnt}/{len(node_order)}] WARN nodo {node}: {err}")
+                elif done_cnt % 25 == 0 or done_cnt == len(node_order):
+                    print(f"  [{done_cnt}/{len(node_order)}] Nodos NASA POWER descargados")
 
         output_path.parent.mkdir(parents=True, exist_ok=True)
+        enriched = []
         with output_path.open("w", encoding="utf-8") as f:
-            for r in enriched:
-                f.write(json.dumps(r, ensure_ascii=False) + "\n")
+            for idx, (cell_id, date_str, glon, glat) in enumerate(rows_meta, 1):
+                node_series = series_by_node.get((glon, glat), {})
+                ref_dt = datetime.strptime(date_str, "%Y-%m-%d")
+                precip_arr = np.array(
+                    [
+                        node_series.get((ref_dt - timedelta(days=d)).strftime("%Y-%m-%d"), 0.0)
+                        for d in range(lookback_days, -1, -1)
+                    ],
+                    dtype=np.float32,
+                )
+
+                days_since_1mm = 0
+                for p in reversed(precip_arr):
+                    if p >= RAIN_THRESHOLD_MM:
+                        break
+                    days_since_1mm += 1
+
+                days_since_10mm = 0
+                for p in reversed(precip_arr):
+                    if p >= HEAVY_RAIN_THRESHOLD_MM:
+                        break
+                    days_since_10mm += 1
+
+                precip_7d = float(np.sum(precip_arr[-7:]))
+                precip_30d = float(np.sum(precip_arr[-30:]))
+                precip_90d = float(np.sum(precip_arr))
+
+                max_dry = 0
+                cur_dry = 0
+                for p in precip_arr:
+                    if p < RAIN_THRESHOLD_MM:
+                        cur_dry += 1
+                        if cur_dry > max_dry:
+                            max_dry = cur_dry
+                    else:
+                        cur_dry = 0
+
+                rain_days_30d = int(np.sum(precip_arr[-30:] >= RAIN_THRESHOLD_MM))
+                rec = {
+                    "cell_id": cell_id,
+                    "reference_date": date_str,
+                    "days_since_rain_1mm": days_since_1mm,
+                    "days_since_rain_10mm": days_since_10mm,
+                    "precip_7d_mm": round(precip_7d, 2),
+                    "precip_30d_mm": round(precip_30d, 2),
+                    "precip_90d_mm": round(precip_90d, 2),
+                    "dry_spell_max_days": int(max_dry),
+                    "rain_days_30d": rain_days_30d,
+                    "lookback_days": lookback_days,
+                }
+                enriched.append(rec)
+                f.write(json.dumps(rec, ensure_ascii=False) + "\n")
+                if idx % 25000 == 0:
+                    f.flush()
+                    print(f"  Escritas {idx}/{len(rows_meta)} métricas de lluvia...")
 
         print(f"Enriquecimiento lluvia completado: {len(enriched)} celdas-día")
-        print(f"Cache stats: {self.cache.stats()}")
         return pd.DataFrame(enriched)
 
 

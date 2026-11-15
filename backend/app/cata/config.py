@@ -21,7 +21,8 @@ CRS: str = "EPSG:3035"
 GRID_LEVEL: int = 0  # Nivel base L0 = 1000 m (1 km x 1 km)
 GRID_SIZE: int = 64  # Sub-grilla N x N celdas (64 x 64 km de cobertura)
 CHUNK_SIZE_M: float = 1000.0  # Tamaño de cuadrícula/chunk en metros (1000 x 1000 m)
-TIME_STEPS: int = 5  # T: nº de pasos temporales de historia de entrada
+TIME_STEPS: int = 5  # T: nº de pasos temporales de historia de entrada (5 x 6h = 30h de contexto táctico)
+STEP_HOURS: int = 6  # Resolución temporal táctica para First Responders: 6h (00, 06, 12, 18 UTC)
 
 # ---------------------------------------------------------------------------
 # Códigos y etiquetas de estado por cuadrante (Diferenciación Real vs Predicho)
@@ -173,7 +174,12 @@ DEFAULT_PREDICTIONS_PATH: str = os.path.join(PREDICTIONS_DIR, "cata_predictions.
 
 # Rutas por defecto de los artefactos validados y enriquecidos por VALEN
 VALEN_OUTPUT_DIR: str = os.path.abspath(os.path.join(BASE_DIR, "..", "valen", "output"))
-DEFAULT_VALEN_CELL_DAY_PATH: str = os.path.join(VALEN_OUTPUT_DIR, "cell_day.parquet")
+DEFAULT_VALEN_CELL_6H_PATH: str = os.path.join(VALEN_OUTPUT_DIR, "cell_6h.parquet")
+DEFAULT_VALEN_CELL_DAY_PATH: str = (
+    DEFAULT_VALEN_CELL_6H_PATH
+    if os.path.exists(DEFAULT_VALEN_CELL_6H_PATH)
+    else os.path.join(VALEN_OUTPUT_DIR, "cell_day.parquet")
+)
 DEFAULT_VALEN_METEO_PATH: str = os.path.join(VALEN_OUTPUT_DIR, "cell_day_meteo.json")
 DEFAULT_VALEN_RAINFALL_PATH: str = os.path.join(VALEN_OUTPUT_DIR, "cell_day_rainfall.json")
 DEFAULT_VALEN_VEGETATION_PATH: str = os.path.join(VALEN_OUTPUT_DIR, "cell_day_vegetation.json")

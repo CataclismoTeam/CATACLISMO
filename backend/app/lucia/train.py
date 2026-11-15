@@ -18,6 +18,7 @@ Uso desde terminal:
 from __future__ import annotations
 
 import argparse
+import gc
 import json
 import logging
 import os
@@ -65,6 +66,7 @@ def build_dataset_from_cata_predictions(
     safe_fire_threshold: float = config.SAFE_FIRE_THRESHOLD,
     num_channels: int = config.DEFAULT_NUM_CHANNELS,
     augment_rotations: bool = True,
+    max_samples: int = 2500,
 ) -> tuple[np.ndarray, np.ndarray]:
     """Extrae pares `(X, Y)` de entrenamiento a partir de `cata_predictions.json` + OSM + Open-Elevation de VALEN."""
     if not os.path.exists(cata_predictions_path):
@@ -100,8 +102,8 @@ def build_dataset_from_cata_predictions(
             num_channels=num_channels,
             road_grids=road_grids,
             elevation_grids=elevation_grids,
-        )
-        target = compute_analytic_target_fields(feat)
+        ).copy()
+        target = compute_analytic_target_fields(feat).copy()
         xs.append(feat)
         ys.append(target)
 
@@ -112,13 +114,34 @@ def build_dataset_from_cata_predictions(
             xs.append(np.fliplr(feat).copy())
             ys.append(np.fliplr(target).copy())
 
+        del road_grids, elevation_grids, feat, target
+        if max_samples > 0 and len(xs) >= max_samples:
+            xs = xs[:max_samples]
+            ys = ys[:max_samples]
+            break
+
+    del cata_data, cells_by_zone
+    gc.collect()
+
     if not xs:
         return (
             np.empty((0, config.GRID_SIZE, config.GRID_SIZE, num_channels), dtype=np.float32),
             np.empty((0, config.GRID_SIZE, config.GRID_SIZE, config.OUTPUT_HEAD_CHANNELS), dtype=np.float32),
         )
 
-    return np.stack(xs, axis=0), np.stack(ys, axis=0)
+    n_out = len(xs)
+    h, w, c_in = xs[0].shape
+    c_out = ys[0].shape[-1]
+    x_buf = np.empty((n_out, h, w, c_in), dtype=np.float32)
+    y_buf = np.empty((n_out, h, w, c_out), dtype=np.float32)
+    for i in range(n_out):
+        x_buf[i] = xs[i]
+        y_buf[i] = ys[i]
+        xs[i] = None
+        ys[i] = None
+    del xs, ys
+    gc.collect()
+    return x_buf, y_buf
 
 
 def generate_synthetic_lucia_scenarios(
@@ -295,13 +318,20 @@ def run_lucia_training_pipeline(
     else:
         x_all, y_all = x_syn, y_syn
 
+    n_real_aug = int(len(x_real))
+    n_syn_total = int(len(x_syn))
+    del x_real, y_real, x_syn, y_syn
+    gc.collect()
+
     rng = np.random.default_rng(config.SEED)
     perm = rng.permutation(len(x_all))
     x_all, y_all = x_all[perm], y_all[perm]
 
     n_val = max(8, int(len(x_all) * 0.15))
-    x_train, y_train = x_all[:-n_val], y_all[:-n_val]
-    x_val, y_val = x_all[-n_val:], y_all[-n_val:]
+    x_train, y_train = x_all[:-n_val].copy(), y_all[:-n_val].copy()
+    x_val, y_val = x_all[-n_val:].copy(), y_all[-n_val:].copy()
+    del x_all, y_all
+    gc.collect()
 
     model = create_lucia_model(
         grid_size=config.GRID_SIZE,
@@ -386,8 +416,8 @@ def run_lucia_training_pipeline(
         save_model_path,
         extra={
             "mode": "train",
-            "real_cata_samples_augmented": int(len(x_real)),
-            "synthetic_samples": int(len(x_syn)),
+            "real_cata_samples_augmented": n_real_aug,
+            "synthetic_samples": n_syn_total,
             "final_metrics": final_metrics,
         },
     )

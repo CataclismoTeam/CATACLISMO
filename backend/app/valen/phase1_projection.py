@@ -30,7 +30,16 @@ from typing import Any, Iterator
 
 import numpy as np
 import pandas as pd
-from pyproj import Transformer
+
+try:
+    from pyproj import Transformer
+    _TRANSFORMER = Transformer.from_crs("EPSG:4326", "EPSG:3035", always_xy=True)
+except ImportError:
+    _TRANSFORMER = None
+    try:
+        from .laea import lonlat_to_epsg3035 as _laea_forward
+    except ImportError:
+        from laea import lonlat_to_epsg3035 as _laea_forward
 
 ALGORITHM_NAME: str = "valen"
 
@@ -49,8 +58,19 @@ logger = logging.getLogger("valen.phase1_projection")
 # Constantes y umbrales (configurables vía CLI)
 # ---------------------------------------------------------------------------
 
+class _FallbackTransformer:
+    @staticmethod
+    def transform(lons, lats):
+        xs = np.empty(len(lons), dtype=np.float64)
+        ys = np.empty(len(lats), dtype=np.float64)
+        for i, (lo, la) in enumerate(zip(lons, lats)):
+            x, y = _laea_forward(float(lo), float(la))
+            xs[i] = x
+            ys[i] = y
+        return xs, ys
+
 # Proyección EPSG:4326 (WGS84) -> EPSG:3035 (ETRS89-LAEA Europe, metros)
-TRANSFORMER = Transformer.from_crs("EPSG:4326", "EPSG:3035", always_xy=True)
+TRANSFORMER = _TRANSFORMER if _TRANSFORMER is not None else _FallbackTransformer()
 
 # Umbrales de saturación por sensor
 SATURATION_THRESHOLDS = {
@@ -198,14 +218,16 @@ def load_json_files(file_paths: list[Path]) -> pd.DataFrame:
         file_hashes[fpath.name] = compute_file_hash(fpath)
 
         # Streaming por chunks
+        row_idx = 0
         for chunk in iter_json_records(fpath):
-            for idx, record in enumerate(chunk):
+            for record in chunk:
                 if not isinstance(record, dict):
                     continue
                 rec = {
                     "source_file": fpath.name,
-                    "source_row": idx,
+                    "source_row": row_idx,
                 }
+                row_idx += 1
                 for k, v in record.items():
                     rec[f"src_{k}"] = v
                 all_records.append(rec)
@@ -235,10 +257,10 @@ def normalize_and_enrich(
     df["acq_date"] = pd.to_datetime(df.get("src_acq_date"), errors="coerce").dt.date
     df["acq_minute"] = df.get("src_acq_time").apply(parse_acq_time)
 
-    df["sensor"] = df.get("src_instrument").replace({"SNPP": "VIIRS"}).fillna(
-        df.get("src_sensor")
-    ).str.upper()
-    df["platform"] = df.get("src_satellite").fillna(df.get("src_platform")).str.title()
+    src_sensor = df["src_sensor"] if "src_sensor" in df.columns else "UNKNOWN"
+    df["sensor"] = df["src_instrument"].replace({"SNPP": "VIIRS"}).fillna(src_sensor).astype(str).str.upper()
+    src_platform = df["src_platform"] if "src_platform" in df.columns else "Unknown"
+    df["platform"] = df["src_satellite"].fillna(src_platform).astype(str).str.title()
     df["product"] = df["source_file"].apply(infer_product_from_filename)
 
     df["frp"] = pd.to_numeric(df.get("src_frp"), errors="coerce")

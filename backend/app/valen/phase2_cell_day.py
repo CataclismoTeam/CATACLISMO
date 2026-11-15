@@ -24,7 +24,16 @@ from typing import Any
 
 import numpy as np
 import pandas as pd
-from pyproj import Transformer
+
+try:
+    from pyproj import Transformer
+    _TRANSFORMER_INV = Transformer.from_crs("EPSG:3035", "EPSG:4326", always_xy=True)
+except ImportError:
+    _TRANSFORMER_INV = None
+    try:
+        from .laea import epsg3035_to_lonlat as _laea_inv
+    except ImportError:
+        from laea import epsg3035_to_lonlat as _laea_inv
 
 ALGORITHM_NAME: str = "valen"
 
@@ -43,7 +52,12 @@ logger = logging.getLogger("valen.phase2_cell_day")
 # Constantes
 # ---------------------------------------------------------------------------
 
-TRANSFORMER_INV = Transformer.from_crs("EPSG:3035", "EPSG:4326", always_xy=True)
+class _FallbackTransformerInv:
+    @staticmethod
+    def transform(x_val, y_val):
+        return _laea_inv(float(x_val), float(y_val))
+
+TRANSFORMER_INV = _TRANSFORMER_INV if _TRANSFORMER_INV is not None else _FallbackTransformerInv()
 
 # ---------------------------------------------------------------------------
 # Utilidades
