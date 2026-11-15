@@ -5,7 +5,7 @@ import { useUi, type Basemap, type LayerId } from '../store/ui.ts';
 import { Button } from '../ui/Button.tsx';
 import type { Detections } from './detections.ts';
 import type { Remote } from './useRemote.ts';
-import { ACTIVE_COLOR, HALO_COLOR, PREDICTION_BANDS } from './overlays.ts';
+import { ACTIVE_COLOR, AREA_COLOR, HALO_COLOR, MONTH_RAMP, PREDICTION_BANDS } from './overlays.ts';
 import { provider } from './providers.ts';
 
 const BASEMAPS: [Basemap, string][] = [
@@ -255,6 +255,34 @@ export function LayersPanel({ detections: load }: { detections: Remote<Detection
                   </Swatch>
                 ))}
               </div>
+            </div>
+          }
+        />
+      </Group>
+
+      <Group title="Histórico">
+        <Toggle
+          id="mes"
+          label="Actividad del mes del calendario"
+          origin="real"
+          legend={
+            <div className="flex flex-col gap-1">
+              <span className="flex items-center gap-2 text-xs">
+                Menos
+                <span
+                  aria-hidden
+                  className="h-2.5 flex-1 rounded-[2px]"
+                  style={{
+                    background: `linear-gradient(90deg, ${MONTH_RAMP.map(([, c]) => c).join(', ')})`,
+                  }}
+                />
+                Más
+              </span>
+              <span className="text-xs text-ink-muted">
+                Celdas de 5 km del mes elegido en el calendario, en detecciones equivalentes MODIS.
+                Pulsa otro mes para cambiarla.
+              </span>
+              <Swatch fill={AREA_COLOR}>Área de interés del calendario</Swatch>
             </div>
           }
         />

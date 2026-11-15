@@ -242,6 +242,11 @@
   border: 1px solid #c2331f;
 }
 
+/* Con una herramienta activa (dibujar, medir) los clics atraviesan los marcadores hasta el mapa */
+.map-tool .maplibregl-marker {
+  pointer-events: none;
+}
+
 /* Vista lejana: sin rótulos ni placas; solo los iconos de incendio del propio mapa */
 .map-far .unit-marker,
 .map-far .meeting-marker,

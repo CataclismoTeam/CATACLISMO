@@ -8,10 +8,13 @@ export type Basemap = 'satelite' | 'topografico';
 export type ScenarioId = string;
 export type Theme = 'sistema' | 'claro' | 'oscuro';
 export type Cvd = 'ninguno' | 'protanopia' | 'deuteranopia' | 'tritanopia';
+/** Herramienta activa sobre el mapa: mientras hay una, los clics no seleccionan nada */
+export type MapTool = 'dibujar' | 'medir' | null;
 export type LeftPanel = 'incendios' | 'unidades' | null;
 export type LayerId =
   | 'detecciones'
   | 'halo'
+  | 'mes'
   | 'incendio'
   | 'prediccion'
   | 'unidades'
@@ -23,6 +26,8 @@ export const DEFAULT_LAYERS: Record<LayerId, boolean> = {
   detecciones: true,
   // Viento inventado: apagado por defecto para que no se lea como pronóstico
   halo: false,
+  // Rejilla del mes del calendario: se enciende al pulsar un mes
+  mes: false,
   incendio: true,
   prediccion: true,
   unidades: true,
@@ -63,6 +68,7 @@ interface UiState {
   fireHour: number;
   /** La línea de tiempo se está reproduciendo */
   playing: boolean;
+  mapTool: MapTool;
   closeBriefing: () => void;
   openBriefing: () => void;
   setCalendarOpen: (open: boolean) => void;
@@ -83,6 +89,10 @@ interface UiState {
   toggleLayer: (id: LayerId) => void;
   setFireHour: (hour: number) => void;
   setPlaying: (playing: boolean) => void;
+  setMapTool: (tool: MapTool) => void;
+  setLayer: (id: LayerId, on: boolean) => void;
+  /** Encuadra un rectángulo [oeste, sur, este, norte] */
+  flyTo: (bbox: [number, number, number, number]) => void;
 }
 
 const BRIEFING_KEY = 'cataclismo.briefing-visto';
@@ -114,6 +124,7 @@ export const useUi = create<UiState>((set, get) => ({
   layers: DEFAULT_LAYERS,
   fireHour: NOW_H,
   playing: false,
+  mapTool: null,
   closeBriefing: () => {
     writeStored(BRIEFING_KEY, true);
     set({ briefingOpen: false });
@@ -175,4 +186,7 @@ export const useUi = create<UiState>((set, get) => ({
   toggleLayer: (id) => set({ layers: { ...get().layers, [id]: !get().layers[id] } }),
   setFireHour: (fireHour) => set({ fireHour }),
   setPlaying: (playing) => set({ playing }),
+  setMapTool: (mapTool) => set({ mapTool }),
+  setLayer: (id, on) => set({ layers: { ...get().layers, [id]: on } }),
+  flyTo: (bbox) => set({ flyTarget: { bbox, at: Date.now() } }),
 }));

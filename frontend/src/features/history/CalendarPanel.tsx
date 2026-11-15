@@ -1,5 +1,5 @@
 import { Download, FileImage, Info } from 'lucide-react';
-import { lazy, Suspense, useState } from 'react';
+import { lazy, Suspense, useCallback, useState } from 'react';
 import { ErrorBoundary } from '../../app/ErrorBoundary.tsx';
 import { useHistory } from '../../store/history.ts';
 import { useUi } from '../../store/ui.ts';
@@ -68,6 +68,14 @@ function Exports({ model }: { model: CalendarModel }) {
 
 export default function CalendarPanel({ model }: { model: CalendarModel }) {
   const select = useHistory((s) => s.select);
+  // Pulsar un mes también lo pinta en el mapa (capa «Actividad del mes del calendario»)
+  const selectAndShow = useCallback(
+    (mi: number) => {
+      select(mi);
+      useUi.getState().setLayer('mes', true);
+    },
+    [select],
+  );
   const empty = model.total === 0;
 
   return (
@@ -81,7 +89,7 @@ export default function CalendarPanel({ model }: { model: CalendarModel }) {
         </p>
       ) : (
         <>
-          <Heatmap model={model} onSelect={select} />
+          <Heatmap model={model} onSelect={selectAndShow} />
           <div className="flex min-w-0 flex-col gap-4">
             <AnomalyCard model={model} onSelect={select} />
             <ErrorBoundary what="el gráfico">

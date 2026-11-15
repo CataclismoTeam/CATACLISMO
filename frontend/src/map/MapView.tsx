@@ -8,7 +8,12 @@ import {
 } from 'maplibre-gl';
 // MapLibre 6 carga su worker como fichero aparte: Vite lo publica y aquí se le dice dónde está
 import workerUrl from 'maplibre-gl/dist/maplibre-gl-worker.mjs?url';
-import { useEffect, useRef, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
+import { X } from 'lucide-react';
+import { areaRing, monthCells } from '../features/history/mapLayers.ts';
+import { formatMonth } from '../lib/format.ts';
+import { useHistory } from '../store/history.ts';
+import { Button } from '../ui/Button.tsx';
 import { cn } from '../lib/cn.ts';
 import { useUi } from '../store/ui.ts';
 import { loadDetections } from './detections.ts';
@@ -21,6 +26,7 @@ import {
   applyFireHour,
   applyVisibility,
   FAR_ZOOM,
+  installCalendarLayers,
   installOverlays,
   ROUTE_COLOR,
   tokenColor,
@@ -28,6 +34,7 @@ import {
 import { provider } from './providers.ts';
 import { DEFAULT_SCENARIO, loadEscapeRoutes, SCENARIOS, type Route } from './scenario.ts';
 import { UnitsPanel } from './UnitsPanel.tsx';
+import { useAreaDraw } from './useAreaDraw.ts';
 import { ready as readyData, useRemote } from './useRemote.ts';
 import {
   CoordinatesBar,
@@ -80,6 +87,31 @@ export default function MapView() {
   const escape = readyData(escapeLoad);
   const routes = escape?.escenarios[scenario.id]?.rutas ?? NO_ROUTES;
 
+  // Calendario → mapa: rejilla del mes elegido y contorno del área de interés (REAL)
+  const grid = useHistory((s) => s.grid);
+  const manifest = useHistory((s) => s.manifest);
+  const month = useHistory((s) => s.selected);
+  const area = useHistory((s) => s.area);
+  const monthFc = useMemo(
+    () =>
+      layers.mes && grid && manifest
+        ? monthCells(grid, manifest.rejilla, manifest.tiempo.anioInicial, month)
+        : undefined,
+    [layers.mes, grid, manifest, month],
+  );
+  const areaFc = useMemo((): GeoJSON.FeatureCollection | undefined => {
+    const ring = areaRing(area);
+    return ring
+      ? {
+          type: 'FeatureCollection',
+          features: [
+            { type: 'Feature', properties: {}, geometry: { type: 'Polygon', coordinates: [ring] } },
+          ],
+        }
+      : undefined;
+  }, [area]);
+  const tool = useUi((s) => s.mapTool);
+
   // Estado vivo para los manejadores de MapLibre (se registran una sola vez)
   const live = useRef({
     scenario,
@@ -90,6 +122,8 @@ export default function MapView() {
     layers,
     mode,
     exaggeration,
+    monthFc,
+    areaFc,
   });
   useEffect(() => {
     live.current = {
@@ -101,6 +135,8 @@ export default function MapView() {
       layers,
       mode,
       exaggeration,
+      monthFc,
+      areaFc,
     };
   });
 
@@ -134,12 +170,16 @@ export default function MapView() {
         s.incidents,
         s.layers,
       );
+      installCalendarLayers(map, s.monthFc, s.areaFc, s.layers);
       applyFireHour(map, useUi.getState().fireHour);
       map.setTerrain(s.mode === '3d' ? { source: 'dem', exaggeration: s.exaggeration } : null);
       setReady(true);
     });
     // Los manejadores por capa sobreviven a setStyle: se registran una vez, fuera de 'style.load'
+    // Con una herramienta activa (dibujar, medir) los clics son para ella, no para seleccionar
+    const busy = () => useUi.getState().mapTool !== null;
     map.on('click', 'inc-fill', (event) => {
+      if (busy()) return;
       const feature = event.features?.[0];
       const properties = feature?.properties as
         { intensidad?: number; altura?: number; horas?: number } | undefined;
@@ -159,6 +199,7 @@ export default function MapView() {
       if ((e as { sourceId?: string }).sourceId) setTileError(true);
     });
     map.on('click', (event) => {
+      if (busy()) return;
       const hits = map.queryRenderedFeatures(event.point, {
         layers: ['inc-fill', 'real-fill', 'real-icon', 'sim-icon'].filter((l) => map.getLayer(l)),
       });
@@ -181,12 +222,14 @@ export default function MapView() {
     const onMoveEnd = () => setSimInView(map.getBounds().contains(live.current.scenario.ignition));
     map.on('moveend', onMoveEnd);
     map.on('click', 'real-fill', (e) => {
+      if (busy()) return;
       const id = e.features?.[0]?.properties?.id;
       if (typeof id === 'string') useUi.getState().focusIncident(id);
     });
     // Pulsar un icono lejano acerca el mapa a ese incendio
     for (const layer of ['real-icon', 'sim-icon']) {
       map.on('click', layer, (e) => {
+        if (busy()) return;
         const feature = e.features?.[0];
         if (!feature || feature.geometry.type !== 'Point') return;
         const id = feature.properties?.id;
@@ -256,6 +299,13 @@ export default function MapView() {
     if (mapRef.current && ready) applyFireHour(mapRef.current, fireHour);
   }, [fireHour, ready]);
 
+  useEffect(() => {
+    const map = mapRef.current;
+    if (map && ready) installCalendarLayers(map, monthFc, areaFc, live.current.layers);
+  }, [monthFc, areaFc, ready]);
+
+  useAreaDraw(mapRef, ready);
+
   // Fuera de cuadro o de lejos no hay nada que animar: se pausa
   const showTimeline = ready && !far && simInView && (layers.incendio || layers.prediccion);
   useEffect(() => {
@@ -300,18 +350,37 @@ export default function MapView() {
     return () => window.removeEventListener('keydown', onKey);
   }, []);
 
-  // Encuadre pedido desde la lista de incendios
+  // Encuadre pedido desde fuera del mapa (lista de incendios, área del calendario…)
   useEffect(() => {
     const map = mapRef.current;
     if (!map || !flyTarget) return;
     const [w, s, e, n] = flyTarget.bbox;
-    map.fitBounds(
-      [
-        [w, s],
-        [e, n],
-      ],
-      { padding: 80, maxZoom: 13, duration: 1200 },
-    );
+    const fit = (duration: number) => {
+      const canvas = map.getCanvas();
+      map.fitBounds(
+        [
+          [w, s],
+          [e, n],
+        ],
+        {
+          // Margen proporcional: con el calendario abierto el mapa puede medir solo 200 px de alto
+          padding: Math.round(
+            Math.min(80, 0.15 * Math.min(canvas.clientWidth, canvas.clientHeight)),
+          ),
+          maxZoom: 13,
+          duration,
+        },
+      );
+    };
+    fit(1200);
+    // Si el mapa cambia de tamaño justo después (se pliega o abre el calendario), se reencuadra
+    const onResize = () => {
+      if (Date.now() - flyTarget.at < 3000) fit(0);
+    };
+    map.on('resize', onResize);
+    return () => {
+      map.off('resize', onResize);
+    };
   }, [flyTarget]);
 
   useEffect(() => {
@@ -351,7 +420,7 @@ export default function MapView() {
   }, [scenario, routes, layers.unidades, layers.evacuacion, layers.incendio]);
 
   return (
-    <div className={cn('absolute inset-0', far && 'map-far', mid && 'map-mid')}>
+    <div className={cn('absolute inset-0', far && 'map-far', mid && 'map-mid', tool && 'map-tool')}>
       {/* Estilo en línea: la hoja de MapLibre (sin capa) pondría position: relative */}
       <div ref={container} style={{ position: 'absolute', inset: 0 }} data-testid="mapa" />
       {!ready && (
@@ -393,15 +462,42 @@ export default function MapView() {
         {showTimeline && <FireTimeline />}
         <CoordinatesBar map={mapRef} ready={ready} />
       </div>
-      {tileError && (
-        <p
-          role="status"
-          className="absolute top-3 left-1/2 m-0 -translate-x-1/2 rounded-md border border-warn bg-surface px-3 py-1.5 text-sm"
-        >
-          Parte del mapa no se ha podido descargar. Comprueba la conexión; el resto sigue
-          funcionando.
-        </p>
-      )}
+      {/* Arriba al centro: herramienta activa, rótulo de la capa del mes y avisos, apilados */}
+      <div className="pointer-events-none absolute top-14 left-1/2 flex w-max max-w-[calc(100%-1.5rem)] -translate-x-1/2 flex-col items-center gap-2 *:pointer-events-auto md:top-3 md:max-w-[min(32rem,calc(100%-30rem))]">
+        {tool === 'dibujar' && (
+          <p
+            role="status"
+            className="m-0 flex items-center gap-2 rounded-md border border-accent bg-surface py-1 pr-1 pl-3 text-sm shadow-panel"
+          >
+            Pulsa dos esquinas del área en el mapa
+            <Button size="md" onClick={() => useUi.getState().setMapTool(null)}>
+              <X size={16} strokeWidth={1.5} aria-hidden />
+              Cancelar
+            </Button>
+          </p>
+        )}
+        {layers.mes && manifest && (
+          <p
+            role="status"
+            aria-label="Capa del mes del calendario"
+            className="m-0 rounded-sm border border-ok/60 bg-surface px-2 py-1 text-xs font-semibold tracking-wide text-ok uppercase shadow-panel"
+          >
+            Real · FIRMS ·{' '}
+            {formatMonth(manifest.tiempo.anioInicial + Math.floor(month / 12), month % 12)}
+            {!grid && ' · cargando…'}
+            {monthFc && monthFc.features.length === 0 && ' · sin detecciones'}
+          </p>
+        )}
+        {tileError && (
+          <p
+            role="status"
+            className="m-0 rounded-md border border-warn bg-surface px-3 py-1.5 text-sm"
+          >
+            Parte del mapa no se ha podido descargar. Comprueba la conexión; el resto sigue
+            funcionando.
+          </p>
+        )}
+      </div>
     </div>
   );
 }

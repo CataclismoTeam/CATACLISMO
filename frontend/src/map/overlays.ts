@@ -30,6 +30,7 @@ export function tokenColor(name: string, fallback: string): string {
 export const LAYER_IDS: Record<LayerId, string[]> = {
   detecciones: ['det-cell', 'det-cell-line', 'real-fill', 'real-icon'],
   halo: ['halo-fill', 'halo-line'],
+  mes: ['mes-fill', 'mes-line'],
   incendio: ['inc-fill', 'inc-line'],
   prediccion: ['pred-tint', 'pred-fill', 'pred-line'],
   unidades: [],
@@ -434,6 +435,73 @@ export function applyFireHour(map: MapLibre, h: number) {
   for (const id of ['pred-tint', 'pred-fill', 'pred-line']) {
     if (map.getLayer(id)) map.setFilter(id, predictionFilter(h));
   }
+}
+
+/** Rampa de la rejilla mensual (detecciones equivalentes MODIS por celda de 5 km y mes). */
+export const MONTH_RAMP: [value: number, color: string][] = [
+  [1, '#2c3e8f'],
+  [5, '#3f7fbf'],
+  [25, '#58b0a0'],
+  [100, '#d9c348'],
+  [400, '#fde725'],
+];
+export const AREA_COLOR = '#7cc4ff';
+
+const EMPTY: GeoJSON.FeatureCollection = { type: 'FeatureCollection', features: [] };
+
+/**
+ * Capas del calendario (REAL): la rejilla de 5 km del mes elegido, bajo el fuego, y el contorno
+ * del área de interés, encima. Idempotente: se llama al cargar el estilo y al cambiar los datos.
+ */
+export function installCalendarLayers(
+  map: MapLibre,
+  month: GeoJSON.FeatureCollection | undefined,
+  area: GeoJSON.FeatureCollection | undefined,
+  visible: Record<LayerId, boolean>,
+) {
+  upsertSource(map, 'mes-celdas', month ?? EMPTY);
+  if (!map.getLayer('mes-fill')) {
+    const below = ['halo-fill', 'pred-tint', 'det-cell'].find((id) => map.getLayer(id));
+    const ramp = MONTH_RAMP.flatMap(([v, c]) => [Math.log(v), c]);
+    map.addLayer(
+      {
+        id: 'mes-fill',
+        type: 'fill',
+        source: 'mes-celdas',
+        paint: {
+          'fill-color': [
+            'interpolate',
+            ['linear'],
+            ['ln', ['max', 1, ['get', 'h']]],
+            ...ramp,
+          ] as unknown as string,
+          'fill-opacity': 0.6,
+        },
+      },
+      below,
+    );
+    map.addLayer(
+      {
+        id: 'mes-line',
+        type: 'line',
+        source: 'mes-celdas',
+        minzoom: 7,
+        paint: { 'line-color': '#0b1020', 'line-width': 0.4, 'line-opacity': 0.5 },
+      },
+      below,
+    );
+  }
+  upsertSource(map, 'area-calendario', area ?? EMPTY);
+  if (!map.getLayer('area-line')) {
+    map.addLayer({
+      id: 'area-line',
+      type: 'line',
+      source: 'area-calendario',
+      layout: { 'line-join': 'round' },
+      paint: { 'line-color': AREA_COLOR, 'line-width': 2.5, 'line-dasharray': [3, 2] },
+    });
+  }
+  applyVisibility(map, visible);
 }
 
 export function applyVisibility(map: MapLibre, visible: Record<LayerId, boolean>) {
