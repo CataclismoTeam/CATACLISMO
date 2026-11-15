@@ -113,6 +113,7 @@ export function SettingsPanel() {
             </span>
           </span>
           <input
+            name="modo-proyeccion"
             type="checkbox"
             role="switch"
             checked={projection}

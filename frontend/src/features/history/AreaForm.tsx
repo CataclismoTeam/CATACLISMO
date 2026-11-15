@@ -75,6 +75,7 @@ export function AreaForm() {
     <div className="flex flex-col gap-3">
       <Field label="Área de interés">
         <Select
+          name="area"
           value={custom ? CUSTOM : area.name}
           onChange={(e) => {
             if (e.target.value === DRAWN) return;
@@ -116,6 +117,7 @@ export function AreaForm() {
           <div className="grid grid-cols-3 gap-2">
             <Field label="Latitud">
               <Input
+                name="latitud"
                 inputMode="decimal"
                 value={lat}
                 aria-invalid={!!error}
@@ -124,6 +126,7 @@ export function AreaForm() {
             </Field>
             <Field label="Longitud">
               <Input
+                name="longitud"
                 inputMode="decimal"
                 value={lon}
                 aria-invalid={!!error}
@@ -132,6 +135,7 @@ export function AreaForm() {
             </Field>
             <Field label="Radio" hint="km">
               <Input
+                name="radio"
                 inputMode="decimal"
                 value={radius}
                 aria-invalid={!!error}
@@ -161,6 +165,7 @@ export function AreaForm() {
       <div className="grid grid-cols-2 gap-2">
         <Field label="Desde">
           <Select
+            name="desde"
             value={yearRange[0]}
             onChange={(e) => setYearRange([Number(e.target.value), yearRange[1]])}
           >
@@ -173,6 +178,7 @@ export function AreaForm() {
         </Field>
         <Field label="Hasta">
           <Select
+            name="hasta"
             value={yearRange[1]}
             onChange={(e) => setYearRange([yearRange[0], Number(e.target.value)])}
           >
@@ -186,7 +192,7 @@ export function AreaForm() {
       </div>
 
       <Field label="Serie">
-        <Select value={metric} onChange={(e) => setMetric(e.target.value as Metric)}>
+        <Select name="serie" value={metric} onChange={(e) => setMetric(e.target.value as Metric)}>
           {(Object.keys(METRIC_LABEL) as Metric[]).map((m) => (
             <option key={m} value={m}>
               {METRIC_LABEL[m]}

@@ -220,6 +220,7 @@ export function IncidentsPanel({
               <label className="mb-2 flex flex-col gap-1 text-sm">
                 <span className="text-ink-muted">Comunidad autónoma</span>
                 <select
+                  name="comunidad"
                   value={region}
                   onChange={(e) => setRegion(e.target.value)}
                   className="h-9 rounded-md border border-line-strong bg-canvas px-2 text-sm text-ink pointer-coarse:h-11"
@@ -234,6 +235,7 @@ export function IncidentsPanel({
               </label>
               <label className="mb-3 flex items-center gap-2 text-sm pointer-coarse:min-h-11">
                 <input
+                  name="solo-activos"
                   type="checkbox"
                   checked={onlyActive}
                   onChange={(e) => setOnlyActive(e.target.checked)}

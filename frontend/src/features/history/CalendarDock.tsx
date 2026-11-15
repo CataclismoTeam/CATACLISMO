@@ -90,6 +90,7 @@ export function CalendarDock() {
               {playing ? <Pause size={16} aria-hidden /> : <Play size={16} aria-hidden />}
             </Button>
             <input
+              name="mes-linea-tiempo"
               className="w-32 accent-accent"
               type="range"
               min={0}
@@ -99,6 +100,7 @@ export function CalendarDock() {
               aria-label="Mes de la línea de tiempo"
             />
             <select
+              name="velocidad"
               className="h-8 rounded-md border border-line-strong bg-canvas px-1 text-xs"
               value={speed}
               onChange={(event) => setSpeed(Number(event.target.value))}

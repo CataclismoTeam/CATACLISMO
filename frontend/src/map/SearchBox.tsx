@@ -103,6 +103,7 @@ export function SearchBox({ className, autoFocus }: { className?: string; autoFo
             className="pointer-events-none absolute left-2.5 text-ink-muted"
           />
           <input
+            name="busqueda"
             ref={input}
             type="search"
             value={query}

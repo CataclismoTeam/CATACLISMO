@@ -80,6 +80,7 @@ export function FireTimeline() {
           </output>
         </span>
         <input
+          name="hora-incendio"
           type="range"
           min={0}
           max={HORIZON_H}
