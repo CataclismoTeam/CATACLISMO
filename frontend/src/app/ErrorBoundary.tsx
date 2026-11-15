@@ -1,5 +1,6 @@
 import { t } from '../lib/i18n.ts';
 import { Component, type ReactNode } from 'react';
+import { isChunkLoadError } from '../lib/staleChunk.ts';
 import { Button } from '../ui/Button.tsx';
 
 interface Props {
@@ -9,12 +10,18 @@ interface Props {
 }
 
 /** Ningún fallo técnico llega a la pantalla en crudo: se explica y se ofrece reintentar. */
-export class ErrorBoundary extends Component<Props, { failed: boolean }> {
-  state = { failed: false };
+export class ErrorBoundary extends Component<Props, { failed: boolean; staleChunk: boolean }> {
+  state = { failed: false, staleChunk: false };
 
-  static getDerivedStateFromError() {
-    return { failed: true };
+  static getDerivedStateFromError(error: unknown) {
+    return { failed: true, staleChunk: isChunkLoadError(error) };
   }
+
+  /** Un chunk viejo no se arregla reintentando el import (React.lazy lo guarda): hay que recargar */
+  private retry = () => {
+    if (this.state.staleChunk) window.location.reload();
+    else this.setState({ failed: false, staleChunk: false });
+  };
 
   render() {
     if (!this.state.failed) return this.props.children;
@@ -25,7 +32,7 @@ export class ErrorBoundary extends Component<Props, { failed: boolean }> {
             what: this.props.what,
           })}
         </p>
-        <Button onClick={() => this.setState({ failed: false })}>{t('Reintentar')}</Button>
+        <Button onClick={this.retry}>{t('Reintentar')}</Button>
       </div>
     );
   }
