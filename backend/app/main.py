@@ -12,22 +12,63 @@ from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel, Field
 
 from app.config import settings
-from app.continual import continual_engine
 from app.db import postgis_version
 from app.juli import config as juli_config
 from app.juli.chat import broadcast_proof_of_life_alerts_to_chat
 from app.juli.coords import quadrant_subcoords_to_lonlat
 from app.juli.main import juli_live_router, register_radio_event_hook
 from app.juli.tracker import juli_tracker
-from app.live_nrt import LIVE_STATUS_PATH, run_live_nrt_cycle
 from app.lucia import config as lucia_config
-from app.lucia.router import (
-    compute_Interactive_route_from_lonlat,
-    generate_lucia_geojson_from_cata,
-)
 from app.ws import manager
 
 _LOGGER = logging.getLogger(__name__)
+_APP_DIR = os.path.dirname(os.path.abspath(__file__))
+LIVE_STATUS_PATH = os.path.join(_APP_DIR, "continual", "artifacts", "live_nrt_status.json")
+
+
+def _load_lucia_router():
+    try:
+        from app.lucia.router import (
+            compute_Interactive_route_from_lonlat,
+            generate_lucia_geojson_from_cata,
+        )
+    except ImportError as exc:
+        raise HTTPException(
+            status_code=503,
+            detail=(
+                "Recálculo neuronal LUCIA no disponible en este despliegue ligero "
+                "(requiere dependencias opcionales [trainer])."
+            ),
+        ) from exc
+    return compute_Interactive_route_from_lonlat, generate_lucia_geojson_from_cata
+
+
+def _load_continual_engine():
+    try:
+        from app.continual import continual_engine
+    except ImportError as exc:
+        raise HTTPException(
+            status_code=503,
+            detail=(
+                "Motor de aprendizaje continuo no disponible en este despliegue ligero "
+                "(requiere dependencias opcionales [trainer])."
+            ),
+        ) from exc
+    return continual_engine
+
+
+def _load_live_nrt_runner():
+    try:
+        from app.live_nrt import run_live_nrt_cycle
+    except ImportError as exc:
+        raise HTTPException(
+            status_code=503,
+            detail=(
+                "Pipeline live NRT no disponible en este despliegue ligero "
+                "(requiere dependencias opcionales [trainer])."
+            ),
+        ) from exc
+    return run_live_nrt_cycle
 
 
 def _read_json_file(path: str) -> dict:
@@ -246,6 +287,7 @@ async def get_lucia_routes(
         )
 
     profiles_seq = ("human", "animal") if profile == "both" else (profile,)
+    _, generate_lucia_geojson_from_cata = _load_lucia_router()
     return generate_lucia_geojson_from_cata(
         cata_predictions_path=lucia_config.DEFAULT_CATA_PREDICTIONS_PATH,
         output_geojson_path=None,
@@ -289,7 +331,8 @@ async def compute_lucia_interactive_route(req: LuciaRouteRequest) -> dict:
         if req.meeting_points
         else None
     )
-    return compute_Interactive_route_from_lonlat(
+    compute_interactive_route, _ = _load_lucia_router()
+    return compute_interactive_route(
         lon=lon,
         lat=lat,
         profile=req.profile,
@@ -308,6 +351,7 @@ async def get_lucia_meeting_points(
     if cached_data is not None:
         data = cached_data
     else:
+        _, generate_lucia_geojson_from_cata = _load_lucia_router()
         data = generate_lucia_geojson_from_cata(output_geojson_path=None)
 
     mp_features = [
@@ -352,12 +396,14 @@ class ContinualFeedbackInput(BaseModel):
 @app.get("/api/continual/status")
 async def get_continual_status() -> dict:
     """Devuelve el estado del motor de aprendizaje continuo recursivo de CATA y LUCIA."""
+    continual_engine = _load_continual_engine()
     return continual_engine.state
 
 
 @app.post("/api/continual/feedback")
 async def post_continual_feedback(req: ContinualFeedbackInput) -> dict:
     """Aplica feedback directo desde terreno a la memoria recursiva sin reentrenar."""
+    continual_engine = _load_continual_engine()
     res = continual_engine.register_field_feedback(
         block_or_zone_id=req.zone_or_block_id,
         feedback_type=req.feedback_type,
@@ -381,6 +427,7 @@ async def get_live_nrt_status() -> dict:
 @app.post("/api/live/refresh")
 async def trigger_live_nrt_refresh(days: int = Query(default=2, ge=1, le=10)) -> dict:
     """Descarga detecciones FIRMS NRT en directo, predice con CATA y actualiza rutas LUCIA."""
+    run_live_nrt_cycle = _load_live_nrt_runner()
     try:
         res = run_live_nrt_cycle(days=days)
     except RuntimeError as exc:

@@ -15,6 +15,8 @@ Tercer eslabón de la pipeline **VALEN -> CATA -> LUCIA**:
     como para **animales**, exportando el resultado en formato **GeoJSON (WGS84)**.
 """
 
+from importlib import import_module
+
 from .config import (
     ALGORITHM_NAME,
     DEFAULT_CATA_PREDICTIONS_PATH,
@@ -34,31 +36,45 @@ from .config import (
     SOURCE_VALIDATION_ALGORITHM,
     LuciaModelConfig,
 )
-from .model import (
-    build_lucia_model,
-    create_lucia_model,
-    expand_lucia_channels,
-    extract_lucia_features_from_zone,
-    load_lucia_model,
-    lucia_predict_fields,
+
+_MODEL_EXPORTS = frozenset(
+    {
+        "build_lucia_model",
+        "create_lucia_model",
+        "load_lucia_model",
+        "expand_lucia_channels",
+        "extract_lucia_features_from_zone",
+        "lucia_predict_fields",
+    }
 )
-from .router import (
-    build_zone_geojson_features,
-    cell_iy_ix_to_lonlat,
-    cell_iy_ix_to_polygon_lonlat,
-    classify_zone_fire_safety,
-    compute_Interactive_route_from_lonlat,
-    find_safe_evacuation_route,
-    generate_lucia_geojson_from_cata,
-    identify_safe_havens,
-    load_elevation_index,
-    load_roads_index,
-    load_zone_elevation_grids,
-    load_zone_road_grids,
-    lonlat_to_cell_iy_ix,
-    resolve_zone_meeting_points,
-    select_threatened_origins,
+_ROUTER_EXPORTS = frozenset(
+    {
+        "cell_iy_ix_to_lonlat",
+        "cell_iy_ix_to_polygon_lonlat",
+        "lonlat_to_cell_iy_ix",
+        "classify_zone_fire_safety",
+        "identify_safe_havens",
+        "resolve_zone_meeting_points",
+        "load_roads_index",
+        "load_zone_road_grids",
+        "load_elevation_index",
+        "load_zone_elevation_grids",
+        "select_threatened_origins",
+        "find_safe_evacuation_route",
+        "build_zone_geojson_features",
+        "generate_lucia_geojson_from_cata",
+        "compute_Interactive_route_from_lonlat",
+    }
 )
+
+
+def __getattr__(name: str):
+    if name in _MODEL_EXPORTS:
+        return getattr(import_module(".model", __name__), name)
+    if name in _ROUTER_EXPORTS:
+        return getattr(import_module(".router", __name__), name)
+    raise AttributeError(f"module {__name__!r} has no attribute {name!r}")
+
 
 __all__ = [
     "ALGORITHM_NAME",

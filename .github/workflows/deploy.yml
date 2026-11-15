@@ -309,8 +309,8 @@ jobs:
         run: uv sync --frozen
       - name: Lint y formato (ruff)
         run: uv run --frozen ruff check . && uv run --frozen ruff format --check .
-      - name: Tests (pytest)
-        run: uv run --frozen pytest -q
+      - name: Tests de API y seguridad (pytest)
+        run: uv run --frozen pytest -q -m "not trainer"
       - name: Vulnerabilidades conocidas (pip-audit)
         run: |
           uv export --frozen --format requirements.txt --no-emit-project -o "$RUNNER_TEMP/requirements.txt"
