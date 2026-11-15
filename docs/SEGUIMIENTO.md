@@ -51,16 +51,18 @@ Estado a 15 nov 2026, 15:50. Hoja de ruta de lo que falta:
 
 ## Backend conectado
 
-El front usa la API de `backend/` cuando se le da su URL (`?api=`, Ajustes → Backend o
-`VITE_API_URL`); sin ella sigue con los datos estáticos, también en GitHub Pages. Cómo
-arrancarlo: [frontend/README.md](../frontend/README.md#conexión-con-el-backend).
+La web publicada se conecta sola al backend en Render (`https://cataclismo-api.onrender.com`,
+desplegado con `render.yaml` en cada push a `main` que toque `backend/`). La URL va en la
+variable del repo `VITE_API_URL`. Si no responde, la app sigue con sus datos estáticos. En
+local se usa con `?api=` o Ajustes: [frontend/README.md](../frontend/README.md#conexión-con-el-backend).
 
 - **CATA**: celdas de 1 km por categoría, sacadas de `/api/lucia/routes` (el fichero de
   `/api/cata/predictions` aún no existe en el backend y da 404).
 - **LUCIA**: rutas para personas y animales, orígenes en riesgo y puntos de encuentro.
 - **JULI**: operarios por estado y aro rojo sin prueba de vida; en vivo por `/ws`.
-- Pendiente: un servidor público para la demo (hoy, en local) y que JULI no escriba su estado en
-  ficheros versionados (`backend/app/juli/artifacts/`).
+- Plan gratuito: el servidor se duerme tras 15 min sin uso y la primera visita tarda hasta 1 min
+  («Conectando…»). Sin base de datos PostGIS en Render (`/health` da `database: unavailable`).
+- Pendiente: que JULI no escriba su estado en ficheros versionados (`backend/app/juli/artifacts/`).
 
 ## Deploy de `main`
 
