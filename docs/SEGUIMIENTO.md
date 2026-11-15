@@ -1,16 +1,17 @@
 # Seguimiento de CATACLISMO
 
-Estado a 15 nov 2026, 10:30 (último commit en `main`: `9f91cae`). Hoja de ruta de lo que falta:
+Estado a 15 nov 2026, 15:50. Hoja de ruta de lo que falta:
 [MEJORAS.md](MEJORAS.md).
 
 ## Resumen
 
-| Parte                     | Estado                                              |
-| ------------------------- | --------------------------------------------------- |
-| Datos y armonización      | ✅ Hecho                                            |
-| Front v2 (mapa y paneles) | ✅ Hecho y publicado (`ea69cbe`, Deploy verde)      |
-| Mejoras de MEJORAS.md     | ⏳ Bloque 0 hecho; bloques 1 a 5 hechos; 6 a medias |
-| Deploy de `main` ahora    | ❌ Roto por el último merge del backend             |
+| Parte                     | Estado                                               |
+| ------------------------- | ---------------------------------------------------- |
+| Datos y armonización      | ✅ Hecho                                             |
+| Front v2 (mapa y paneles) | ✅ Hecho y publicado (`ea69cbe`, Deploy verde)       |
+| Mejoras de MEJORAS.md     | ⏳ Bloques 0 a 5 y 7 hechos; 6 a medias              |
+| Backend ↔ front           | ✅ Conectado: CATA, LUCIA y JULI (`5ca0283`)         |
+| Deploy de `main`          | ⏳ Arreglos subidos; pendiente de confirmar en verde |
 
 ## Hecho
 
@@ -46,18 +47,23 @@ Estado a 15 nov 2026, 10:30 (último commit en `main`: `9f91cae`). Hoja de ruta 
 - [x] **4 · Buscar, medir y compartir**
 - [x] **5 · Recortes e idioma** (quitar mar, ES/EN)
 - [ ] **6 · Pruebas de rendimiento, red y heurísticas**
+- [x] **7 · Backend conectado**: CATA, LUCIA y JULI en el mapa, JULI en vivo por WebSocket
 
-## Problema abierto: Deploy roto en `main`
+## Backend conectado
 
-El merge del backend (`9f91cae`, rama `back`) rompe el Deploy, así que la web no se actualiza.
-Sigue publicada la versión buena (`ea69cbe`). Lo que falla:
+El front usa la API de `backend/` cuando se le da su URL (`?api=`, Ajustes → Backend o
+`VITE_API_URL`); sin ella sigue con los datos estáticos, también en GitHub Pages. Cómo
+arrancarlo: [frontend/README.md](../frontend/README.md#conexión-con-el-backend-opcional).
 
-- **Guardián**: hay 3 ficheros por encima de 1 MB versionados:
-  `backend/checkpoints/best_model.keras`, `backend/checkpoints/latest_backup.keras` y
-  `backend/app/lucia/artifacts/routes/lucia_routes.geojson`. Los modelos deberían ir fuera de git
-  (o en Git LFS o un release) y el GeoJSON, comprimido o recortado.
-- **Backend**: `ruff` encuentra 450 errores en el código nuevo.
-- **Secretos**: `gitleaks` detecta 1 posible secreto en el historial. Hay que revisarlo y rotarlo
-  si es real.
+- **CATA**: celdas de 1 km por categoría, sacadas de `/api/lucia/routes` (el fichero de
+  `/api/cata/predictions` aún no existe en el backend y da 404).
+- **LUCIA**: rutas para personas y animales, orígenes en riesgo y puntos de encuentro.
+- **JULI**: operarios por estado y aro rojo sin prueba de vida; en vivo por `/ws`.
+- Pendiente: un servidor público para la demo (hoy, en local) y que JULI no escriba su estado en
+  ficheros versionados (`backend/app/juli/artifacts/`).
 
-Esto es del backend: lo arregla quien lo subió, o se acuerda en el equipo antes de tocarlo.
+## Deploy de `main`
+
+Los fallos del merge del backend ya están arreglados: guardián con límite propio para los modelos,
+ruff a cero, falso positivo de gitleaks ignorado por huella, tests de la API, ruta del algoritmo de
+vías de escape y e2e adaptados a las rutas nuevas.

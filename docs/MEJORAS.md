@@ -72,6 +72,11 @@ Deploy está en rojo.
     [evaluacion-heuristica.md](evaluacion-heuristica.md), 22 arreglos) y prueba con 3-4 personas de fuera del equipo
     (5 min cada una), centrada en solapes de paneles y en real frente a simulado.
 
+- [x] **7 · Backend conectado**
+  - Cliente opcional de la API (`lib/api.ts`), salud cada 30 s y chip «API» en la barra.
+  - Capas CATA, LUCIA y JULI en Capas → Backend, con ficha al pulsar y «Ver en el mapa».
+  - JULI en vivo por WebSocket `/ws`, con sondeo de respaldo y reconexión.
+
 ## Verificación (en cada bloque)
 
 - `pnpm format:check`, `pnpm check`, `pnpm lint`, `pnpm test`, `pnpm build`, `pnpm check:size`,
