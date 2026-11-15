@@ -66,7 +66,7 @@ Hay que distinguir entre la **web estática publicada hoy en GitHub Pages** y el
 2. **Datos actuales del frontend estático (`frontend/`):**
    - En su estado actual, el frontend desplegado en GitHub Pages **todavía no llama al backend FastAPI** (`frontend/src/data/source.ts` usa únicamente `LocalSource` sobre `frontend/public/data/`).
    - Las detecciones reales de NASA FIRMS (`hotspots-manifest-v1.json`, `hotspots-cells-v1.bin`, `hotspots-grid-v1-*.bin`, `detections-recent-v1.json`, `incidents-v1.json`) proceden del preproceso offline [`tools/build-hotspots`](tools/build-hotspots/README.md).
-   - La capa visual rotulada como *SIMULADO / PREDICCIÓN* y las rutas estáticas (`escape-routes-v1.json`) se calculan con [`frontend/src/map/scenarios.json`](frontend/src/map/scenarios.json) y el modelo elíptico simplificado en el cliente ([`frontend/src/map/scenario.ts`](frontend/src/map/scenario.ts)), a la espera de conectar la UI a `/api/cata/predictions` y `/api/lucia/routes`.
+   - La capa visual rotulada como _SIMULADO / PREDICCIÓN_ y las rutas estáticas (`escape-routes-v1.json`) se calculan con [`frontend/src/map/scenarios.json`](frontend/src/map/scenarios.json) y el modelo elíptico simplificado en el cliente ([`frontend/src/map/scenario.ts`](frontend/src/map/scenario.ts)), a la espera de conectar la UI a `/api/cata/predictions` y `/api/lucia/routes`.
 
 ## Comprobaciones locales
 
