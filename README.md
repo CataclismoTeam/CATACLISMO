@@ -21,7 +21,7 @@ Web publicada: https://cataclismoteam.github.io/CATACLISMO/
 
 ```
 frontend/   React + TS + Cesium (Vite). El build sale a dist/ en la raíz
-backend/    API FastAPI (uv): app/main.py, app/db.py (PostGIS), app/ws.py (WebSockets) — ver backend/README.md (incluye feed NRT con FIRMS_MAP_KEY en secretos del repo)
+backend/    API FastAPI (uv): app/main.py, app/db.py (PostGIS), app/ws.py (WebSockets) — cuadrícula unificada 1000×1000 m (EPSG:3035, ES1K); ver backend/README.md (incluye feed NRT con FIRMS_MAP_KEY en secretos del repo)
 tests/      e2e y regresión visual con Playwright sobre el build real
 tools/      scripts del CI: guardián, enlaces, peso, servidor estático, commits
 config/     Playwright, Lighthouse, html-validate, release-please
