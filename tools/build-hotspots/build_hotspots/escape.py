@@ -1,4 +1,6 @@
-"""Vías de escape de las simulaciones con el algoritmo del equipo (backend/search/main.py).
+"""Vías de escape de las simulaciones con el algoritmo del equipo.
+
+Algoritmo: backend/app/lucia/prototype_astar.py.
 
 Para cada simulación se monta una rejilla de 100 m alrededor del foco con datos reales:
 carreteras y pistas de OpenStreetMap (Overpass), mar fuera de las comunidades autónomas y
@@ -25,7 +27,7 @@ from shapely.geometry import LineString, shape
 from .export import write_json
 
 ROOT = Path(__file__).resolve().parents[3]
-TEAM_MODULE = ROOT / "backend" / "search" / "main.py"
+TEAM_MODULE = ROOT / "backend" / "app" / "lucia" / "prototype_astar.py"
 OVERPASS = (
     "https://overpass-api.de/api/interpreter",
     "https://overpass.private.coffee/api/interpreter",
@@ -308,6 +310,34 @@ def _length_km(line: list) -> float:
     return sum(_km(a[0], a[1], b[0], b[1]) for a, b in zip(line, line[1:], strict=False))
 
 
+def _road_components(grid: list[list[str]]) -> dict[tuple[int, int], int]:
+    """Componente conexa (8 vecinos) de cada celda de vía de la rejilla."""
+    rows, cols = len(grid), len(grid[0])
+    component: dict[tuple[int, int], int] = {}
+    count = 0
+    for r0 in range(rows):
+        for c0 in range(cols):
+            if grid[r0][c0] not in "=R-" or (r0, c0) in component:
+                continue
+            count += 1
+            component[(r0, c0)] = count
+            stack = [(r0, c0)]
+            while stack:
+                r, c = stack.pop()
+                for dr in (-1, 0, 1):
+                    for dc in (-1, 0, 1):
+                        n = (r + dr, c + dc)
+                        if (
+                            0 <= n[0] < rows
+                            and 0 <= n[1] < cols
+                            and n not in component
+                            and grid[n[0]][n[1]] in "=R-"
+                        ):
+                            component[n] = count
+                            stack.append(n)
+    return component
+
+
 def exits_cells(refuges: list) -> list[tuple[int, int]]:
     return [cell for _, cell in refuges]
 
@@ -378,11 +408,21 @@ def routes_for(scenario: dict, team, land: Land, cache_dir: Path) -> dict:
         threatened = [(t, n, c) for t, n, c, _, _ in reachable[:2]]
     first = threatened[0][0] if threatened else 0
     taken = {n for _, n, _ in threatened}
-    refuges = [
-        (n, c)
+    safe = [
+        (n, c, kind)
         for t, n, c, kind, d in reachable
-        if n not in taken and d >= 4 and kind != "suburb" and t >= 2.5 * first
+        if n not in taken and d >= 4 and t >= 2.5 * first
     ]
+    # El refugio tiene que poder alcanzarse por carretera desde los amenazados: si no, la búsqueda
+    # por vías falla y la ruta sale campo a través. Se prefiere un pueblo; si ninguno conectado
+    # cumple, sirve una urbanización; solo sin ninguno conectado se mantiene el criterio original.
+    component = _road_components(grid)
+    linked = {component[c] for _, _, c in threatened if c in component}
+    refuges = (
+        [(n, c) for n, c, kind in safe if kind != "suburb" and component.get(c) in linked]
+        or [(n, c) for n, c, _ in safe if component.get(c) in linked]
+        or [(n, c) for n, c, kind in safe if kind != "suburb"]
+    )
 
     # Evacuación en vehículo: solo por carreteras y pistas. Con la rejilla completa el algoritmo
     # (pensado a pie) atajaba por matorral y la ruta salía del asfalto. Si por un hueco de datos
@@ -463,8 +503,9 @@ def main(argv: list[str] | None = None) -> None:
     scenarios = json.loads(args.scenarios.read_text(encoding="utf-8"))
     result = {
         "metodo": (
-            "Algoritmo de vías de escape del equipo (backend/search/main.py): propagación con "
-            "viento y A* espacio-temporal sobre rejilla de 100 m con carreteras de OpenStreetMap"
+            "Algoritmo de vías de escape del equipo (backend/app/lucia/prototype_astar.py): "
+            "propagación con viento y A* espacio-temporal sobre rejilla de 100 m "
+            "con carreteras de OpenStreetMap"
         ),
         "unidades": {"turnoMin": MIN_PER_TURN, "celdaM": CELL_M},
         "atribucion": "Vías y núcleos © colaboradores de OpenStreetMap (ODbL)",

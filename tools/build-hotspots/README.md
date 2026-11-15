@@ -143,7 +143,7 @@ uv run --project tools/build-hotspots build-escape-routes \
   --scenarios frontend/src/map/scenarios.json --out frontend/public/data
 ```
 
-Usa el **algoritmo de evacuación del equipo** (`backend/search/main.py`): propagación del fuego
+Usa el **algoritmo de evacuación del equipo** (`backend/app/lucia/prototype_astar.py`): propagación del fuego
 con viento y A* espacio-temporal. Para cada simulación monta una rejilla de 100 m (~15 km de lado)
 con carreteras y núcleos de OpenStreetMap (Overpass, caché en `data/raw/osm/`, no versionada) y mar
 fuera de las comunidades autónomas. Busca rutas desde los núcleos amenazados (el fuego llega en
