@@ -68,7 +68,14 @@ test('las pestañas de unidades se recorren con las flechas', async ({ page }) =
 
 test('el primer Tab ofrece saltar al mapa', async ({ page }) => {
   await start(page);
-  await page.locator('body').focus();
+  await expect(page.getByRole('dialog', { name: 'CATACLISMO' })).toBeHidden();
+  // body no es enfocable: con tabindex temporal el punto de partida del Tab vuelve al inicio
+  // (si no, en el CI el Tab sale desde el botón al que el diálogo devuelve el foco)
+  await page.evaluate(() => {
+    document.body.tabIndex = -1;
+    document.body.focus();
+    document.body.removeAttribute('tabindex');
+  });
   await page.keyboard.press('Tab');
   const skip = page.getByRole('link', { name: 'Saltar al mapa' });
   await expect(skip).toBeFocused();
