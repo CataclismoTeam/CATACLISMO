@@ -5,13 +5,13 @@ Estado a 15 nov 2026, 15:50. Hoja de ruta de lo que falta:
 
 ## Resumen
 
-| Parte                     | Estado                                               |
-| ------------------------- | ---------------------------------------------------- |
-| Datos y armonización      | ✅ Hecho                                             |
-| Front v2 (mapa y paneles) | ✅ Hecho y publicado (`ea69cbe`, Deploy verde)       |
-| Mejoras de MEJORAS.md     | ⏳ Bloques 0 a 5 y 7 hechos; 6 a medias              |
-| Backend ↔ front           | ✅ Conectado: CATA, LUCIA y JULI (`5ca0283`)         |
-| Deploy de `main`          | ⏳ Arreglos subidos; pendiente de confirmar en verde |
+| Parte                     | Estado                                         |
+| ------------------------- | ---------------------------------------------- |
+| Datos y armonización      | ✅ Hecho                                       |
+| Front v2 (mapa y paneles) | ✅ Hecho y publicado (`ea69cbe`, Deploy verde) |
+| Mejoras de MEJORAS.md     | ⏳ Bloques 0 a 5 y 7 hechos; 6 a medias        |
+| Backend ↔ front           | ✅ Conectado: CATA, LUCIA y JULI (`5ca0283`)   |
+| Deploy de `main`          | ✅ Verde y publicado (`7cd98df`)               |
 
 ## Hecho
 
