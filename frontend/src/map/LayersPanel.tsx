@@ -8,6 +8,7 @@ import type { Detections } from './detections.ts';
 import type { Remote } from './useRemote.ts';
 import {
   ACTIVE_COLOR,
+  ASH_COLOR,
   AREA_COLOR,
   HALO_COLOR,
   MONTH_RAMP,
@@ -212,6 +213,8 @@ export function LayersPanel({ detections: load }: { detections: Remote<Detection
                     : t('cargando…')}
                 . {t('Celdas de 250 m con fuego detectado.')}
               </span>
+              <Swatch fill={ACTIVE_COLOR}>Ardiendo al cierre del dato</Swatch>
+              <Swatch fill={ASH_COLOR}>Ya sin fuego (ceniza)</Swatch>
               <div className="flex flex-wrap gap-x-3 gap-y-1 text-xs">
                 <span className="flex items-center gap-1.5">
                   <span

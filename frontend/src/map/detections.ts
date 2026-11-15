@@ -51,6 +51,10 @@ export async function loadDetections(): Promise<Detections> {
 
 /** Lado de celda, el mismo que el incendio simulado (≈ 250 m). */
 const CELL = 0.0025;
+/** Días sin detección para dar una celda por apagada: el mismo criterio que los incendios
+ * (`diasSinDeteccionInactivo` de tools/build-hotspots). */
+export const ACTIVE_DAYS = 3;
+const DAY_MS = 86_400_000;
 
 /**
  * Celdas de 250 m con fuego real: cada detección marca las celdas que cubre su píxel y cada una guarda
@@ -58,9 +62,11 @@ const CELL = 0.0025;
  */
 export function fireCells(
   detections: Detections,
-): FeatureCollection<Polygon, { frp: number; detecciones: number }> {
-  const cells = new Map<string, { i: number; j: number; frp: number; n: number }>();
+  activeDays = ACTIVE_DAYS,
+): FeatureCollection<Polygon, { frp: number; detecciones: number; activo: boolean }> {
+  const cells = new Map<string, { i: number; j: number; frp: number; n: number; last: string }>();
   for (const f of detections.geojson.features) {
+    const day = f.properties.fecha.slice(0, 10);
     const [lon, lat] = f.geometry.coordinates;
     // Huella del píxel del sensor: VIIRS ~375 m, MODIS ~1 km de lado
     const halfKm = f.properties.sensor === 'MODIS' ? 0.5 : 0.1875;
@@ -73,18 +79,21 @@ export function fireCells(
         if (cell) {
           cell.frp = Math.max(cell.frp, f.properties.frp);
           cell.n += 1;
-        } else cells.set(key, { i, j, frp: f.properties.frp, n: 1 });
+          if (day > cell.last) cell.last = day;
+        } else cells.set(key, { i, j, frp: f.properties.frp, n: 1, last: day });
       }
     }
   }
+  const end = Date.parse(detections.to);
   return {
     type: 'FeatureCollection',
-    features: [...cells.values()].map(({ i, j, frp, n }) => {
+    features: [...cells.values()].map(({ i, j, frp, n, last }) => {
       const w = i * CELL;
       const s = j * CELL;
       return {
         type: 'Feature',
-        properties: { frp, detecciones: n },
+        // Activa si tuvo fuego en los últimos días del dato; si no, ya es ceniza
+        properties: { frp, detecciones: n, activo: (end - Date.parse(last)) / DAY_MS < activeDays },
         geometry: {
           type: 'Polygon',
           coordinates: [

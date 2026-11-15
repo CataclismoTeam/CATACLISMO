@@ -357,6 +357,8 @@ const en: Record<string, string> = {
     'Not a forecast: FIRMS gives no wind, so a fixed example westerly (15 km/h) is used. Only on fires active at the data cut-off.',
   'Incendio activo': 'Active fire',
   'Zona ardiendo ahora (celdas de 250 m)': 'Area burning now (250 m cells)',
+  'Ardiendo al cierre del dato': 'Burning at the data cut-off',
+  'Ya sin fuego (ceniza)': 'No longer burning (ash)',
   'Propagación prevista': 'Predicted spread',
   Predicción: 'Prediction',
   'Modelo de demostración: dónde llegaría el fuego, no dónde está.':
