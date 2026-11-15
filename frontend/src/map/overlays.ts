@@ -17,6 +17,8 @@ export const PREDICTION_BANDS: [hours: number, color: string, label: string][] =
 ];
 export const ACTIVE_COLOR = '#c2331f';
 export const ROUTE_COLOR = '#2f9e62';
+/** Halo ilustrativo de los incendios reales: gris neutro, nunca los colores del modelo */
+export const HALO_COLOR = '#b8bcc4';
 
 /** Color de un token CSS (cambia con el tema y el modo de daltonismo). */
 export function tokenColor(name: string, fallback: string): string {
@@ -27,6 +29,7 @@ export function tokenColor(name: string, fallback: string): string {
 /** Capas de MapLibre que controla cada interruptor del panel. */
 export const LAYER_IDS: Record<LayerId, string[]> = {
   detecciones: ['det-cell', 'det-cell-line', 'real-fill', 'real-icon'],
+  halo: ['halo-fill', 'halo-line'],
   incendio: ['inc-fill', 'inc-line'],
   prediccion: ['pred-tint', 'pred-fill', 'pred-line'],
   unidades: [],
@@ -63,6 +66,8 @@ function upsertSource(map: MapLibre, id: string, data: GeoJSON.FeatureCollection
 export const FAR_ZOOM = 9;
 /** Capas del escenario simulado que solo tienen sentido de cerca */
 const NEAR_ONLY = [
+  'halo-fill',
+  'halo-line',
   'pred-tint',
   'pred-fill',
   'pred-line',
@@ -202,18 +207,40 @@ export function installOverlays(
   }
 
   // Predicción (MODELO): celdas de 250 m con trama y borde discontinuo
-  const cells = spread(scenario);
-  // Los incendios reales llevan el mismo halo de propagación que el simulado (viento de poniente
-  // de demostración: FIRMS no trae viento)
+  upsertSource(map, 'incendio', spread(scenario));
+
+  // Halo ILUSTRATIVO de los incendios reales activos: FIRMS no trae viento, así que usa un
+  // poniente fijo de ejemplo. Capa propia, gris y sin trama, para no confundirlo con el modelo.
   if (incidents) {
+    const halo: GeoJSON.FeatureCollection = { type: 'FeatureCollection', features: [] };
     // Solo los activos: un halo por cada uno de los 232 pesaría demasiado y los antiguos ya no avanzan
     for (const i of incidents.incendios.filter((x) => x.activo)) {
       for (const f of spreadFrom([i.lon, i.lat], 270, 15).features) {
-        if (f.properties.fase === 'prediccion') cells.features.push(f);
+        if (f.properties.fase === 'prediccion') halo.features.push(f);
       }
     }
+    upsertSource(map, 'halo-real', halo);
+    if (!map.getLayer('halo-fill')) {
+      map.addLayer(
+        {
+          id: 'halo-fill',
+          type: 'fill',
+          source: 'halo-real',
+          paint: { 'fill-color': HALO_COLOR, 'fill-opacity': 0.22, 'fill-antialias': false },
+        },
+        beforeLabels,
+      );
+      map.addLayer(
+        {
+          id: 'halo-line',
+          type: 'line',
+          source: 'halo-real',
+          paint: { 'line-color': HALO_COLOR, 'line-width': 0.4, 'line-opacity': 0.3 },
+        },
+        beforeLabels,
+      );
+    }
   }
-  upsertSource(map, 'incendio', cells);
   if (!map.getLayer('pred-fill')) {
     // Tinte translúcido por franja horaria + trama encima: se lee de lejos y en gris
     map.addLayer(

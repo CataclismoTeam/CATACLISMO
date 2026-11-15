@@ -1,4 +1,4 @@
-import { useEffect } from 'react';
+import { lazy, Suspense, useEffect } from 'react';
 import { CalendarDock } from '../features/history/CalendarDock.tsx';
 import { useHistory } from '../store/history.ts';
 import { useUi } from '../store/ui.ts';
@@ -7,12 +7,14 @@ import { MapStage } from './MapStage.tsx';
 import { NavRail } from './NavRail.tsx';
 import { TopBar } from './TopBar.tsx';
 
-// El briefing (y con él la librería de diálogos) solo se descarga si hay que mostrarlo
+// La metodología (datos y métodos) solo se descarga al abrirla, desde el calendario o la procedencia
+const MethodDialog = lazy(() => import('../features/history/MethodDialog.tsx'));
 
 export function Shell() {
   const load = useHistory((s) => s.load);
   const projection = useUi((s) => s.projection);
   const briefingOpen = useUi((s) => s.briefingOpen);
+  const methodOpen = useUi((s) => s.methodOpen);
 
   useEffect(() => {
     void load();
@@ -56,6 +58,11 @@ export function Shell() {
         </main>
       </div>
       <Briefing />
+      {methodOpen && (
+        <Suspense fallback={null}>
+          <MethodDialog />
+        </Suspense>
+      )}
     </div>
   );
 }

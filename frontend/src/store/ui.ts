@@ -10,10 +10,19 @@ export type Theme = 'sistema' | 'claro' | 'oscuro';
 export type Cvd = 'ninguno' | 'protanopia' | 'deuteranopia' | 'tritanopia';
 export type LeftPanel = 'incendios' | 'unidades' | null;
 export type LayerId =
-  'detecciones' | 'incendio' | 'prediccion' | 'unidades' | 'evacuacion' | 'curvas' | 'sombreado';
+  | 'detecciones'
+  | 'halo'
+  | 'incendio'
+  | 'prediccion'
+  | 'unidades'
+  | 'evacuacion'
+  | 'curvas'
+  | 'sombreado';
 
 export const DEFAULT_LAYERS: Record<LayerId, boolean> = {
   detecciones: true,
+  // Viento inventado: apagado por defecto para que no se lea como pronóstico
+  halo: false,
   incendio: true,
   prediccion: true,
   unidades: true,

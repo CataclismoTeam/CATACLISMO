@@ -87,7 +87,7 @@ test('se descargan el CSV y el PNG de la búsqueda', async ({ page }) => {
 test('la metodología explica la armonización y se cierra con Esc', async ({ page }) => {
   await enter(page);
   await page.getByRole('button', { name: 'Cómo se armonizan los datos' }).click();
-  const dialog = page.getByRole('dialog', { name: 'Cómo se armonizan los datos' });
+  const dialog = page.getByRole('dialog', { name: 'Datos y métodos' });
   await expect(dialog).toContainText('NASA FIRMS');
   await expect(dialog).toContainText('Factor k por mes del año');
   await expect(dialog).toContainText('Limitaciones');

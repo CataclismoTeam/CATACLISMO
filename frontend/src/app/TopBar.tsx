@@ -1,12 +1,10 @@
-import { CircleHelp, WifiOff } from 'lucide-react';
+import { CircleHelp } from 'lucide-react';
 import { useEffect, useState } from 'react';
-import { dataSource } from '../data/source.ts';
-import { useHistory } from '../store/history.ts';
 import { useUi } from '../store/ui.ts';
 import { Button } from '../ui/Button.tsx';
-import { Tag } from '../ui/Tag.tsx';
 import { Logo } from './Logo.tsx';
 import { ModeSwitch } from './ModeSwitch.tsx';
+import { Provenance } from './Provenance.tsx';
 import { RadioButton, RadioPanel } from './RadioPanel.tsx';
 import { SettingsButton, SettingsPanel } from './SettingsPanel.tsx';
 
@@ -30,11 +28,10 @@ function UtcClock() {
 }
 
 export function TopBar() {
-  const lastDate = useHistory((s) => s.manifest?.tiempo.ultimoDato);
   const openBriefing = useUi((s) => s.openBriefing);
 
   return (
-    <header className="relative z-(--z-bar) flex h-14 shrink-0 items-center gap-3 border-b border-line bg-surface px-3">
+    <header className="relative z-(--z-bar) flex h-14 shrink-0 items-center gap-2 border-b border-line bg-surface px-2 sm:gap-3 sm:px-3">
       <Logo />
       <div className="hidden min-w-0 flex-col leading-tight sm:flex">
         <h1 className="m-0 text-base font-bold tracking-[0.14em]">CATACLISMO</h1>
@@ -47,15 +44,7 @@ export function TopBar() {
       <ModeSwitch />
 
       <div className="ml-auto flex items-center gap-1.5">
-        {lastDate && (
-          <Tag tone="real" className="hidden lg:inline-flex">
-            Real · FIRMS · hasta {lastDate}
-          </Tag>
-        )}
-        <Tag className="hidden 2xl:inline-flex">
-          <WifiOff size={14} strokeWidth={1.5} aria-hidden />
-          {dataSource.label}
-        </Tag>
+        <Provenance />
         <UtcClock />
         <RadioButton />
         <SettingsButton />

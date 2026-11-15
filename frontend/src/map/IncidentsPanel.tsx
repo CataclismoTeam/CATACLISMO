@@ -2,6 +2,7 @@ import { ArrowUp, ChevronRight, X } from 'lucide-react';
 import { useMemo, useState } from 'react';
 import { cn } from '../lib/cn.ts';
 import { formatCount } from '../lib/format.ts';
+import { ago, shortDate } from '../lib/sources.ts';
 import { useUi } from '../store/ui.ts';
 import { Button } from '../ui/Button.tsx';
 import { LoadError } from '../ui/LoadError.tsx';
@@ -12,29 +13,23 @@ import type { Remote } from './useRemote.ts';
 
 const COMPASS = ['N', 'NE', 'E', 'SE', 'S', 'SO', 'O', 'NO'];
 const ALL = 'todas';
-const shortDate = (iso: string) =>
-  new Date(`${iso}T00:00:00Z`).toLocaleDateString('es-ES', {
-    day: 'numeric',
-    month: 'short',
-    timeZone: 'UTC',
-  });
 
-function Status({ active }: { active: boolean }) {
-  // Forma + texto, no solo color
+function Status({ active, end }: { active: boolean; end: string }) {
+  // Forma + texto, no solo color. «Activo» es medible: con detecciones en los últimos días del dato
   return active ? (
     <span className="inline-flex items-center gap-1 text-xs font-semibold text-fire">
       <span aria-hidden className="size-2.5 rounded-full bg-fire" />
-      Actividad reciente
+      Activo al {shortDate(end)} (cierre del dato)
     </span>
   ) : (
     <span className="inline-flex items-center gap-1 text-xs text-ink-muted">
       <span aria-hidden className="size-2.5 rounded-full border-2 border-ink-muted" />
-      Sin detecciones recientes
+      Sin detecciones al cierre del dato
     </span>
   );
 }
 
-function IncidentRow({ incident }: { incident: Incident }) {
+function IncidentRow({ incident, end }: { incident: Incident; end: string }) {
   const selected = useUi((s) => s.selectedIncident === incident.id);
   const focus = useUi((s) => s.focusIncident);
   const sameDay = incident.desde === incident.hasta;
@@ -64,7 +59,7 @@ function IncidentRow({ incident }: { incident: Incident }) {
               ? `${Math.round(incident.areaKm2 * 100)} ha`
               : `${formatCount(incident.areaKm2)} km²`}
           </span>
-          <Status active={incident.activo} />
+          <Status active={incident.activo} end={end} />
         </span>
         <ChevronRight size={16} strokeWidth={1.5} aria-hidden className="shrink-0 text-ink-muted" />
       </button>
@@ -218,8 +213,9 @@ export function IncidentsPanel({
           ) : (
             <>
               <p className="m-0 mb-2 text-xs text-ink-muted">
-                Del {shortDate(incidents.desde)} al {shortDate(incidents.hasta)}: grupos de 3 o más
-                detecciones a menos de 2 km y 3 días entre sí.
+                Del {shortDate(incidents.desde)} al {shortDate(incidents.hasta)} (último dato,{' '}
+                <span data-dinamico>{ago(incidents.hasta)}</span>): grupos de 3 o más detecciones a
+                menos de 2 km y 3 días entre sí. Activo: con detecciones en los 3 últimos días.
               </p>
               <label className="mb-2 flex flex-col gap-1 text-sm">
                 <span className="text-ink-muted">Comunidad autónoma</span>
@@ -243,12 +239,12 @@ export function IncidentsPanel({
                   onChange={(e) => setOnlyActive(e.target.checked)}
                   className="size-4 accent-accent"
                 />
-                Solo con actividad reciente
+                Solo activos al {shortDate(incidents.hasta)}
               </label>
               {shown === 0 ? (
                 <p className="m-0 text-sm">
-                  Ningún incendio con actividad reciente en esta selección. Quita el filtro o elige
-                  otra comunidad.
+                  Ningún incendio activo al cierre del dato en esta selección. Quita el filtro o
+                  elige otra comunidad.
                 </p>
               ) : (
                 groups.map(([name, list]) => (
@@ -261,7 +257,7 @@ export function IncidentsPanel({
                     </summary>
                     <ul className="m-0 flex list-none flex-col gap-0.5 p-0">
                       {list.map((i) => (
-                        <IncidentRow key={i.id} incident={i} />
+                        <IncidentRow key={i.id} incident={i} end={incidents.hasta} />
                       ))}
                     </ul>
                   </details>

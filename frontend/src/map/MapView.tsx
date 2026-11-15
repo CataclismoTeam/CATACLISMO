@@ -108,7 +108,8 @@ export default function MapView() {
     });
     mapRef.current = map;
     map.addControl(new NavigationControl({ visualizePitch: true }), 'top-right');
-    // Abajo a la derecha: la esquina izquierda es para las fichas y las coordenadas
+    // Abajo a la derecha: la esquina izquierda es para las fichas y las coordenadas (en móvil no
+    // se muestran: no hay cursor y el centro del mapa ya se ve)
     map.addControl(new ScaleControl({ unit: 'metric' }), 'bottom-right');
 
     map.on('style.load', () => {
@@ -344,7 +345,11 @@ export default function MapView() {
       <div className="contents md:pointer-events-none md:absolute md:top-3 md:right-14 md:bottom-3 md:z-(--z-panel) md:flex md:flex-col md:items-end md:gap-2 md:*:pointer-events-auto">
         <LayersPanel detections={detectionsLoad} />
         {selectedIncident && (
-          <IncidentCard incident={selectedIncident} onClose={() => focusIncident(undefined)} />
+          <IncidentCard
+            incident={selectedIncident}
+            dataEnd={incidents?.hasta}
+            onClose={() => focusIncident(undefined)}
+          />
         )}
       </div>
       {/* Esquina inferior izquierda: fichas y coordenadas, a la derecha del panel lateral */}

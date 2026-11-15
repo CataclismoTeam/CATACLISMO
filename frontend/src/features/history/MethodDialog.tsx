@@ -2,7 +2,10 @@ import type { Manifest } from '../../data/types.ts';
 import { formatCount, MONTHS_SHORT } from '../../lib/format.ts';
 import { useHistory } from '../../store/history.ts';
 import { useUi } from '../../store/ui.ts';
+import { SourceLink } from '../../app/Provenance.tsx';
+import { SOURCES } from '../../lib/sources.ts';
 import { Dialog } from '../../ui/Dialog.tsx';
+import { HORIZON_H, NOW_H } from '../../map/scenario.ts';
 import { monthInfo } from './series.ts';
 
 const decimal = new Intl.NumberFormat('es-ES', {
@@ -48,10 +51,24 @@ export default function MethodDialog() {
     <Dialog
       open={open}
       onOpenChange={setOpen}
-      title="Cómo se armonizan los datos"
-      description="De dónde salen las cifras del calendario y qué límites tienen."
+      title="Datos y métodos"
+      description="De dónde salen los datos, cómo se calculan el calendario y el mapa, y qué límites tienen."
       className="w-[min(94vw,48rem)]"
     >
+      <Section title="Fuentes">
+        <ul className="m-0 list-disc pl-5">
+          {[SOURCES.firms, SOURCES.viirs, SOURCES.modis, SOURCES.osm, SOURCES.maptiler].map((s) => (
+            <li key={s.url}>
+              <SourceLink source={s} />: {s.what}
+            </li>
+          ))}
+        </ul>
+      </Section>
+
+      <h2 className="m-0 mb-3 border-t border-line pt-4 text-lg font-semibold">
+        Calendario histórico (real)
+      </h2>
+
       <Section title="Fuente">
         <P>{manifest.fuente}</P>
         <ul className="m-0 list-disc pl-5">
@@ -169,7 +186,7 @@ export default function MethodDialog() {
         </ul>
       </Section>
 
-      <Section title="Limitaciones">
+      <Section title="Limitaciones del calendario">
         <ul className="m-0 list-disc pl-5">
           <li>
             Los dos sensores pasan a horas distintas y con distinta resolución: un fuego corto o
@@ -185,6 +202,61 @@ export default function MethodDialog() {
           </li>
           <li>Una detección no es un incendio: un incendio grande genera muchas.</li>
         </ul>
+      </Section>
+
+      <h2 className="m-0 mt-6 mb-3 border-t border-line pt-4 text-lg font-semibold">
+        Mapa: propagación simulada
+      </h2>
+
+      <Section title="Qué es">
+        <P>
+          Un modelo de demostración, no operativo. Sirve para enseñar cómo se vería una predicción
+          en el puesto de mando; no sustituye a un simulador como FARSITE o Wildfire Analyst.
+        </P>
+      </Section>
+
+      <Section title="Cómo se calcula">
+        <P>
+          El fuego avanza en elipse, más rápido a favor del viento. Para un viento de V km/h, la
+          cabeza avanza a v = 0,6 + 0,045·V km/h y la elipse se alarga con e = mín(0,85; 0,35 +
+          V/60). En una dirección que forma un ángulo θ con el avance:
+        </P>
+        <p className="m-0 text-center font-mono">v(θ) = v · (1 − e) / (1 − e · cos θ)</p>
+        <P>
+          Cada celda de 250 m guarda su hora de llegada (distancia / v(θ)), con un ruido fijo de ±25
+          % para que el borde no sea una elipse perfecta. Lo que llega en la primera {NOW_H} h es el
+          incendio «activo»; hasta {HORIZON_H} h, la predicción en tres franjas (1–2, 2–4 y 4–6 h).
+          La intensidad y la altura de llama se derivan de esa hora: son orientativas, no físicas.
+        </P>
+      </Section>
+
+      <Section title="Qué no tiene en cuenta">
+        <ul className="m-0 list-disc pl-5">
+          <li>El combustible real (tipo de vegetación, carga) ni su humedad.</li>
+          <li>La pendiente del terreno: el fuego sube más rápido ladera arriba.</li>
+          <li>Cambios de viento, rachas ni el efecto del relieve sobre el viento.</li>
+          <li>Cortafuegos, carreteras, ríos ni las labores de extinción.</li>
+        </ul>
+        <P>
+          Por eso la incertidumbre crece con el tiempo: la franja de 4–6 h es mucho menos fiable que
+          la de 1–2 h.
+        </P>
+      </Section>
+
+      <Section title="Vías de escape">
+        <P>
+          Algoritmo del equipo (backend/search): su propia propagación con viento y una búsqueda A*
+          espacio-temporal sobre una rejilla de 100 m con las carreteras de{' '}
+          <SourceLink source={SOURCES.osm} />. Para cada núcleo amenazado busca la ruta a un refugio
+          que no cruza el fuego; el margen es el tiempo de sobra que calcula frente al fuego.
+        </P>
+      </Section>
+
+      <Section title="Halo ilustrativo de los incendios reales">
+        <P>
+          FIRMS no da el viento. El halo opcional alrededor de los incendios reales activos usa un
+          viento fijo de ejemplo (poniente, 15 km/h): es una ilustración, no un pronóstico.
+        </P>
       </Section>
     </Dialog>
   );

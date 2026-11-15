@@ -12,7 +12,6 @@ import { Heatmap } from './Heatmap.tsx';
 import type { CalendarModel } from './model.ts';
 
 const MonthChart = lazy(() => import('./MonthChart.tsx'));
-const MethodDialog = lazy(() => import('./MethodDialog.tsx'));
 
 function Exports({ model }: { model: CalendarModel }) {
   const area = useHistory((s) => s.area);
@@ -69,7 +68,6 @@ function Exports({ model }: { model: CalendarModel }) {
 
 export default function CalendarPanel({ model }: { model: CalendarModel }) {
   const select = useHistory((s) => s.select);
-  const methodOpen = useUi((s) => s.methodOpen);
   const empty = model.total === 0;
 
   return (
@@ -98,12 +96,6 @@ export default function CalendarPanel({ model }: { model: CalendarModel }) {
             <Exports model={model} />
           </div>
         </>
-      )}
-
-      {methodOpen && (
-        <Suspense fallback={null}>
-          <MethodDialog />
-        </Suspense>
       )}
     </div>
   );

@@ -5,7 +5,7 @@ import { useUi, type Basemap, type LayerId } from '../store/ui.ts';
 import { Button } from '../ui/Button.tsx';
 import type { Detections } from './detections.ts';
 import type { Remote } from './useRemote.ts';
-import { ACTIVE_COLOR, PREDICTION_BANDS } from './overlays.ts';
+import { ACTIVE_COLOR, HALO_COLOR, PREDICTION_BANDS } from './overlays.ts';
 import { provider } from './providers.ts';
 
 const BASEMAPS: [Basemap, string][] = [
@@ -13,11 +13,12 @@ const BASEMAPS: [Basemap, string][] = [
   ['topografico', 'Topográfico'],
 ];
 
-type Origin = 'real' | 'simulado' | 'modelo';
+type Origin = 'real' | 'simulado' | 'modelo' | 'ilustrativa';
 const ORIGIN: Record<Origin, { label: string; className: string }> = {
   real: { label: 'Real', className: 'border-ok/60 text-ok' },
   simulado: { label: 'Simulado', className: 'border-warn/60 text-warn' },
   modelo: { label: 'Predicción', className: 'border-water/60 text-water' },
+  ilustrativa: { label: 'Ilustrativa', className: 'border-line-strong text-ink-muted' },
 };
 
 function Toggle({
@@ -190,7 +191,7 @@ export function LayersPanel({ detections: load }: { detections: Remote<Detection
                   : load.status === 'error'
                     ? 'no se han podido descargar'
                     : 'cargando…'}
-                . Celdas de 250 m con fuego detectado y, alrededor, la propagación prevista.
+                . Celdas de 250 m con fuego detectado.
               </span>
               <div className="flex flex-wrap gap-x-3 gap-y-1 text-xs">
                 <span className="flex items-center gap-1.5">
@@ -198,14 +199,14 @@ export function LayersPanel({ detections: load }: { detections: Remote<Detection
                     aria-hidden
                     className="size-3 rounded-full border-2 border-[#fff1d6] bg-[#c2331f]"
                   />
-                  Actividad reciente
+                  Activo al cierre del dato
                 </span>
                 <span className="flex items-center gap-1.5">
                   <span
                     aria-hidden
                     className="size-3 rounded-full border-2 border-[#d9905a] bg-[#1d2026]"
                   />
-                  Sin actividad reciente
+                  Sin detecciones al cierre
                 </span>
                 <span className="flex items-center gap-1.5">
                   <span
@@ -215,6 +216,20 @@ export function LayersPanel({ detections: load }: { detections: Remote<Detection
                   Simulación
                 </span>
               </div>
+            </div>
+          }
+        />
+        <Toggle
+          id="halo"
+          label="Halo de avance de los reales"
+          origin="ilustrativa"
+          legend={
+            <div className="flex flex-col gap-1">
+              <Swatch fill={HALO_COLOR}>Hasta dónde podría llegar en 6 h</Swatch>
+              <span className="text-xs text-ink-muted">
+                No es un pronóstico: FIRMS no da el viento y se usa un poniente fijo de ejemplo (15
+                km/h). Solo en los incendios con actividad al cierre del dato.
+              </span>
             </div>
           }
         />

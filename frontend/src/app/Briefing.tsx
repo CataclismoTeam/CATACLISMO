@@ -3,6 +3,8 @@ import { useUi } from '../store/ui.ts';
 import { Button } from '../ui/Button.tsx';
 import { ModalDialog } from '../ui/ModalDialog.tsx';
 import { Tag } from '../ui/Tag.tsx';
+import { SOURCES } from '../lib/sources.ts';
+import { SourceLink } from './Provenance.tsx';
 
 /** Briefing inicial: qué es, para quién y por dónde empezar. Se puede volver a abrir con "?". */
 export function Briefing() {
@@ -30,8 +32,10 @@ export function Briefing() {
           si este mes se sale de lo normal.
         </li>
         <li>
-          <strong>Con qué datos:</strong> detecciones de fuego de los satélites MODIS y VIIRS,
-          unificadas en una sola serie.
+          <strong>Con qué datos:</strong> detecciones de fuego de los satélites{' '}
+          <SourceLink source={SOURCES.modis} /> y <SourceLink source={SOURCES.viirs} /> de{' '}
+          <SourceLink source={SOURCES.firms} />, unificadas en una sola serie. Lo simulado se rotula
+          siempre como tal.
         </li>
       </ul>
       <div className="mt-4 flex flex-wrap gap-2">

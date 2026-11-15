@@ -3,7 +3,9 @@ import type { Map as MapLibre } from 'maplibre-gl';
 import { useEffect, useState, type RefObject } from 'react';
 import { cn } from '../lib/cn.ts';
 import { Button } from '../ui/Button.tsx';
+import { ago, shortDate, SOURCES } from '../lib/sources.ts';
 import { Tag } from '../ui/Tag.tsx';
+import { SourceLink } from '../app/Provenance.tsx';
 import { KIND, STATUS } from './markers.ts';
 import type { Incident } from './incidents.ts';
 import { DOMAIN_LABEL, type Unit } from './scenario.ts';
@@ -50,7 +52,7 @@ export function CoordinatesBar({
   return (
     <p
       aria-live="off"
-      className={`${panel} m-0 flex max-w-full shrink-0 items-center gap-3 px-3 py-1.5 font-mono text-sm`}
+      className={`${panel} m-0 flex max-w-full shrink-0 max-md:hidden items-center gap-3 px-3 py-1.5 font-mono text-sm`}
     >
       <Crosshair size={16} strokeWidth={1.5} aria-hidden className="text-ink-muted" />
       <span>
@@ -166,7 +168,19 @@ export function FireCard({
 }
 
 /** Ficha de un incendio detectado por satélite (REAL). */
-export function IncidentCard({ incident, onClose }: { incident: Incident; onClose: () => void }) {
+export function IncidentCard({
+  incident,
+  dataEnd,
+  onClose,
+}: {
+  incident: Incident;
+  /** Último día de los datos de incendios (AAAA-MM-DD) */
+  dataEnd?: string;
+  onClose: () => void;
+}) {
+  const [lon0, lat0, lon1, lat1] = incident.bbox;
+  // Visor de FIRMS centrado en el incendio y con sus fechas
+  const firmsMap = `https://firms.modaps.eosdis.nasa.gov/map/#d:${incident.desde}..${incident.hasta};@${((lon0 + lon1) / 2).toFixed(3)},${((lat0 + lat1) / 2).toFixed(3)},11.0z`;
   // Ficha en el lateral, bajo el panel de capas (ver la pila de esquina en MapView)
   const area =
     incident.areaKm2 < 1
@@ -199,7 +213,16 @@ export function IncidentCard({ incident, onClose }: { incident: Incident; onClos
       <dl className="m-0 grid grid-cols-[auto_1fr] gap-x-4 gap-y-1 text-sm">
         <dt className="text-ink-muted">Estado</dt>
         <dd className="m-0 font-semibold">
-          {incident.activo ? 'Con actividad reciente' : 'Sin detecciones recientes'}
+          {incident.activo
+            ? `Activo al cierre del dato${dataEnd ? ` (${shortDate(dataEnd)})` : ''}`
+            : 'Sin detecciones al cierre del dato'}
+        </dd>
+        <dt className="text-ink-muted">Última detección</dt>
+        <dd className="m-0">
+          <span className="font-mono">{incident.hasta}</span>{' '}
+          <span data-dinamico className="text-ink-muted">
+            ({ago(incident.hasta)})
+          </span>
         </dd>
         <dt className="text-ink-muted">Detectado</dt>
         <dd className="m-0 font-mono">
@@ -219,9 +242,13 @@ export function IncidentCard({ incident, onClose }: { incident: Incident; onClos
       <p className="m-0 mt-2 text-xs text-ink-muted">
         Área estimada con la huella de los píxeles del satélite; no es un perímetro oficial.
       </p>
-      <Tag tone="real" className="mt-3">
-        Real · NASA FIRMS
-      </Tag>
+      <div className="mt-3 flex flex-wrap items-center gap-x-3 gap-y-1">
+        <Tag tone="real">Real · NASA FIRMS</Tag>
+        <SourceLink
+          source={{ ...SOURCES.firms, name: 'Ver en el visor de FIRMS', url: firmsMap }}
+          className="text-sm"
+        />
+      </div>
     </section>
   );
 }

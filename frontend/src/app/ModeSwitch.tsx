@@ -46,7 +46,7 @@ export function ModeSwitch() {
               : 'text-ink-muted hover:bg-hover hover:text-ink',
           )}
         >
-          <Icon size={16} strokeWidth={1.75} aria-hidden />
+          <Icon size={16} strokeWidth={1.75} aria-hidden className="max-sm:hidden" />
           {label}
         </button>
       ))}
