@@ -80,7 +80,7 @@ logger = logging.getLogger("fire_train")
 
 # 8-vecindad para difusión isotrópica en la rejilla de 1000x1000m
 _NEIGHBORS = [(-1, -1), (-1, 0), (-1, 1), (0, -1), (0, 1), (1, -1), (1, 0), (1, 1)]
-_CELL_ID_RE = re.compile(r"^ES(?:1K|5K):L(\d+):Y(-?\d+):X(-?\d+)$")
+_CELL_ID_RE = re.compile(rf"^{re.escape(config.CELL_PREFIX)}:L(\d+):Y(-?\d+):X(-?\d+)$")
 
 
 def _shift(a: np.ndarray, dy: int, dx: int) -> np.ndarray:
@@ -97,10 +97,12 @@ def _shift(a: np.ndarray, dy: int, dx: int) -> np.ndarray:
 # 1. Utilidades del contrato de datos y normalización de canales VALEN -> CATA
 # ===========================================================================
 def parse_cell_id(cell_id: str) -> tuple[int, int, int]:
-    """Parsea `ES1K:L{level}:Y{iy}:X{ix}` (o `ES5K:...`) -> (level, iy, ix)."""
+    """Parsea `ES1K:L{level}:Y{iy:05d}:X{ix:05d}` -> (level, iy, ix)."""
     m = _CELL_ID_RE.match(str(cell_id).strip())
     if not m:
-        raise ValueError(f"cell_id inválido según contrato ES1K/ES5K: {cell_id!r}")
+        raise ValueError(
+            f"cell_id inválido según contrato normalizado 1000x1000m ({config.CELL_PREFIX}): {cell_id!r}"
+        )
     return int(m.group(1)), int(m.group(2)), int(m.group(3))
 
 
@@ -110,8 +112,8 @@ def format_cell_id(
     level: int = config.GRID_LEVEL,
     prefix: str = config.CELL_PREFIX,
 ) -> str:
-    """Formatea coordenadas de cuadrícula de 1000x1000m a `ES1K:L{level}:Y{iy}:X{ix}`."""
-    return f"{prefix}:L{level}:Y{iy}:X{ix}"
+    """Formatea coordenadas de cuadrícula de 1000x1000m a `ES1K:L{level}:Y{iy:05d}:X{ix:05d}`."""
+    return f"{prefix}:L{int(level)}:Y{int(iy):05d}:X{int(ix):05d}"
 
 
 def normalize_contract_channels(raw: dict[str, np.ndarray], num_channels: int) -> np.ndarray:
@@ -1505,6 +1507,7 @@ def save_metadata(
         "target_routing_algorithm": config.TARGET_ROUTING_ALGORITHM,
         "schema_reference": "11_ML_DATA_CONTRACT.md + VALEN (CellDay, Meteo, Rainfall, Vegetation)",
         "grid_id": config.GRID_ID,
+        "cell_prefix": config.CELL_PREFIX,
         "crs": config.CRS,
         "grid_level": config.GRID_LEVEL,
         "cell_size_m": config.CHUNK_SIZE_M,

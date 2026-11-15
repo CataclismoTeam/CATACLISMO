@@ -66,7 +66,9 @@ TRANSFORMER_INV = _TRANSFORMER_INV if _TRANSFORMER_INV is not None else _Fallbac
 def parse_cell_id(cell_id: str) -> tuple[int, int, int] | None:
     """Parsea 'ES1K:L0:Y{iy}:X{ix}' -> (level, iy, ix)."""
     try:
-        parts = cell_id.split(":")
+        parts = str(cell_id).strip().split(":")
+        if len(parts) != 4 or not parts[0].startswith("ES"):
+            return None
         level = int(parts[1][1:])
         iy = int(parts[2][1:])
         ix = int(parts[3][1:])
@@ -99,7 +101,7 @@ def compute_parent_ids(iy: int, ix: int, grid_prefix: str) -> dict[str, str]:
 
 
 def infer_grid_prefix(cell_size: int) -> str:
-    """Deriva grid_prefix del cell_size: 1000->ES1K, 5000->ES5K, etc."""
+    """Deriva grid_prefix del cell_size (estándar 1000 m -> ES1K)."""
     size_km = cell_size // 1000
     return f"ES{size_km}K"
 
@@ -173,11 +175,8 @@ def aggregate_cell_day(
         parsed = parse_cell_id(group["cell_id_L0"].iloc[0])
         if parsed:
             _, iy, ix = parsed
-            centroid = cell_centroid_lonlat(iy, ix, 1000.0)
-            parent_ids = {
-                f"L{level}": f"ES1K:L{level}:Y{iy // (2**level):05d}:X{ix // (2**level):05d}"
-                for level in (1, 2, 3)
-            }
+            centroid = cell_centroid_lonlat(iy, ix, float(cell_size))
+            parent_ids = compute_parent_ids(iy, ix, grid_prefix)
         else:
             centroid = [0.0, 0.0]
             parent_ids = {}
@@ -193,7 +192,7 @@ def aggregate_cell_day(
             "level": 0,
             "parent_ids": parent_ids,
             "cell_centroid_lonlat": centroid,
-            "cell_area_km2": 1.0,
+            "cell_area_km2": round((float(cell_size) / 1000.0) ** 2, 6),
             "date": date_str,
             "iso_year": iso_year,
             "iso_week": iso_week,

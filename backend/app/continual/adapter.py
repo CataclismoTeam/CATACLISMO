@@ -415,7 +415,7 @@ class ContinualLearningEngine:
             b_entry["logit_bias"] = round(float(np.clip(b_entry["logit_bias"] - delta, -1.0, 1.0)), 5)
         b_entry["updates"] = int(b_entry.get("updates", 0)) + 1
         self.save_state()
-        return {"block_key": b_key, "block_state": b_entry}
+        return {"block_key": b_key, "block_state": dict(b_entry)}
 
 
 continual_engine = ContinualLearningEngine()

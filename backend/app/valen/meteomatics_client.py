@@ -17,6 +17,7 @@ import json
 import os
 import sqlite3
 import time
+from contextlib import closing
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from typing import Any, Literal
@@ -73,7 +74,7 @@ class MeteomaticsCache:
         self._init_db()
 
     def _init_db(self) -> None:
-        with sqlite3.connect(self.db_path) as conn:
+        with closing(sqlite3.connect(self.db_path)) as conn, conn:
             conn.execute("""
                 CREATE TABLE IF NOT EXISTS queries (
                     cache_key TEXT PRIMARY KEY,
@@ -102,7 +103,7 @@ class MeteomaticsCache:
     def get(self, param: str, lat: float, lon: float,
             start: str, end: str, interval: str) -> dict | None:
         key = self._make_key(param, lat, lon, start, end, interval)
-        with sqlite3.connect(self.db_path) as conn:
+        with closing(sqlite3.connect(self.db_path)) as conn, conn:
             conn.row_factory = sqlite3.Row
             row = conn.execute(
                 "SELECT response_json, expires_at FROM queries WHERE cache_key = ?",
@@ -121,7 +122,7 @@ class MeteomaticsCache:
             response: dict, ttl_hours: int = 24) -> None:
         key = self._make_key(param, lat, lon, start, end, interval)
         expires = (datetime.now(timezone.utc) + timedelta(hours=ttl_hours)).isoformat()
-        with sqlite3.connect(self.db_path) as conn:
+        with closing(sqlite3.connect(self.db_path)) as conn, conn:
             conn.execute("""
                 INSERT OR REPLACE INTO queries
                 (cache_key, param, lat, lon, start_date, end_date, interval,
@@ -136,7 +137,7 @@ class MeteomaticsCache:
             conn.commit()
 
     def stats(self) -> dict:
-        with sqlite3.connect(self.db_path) as conn:
+        with closing(sqlite3.connect(self.db_path)) as conn, conn:
             total = conn.execute("SELECT COUNT(*) FROM queries").fetchone()[0]
             size_mb = self.db_path.stat().st_size / (1024 * 1024)
             return {"entries": total, "size_mb": round(size_mb, 2)}

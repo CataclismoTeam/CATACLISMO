@@ -16,6 +16,7 @@ from __future__ import annotations
 import hashlib
 import json
 import sqlite3
+from contextlib import closing
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from typing import Any
@@ -63,7 +64,7 @@ class RainfallCache:
         self._init_db()
 
     def _init_db(self) -> None:
-        with sqlite3.connect(self.db_path) as conn:
+        with closing(sqlite3.connect(self.db_path)) as conn, conn:
             conn.execute("""
                 CREATE TABLE IF NOT EXISTS power_daily (
                     cache_key TEXT PRIMARY KEY,
@@ -107,7 +108,7 @@ class RainfallCache:
     # POWER daily
     def get_power_daily(self, lon: float, lat: float, date: str) -> dict | None:
         key = self._make_key(lon, lat, date, "power")
-        with sqlite3.connect(self.db_path) as conn:
+        with closing(sqlite3.connect(self.db_path)) as conn, conn:
             conn.row_factory = sqlite3.Row
             row = conn.execute(
                 "SELECT params_json FROM power_daily WHERE cache_key = ?",
@@ -119,7 +120,7 @@ class RainfallCache:
 
     def set_power_daily(self, lon: float, lat: float, date: str, params: dict) -> None:
         key = self._make_key(lon, lat, date, "power")
-        with sqlite3.connect(self.db_path) as conn:
+        with closing(sqlite3.connect(self.db_path)) as conn, conn:
             conn.execute("""
                 INSERT OR REPLACE INTO power_daily
                 (cache_key, lon, lat, date, params_json, created_at)
@@ -131,7 +132,7 @@ class RainfallCache:
     # Rainfall metrics
     def get_metrics(self, lon: float, lat: float, reference_date: str) -> dict | None:
         key = self._make_key(lon, lat, reference_date, "metrics")
-        with sqlite3.connect(self.db_path) as conn:
+        with closing(sqlite3.connect(self.db_path)) as conn, conn:
             conn.row_factory = sqlite3.Row
             row = conn.execute(
                 """SELECT days_since_rain_1mm, days_since_rain_10mm,
@@ -146,7 +147,7 @@ class RainfallCache:
 
     def set_metrics(self, lon: float, lat: float, reference_date: str, metrics: dict) -> None:
         key = self._make_key(lon, lat, reference_date, "metrics")
-        with sqlite3.connect(self.db_path) as conn:
+        with closing(sqlite3.connect(self.db_path)) as conn, conn:
             conn.execute("""
                 INSERT OR REPLACE INTO rainfall_metrics
                 (cache_key, lon, lat, reference_date,
@@ -168,7 +169,7 @@ class RainfallCache:
             conn.commit()
 
     def stats(self) -> dict:
-        with sqlite3.connect(self.db_path) as conn:
+        with closing(sqlite3.connect(self.db_path)) as conn, conn:
             p = conn.execute("SELECT COUNT(*) FROM power_daily").fetchone()[0]
             m = conn.execute("SELECT COUNT(*) FROM rainfall_metrics").fetchone()[0]
             size_mb = self.db_path.stat().st_size / (1024 * 1024)

@@ -26,7 +26,15 @@ from typing import Any
 import numpy as np
 import pandas as pd
 
-from app.valen.laea import epsg3035_to_lonlat, format_cell_id, lonlat_to_epsg3035
+from app.valen.laea import (
+    CELL_PREFIX,
+    CELL_SIZE_M,
+    GRID_CRS,
+    GRID_LEVEL,
+    cell_centroid_lonlat,
+    format_cell_id,
+    lonlat_to_cell_iy_ix,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -119,9 +127,7 @@ def build_live_cell_6h_from_firms(raw_rows: list[dict[str, str]]) -> tuple[pd.Da
             hour = int(acq_time[:2]) if acq_time[:2].isdigit() else 12
             slot_h = (hour // 6) * 6
             slot_dt = f"{acq_date} {slot_h:02d}:00"
-            x_m, y_m = lonlat_to_epsg3035(lon, lat)
-            ix = int(x_m // 1000.0)
-            iy = int(y_m // 1000.0)
+            iy, ix = lonlat_to_cell_iy_ix(lon, lat, CELL_SIZE_M)
             cell_id = format_cell_id(iy, ix)
             src = str(r.get("_source", ""))
             sensor = "MODIS" if "MODIS" in src else "VIIRS"
@@ -173,8 +179,8 @@ def build_live_cell_6h_from_firms(raw_rows: list[dict[str, str]]) -> tuple[pd.Da
     )
     grp = grp.rename(columns={"slot_dt": "date"})
     grp["row_id"] = grp["cell_id"] + "|" + grp["date"] + "|" + grp["sensor"]
-    grp["level"] = 0
-    grp["cell_area_km2"] = 1.0
+    grp["level"] = GRID_LEVEL
+    grp["cell_area_km2"] = round((CELL_SIZE_M / 1000.0) ** 2, 6)
     grp["product_mix"] = 1.0  # 100% NRT
     dt_ser = pd.to_datetime(grp["acq_date"])
     iso_cal = dt_ser.dt.isocalendar()
@@ -185,11 +191,14 @@ def build_live_cell_6h_from_firms(raw_rows: list[dict[str, str]]) -> tuple[pd.Da
     grp["coverage_fraction"] = None
     grp["flags"] = [[] for _ in range(len(grp))]
     grp["parent_ids"] = [
-        {f"L{lvl}": f"ES1K:L{lvl}:Y{int(r.iy) // (2**lvl):05d}:X{int(r.ix) // (2**lvl):05d}" for lvl in (1, 2, 3)}
+        {
+            f"L{lvl}": f"{CELL_PREFIX}:L{lvl}:Y{int(r.iy) // (2**lvl):05d}:X{int(r.ix) // (2**lvl):05d}"
+            for lvl in (1, 2, 3)
+        }
         for r in grp.itertuples()
     ]
     grp["cell_centroid_lonlat"] = [
-        list(epsg3035_to_lonlat((int(r.ix) + 0.5) * 1000.0, (int(r.iy) + 0.5) * 1000.0))
+        list(cell_centroid_lonlat(int(r.iy), int(r.ix), CELL_SIZE_M))
         for r in grp.itertuples()
     ]
 
@@ -291,6 +300,12 @@ def run_live_nrt_cycle(
         "live_cell_6h_rows": len(df_6h),
         "zones_predicted": lucia_geojson["metadata"]["total_zones_processed"],
         "routes_generated": lucia_geojson["metadata"]["total_routes_generated"],
+        "quadrant_grid": {
+            "crs": GRID_CRS,
+            "cell_prefix": CELL_PREFIX,
+            "grid_level": GRID_LEVEL,
+            "cell_size_m": CELL_SIZE_M,
+        },
     }
     os.makedirs(os.path.dirname(LIVE_STATUS_PATH), exist_ok=True)
     with open(LIVE_STATUS_PATH, "w", encoding="utf-8") as f:

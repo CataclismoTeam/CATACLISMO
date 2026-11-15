@@ -58,7 +58,19 @@ try:
         compute_slope_cost_multiplier,
         load_cell_elevation,
     )
-    from ..valen.laea import epsg3035_to_lonlat, lonlat_to_epsg3035
+    from ..valen.laea import (
+        cell_centroid_lonlat as _laea_cell_centroid_lonlat,
+    )
+    from ..valen.laea import (
+        epsg3035_to_lonlat,
+        parse_cell_id,
+    )
+    from ..valen.laea import (
+        format_cell_id as _laea_format_cell_id,
+    )
+    from ..valen.laea import (
+        lonlat_to_cell_iy_ix as _laea_lonlat_to_iy_ix,
+    )
     from ..valen.roads_client import RoadsClient, load_cell_roads
 except ImportError:  # ejecución fuera del paquete `app`
     from app.valen.elevation_client import (
@@ -66,7 +78,19 @@ except ImportError:  # ejecución fuera del paquete `app`
         compute_slope_cost_multiplier,
         load_cell_elevation,
     )
-    from app.valen.laea import epsg3035_to_lonlat, lonlat_to_epsg3035
+    from app.valen.laea import (
+        cell_centroid_lonlat as _laea_cell_centroid_lonlat,
+    )
+    from app.valen.laea import (
+        epsg3035_to_lonlat,
+        parse_cell_id,
+    )
+    from app.valen.laea import (
+        format_cell_id as _laea_format_cell_id,
+    )
+    from app.valen.laea import (
+        lonlat_to_cell_iy_ix as _laea_lonlat_to_iy_ix,
+    )
     from app.valen.roads_client import RoadsClient, load_cell_roads
 
 
@@ -76,9 +100,7 @@ def cell_iy_ix_to_lonlat(
     cell_size_m: float = config.CELL_SIZE_M,
 ) -> tuple[float, float]:
     """Convierte índices `(iy, ix)` de la rejilla `ES1K` al centroide WGS84 `(lon, lat)`."""
-    x_3035 = (float(ix) + 0.5) * cell_size_m
-    y_3035 = (float(iy) + 0.5) * cell_size_m
-    return epsg3035_to_lonlat(x_3035, y_3035)
+    return _laea_cell_centroid_lonlat(iy, ix, cell_size_m)
 
 
 def cell_iy_ix_to_polygon_lonlat(
@@ -105,14 +127,11 @@ def lonlat_to_cell_iy_ix(
     cell_size_m: float = config.CELL_SIZE_M,
 ) -> tuple[int, int]:
     """Convierte `(lon, lat)` WGS84 al índice `(iy, ix)` de la celda `ES1K` correspondiente."""
-    x_3035, y_3035 = lonlat_to_epsg3035(float(lon), float(lat))
-    ix = int(math.floor(x_3035 / cell_size_m))
-    iy = int(math.floor(y_3035 / cell_size_m))
-    return iy, ix
+    return _laea_lonlat_to_iy_ix(lon, lat, cell_size_m)
 
 
 def format_cell_id(iy: int, ix: int) -> str:
-    return f"{config.CELL_PREFIX}:L{config.GRID_LEVEL}:Y{iy:05d}:X{ix:05d}"
+    return _laea_format_cell_id(iy, ix)
 
 
 # ===========================================================================
@@ -471,9 +490,15 @@ def resolve_zone_meeting_points(
             if mp_zone and str(mp_zone) != zone_id:
                 continue
             rc_pair: tuple[int, int] | None = None
+            raw_qid = raw_mp.get("cell_id") or raw_mp.get("quadrant_id")
             if "grid_rc" in raw_mp and raw_mp["grid_rc"] is not None:
                 gr, gc = raw_mp["grid_rc"]
                 rc_pair = (int(gr), int(gc))
+            elif raw_qid:
+                iy_t, ix_t = parse_cell_id(str(raw_qid))
+                r_t, c_t = iy_t - y0, ix_t - x0
+                if 0 <= r_t < h and 0 <= c_t < w:
+                    rc_pair = (r_t, c_t)
             elif "lon" in raw_mp and "lat" in raw_mp:
                 iy_t, ix_t = lonlat_to_cell_iy_ix(
                     float(raw_mp["lon"]), float(raw_mp["lat"]), cell_size_m
@@ -1334,6 +1359,8 @@ def generate_lucia_geojson_from_cata(
             "created_at": time.strftime("%Y-%m-%dT%H:%M:%S%z"),
             "crs": config.OUTPUT_GEOJSON_CRS,
             "source_grid_crs": config.GRID_CRS,
+            "cell_prefix": config.CELL_PREFIX,
+            "grid_level": config.GRID_LEVEL,
             "cell_size_m": config.CELL_SIZE_M,
             "safe_fire_threshold": safe_fire_threshold,
             "safe_haven_max_prob": config.SAFE_HAVEN_MAX_PROB,

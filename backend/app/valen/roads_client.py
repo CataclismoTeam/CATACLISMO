@@ -40,6 +40,7 @@ import urllib.error
 import urllib.parse
 import urllib.request
 from collections import defaultdict
+from contextlib import closing
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
@@ -125,7 +126,7 @@ class RoadsCache:
     def __init__(self, db_path: Path = DEFAULT_CACHE_DB):
         self.db_path = Path(db_path)
         self.db_path.parent.mkdir(parents=True, exist_ok=True)
-        with sqlite3.connect(self.db_path) as conn:
+        with closing(sqlite3.connect(self.db_path)) as conn, conn:
             conn.execute(
                 """
                 CREATE TABLE IF NOT EXISTS overpass_bbox (
@@ -143,14 +144,14 @@ class RoadsCache:
         return hashlib.sha256(",".join(f"{v:.5f}" for v in bbox).encode()).hexdigest()[:24]
 
     def get(self, bbox: tuple[float, float, float, float]) -> list[dict] | None:
-        with sqlite3.connect(self.db_path) as conn:
+        with closing(sqlite3.connect(self.db_path)) as conn, conn:
             row = conn.execute(
                 "SELECT payload FROM overpass_bbox WHERE cache_key = ?", (self.make_key(bbox),)
             ).fetchone()
         return json.loads(row[0]) if row else None
 
     def set(self, bbox: tuple[float, float, float, float], ways: list[dict]) -> None:
-        with sqlite3.connect(self.db_path) as conn:
+        with closing(sqlite3.connect(self.db_path)) as conn, conn:
             conn.execute(
                 "INSERT OR REPLACE INTO overpass_bbox VALUES (?, ?, ?, ?, ?)",
                 (
@@ -163,7 +164,7 @@ class RoadsCache:
             )
 
     def stats(self) -> dict:
-        with sqlite3.connect(self.db_path) as conn:
+        with closing(sqlite3.connect(self.db_path)) as conn, conn:
             n, ways = conn.execute(
                 "SELECT COUNT(*), COALESCE(SUM(n_ways), 0) FROM overpass_bbox"
             ).fetchone()

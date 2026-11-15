@@ -31,6 +31,7 @@ import sqlite3
 import time
 import urllib.error
 import urllib.request
+from contextlib import closing
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
@@ -79,7 +80,7 @@ class ElevationCache:
     def __init__(self, db_path: Path = DEFAULT_CACHE_DB):
         self.db_path = Path(db_path)
         self.db_path.parent.mkdir(parents=True, exist_ok=True)
-        with sqlite3.connect(self.db_path) as conn:
+        with closing(sqlite3.connect(self.db_path)) as conn, conn:
             conn.execute(
                 """
                 CREATE TABLE IF NOT EXISTS cell_elevation (
@@ -99,7 +100,7 @@ class ElevationCache:
         if not cell_ids:
             return {}
         out: dict[str, dict[str, Any]] = {}
-        with sqlite3.connect(self.db_path) as conn:
+        with closing(sqlite3.connect(self.db_path)) as conn, conn:
             # Consultar en lotes de 500 para respetar el límite de variables SQLite
             for i in range(0, len(cell_ids), 500):
                 chunk = cell_ids[i : i + 500]
@@ -125,7 +126,7 @@ class ElevationCache:
         if not records:
             return
         now = datetime.now(timezone.utc).isoformat()
-        with sqlite3.connect(self.db_path) as conn:
+        with closing(sqlite3.connect(self.db_path)) as conn, conn:
             conn.executemany(
                 """
                 INSERT OR REPLACE INTO cell_elevation
@@ -149,7 +150,7 @@ class ElevationCache:
             conn.commit()
 
     def stats(self) -> dict[str, Any]:
-        with sqlite3.connect(self.db_path) as conn:
+        with closing(sqlite3.connect(self.db_path)) as conn, conn:
             total, api_cnt = conn.execute(
                 "SELECT COUNT(*), COALESCE(SUM(CASE WHEN source = 'open_elevation_api' THEN 1 ELSE 0 END), 0) "
                 "FROM cell_elevation"

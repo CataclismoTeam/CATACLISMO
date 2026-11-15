@@ -78,11 +78,8 @@ class JSONArrayWriter:
 @contextmanager
 def json_array_output(path: str | Path, **kwargs) -> Iterator[JSONArrayWriter]:
     """Context manager helper: with json_array_output('file.json') as w: w.write(record)"""
-    writer = JSONArrayWriter(path, **kwargs)
-    try:
+    with JSONArrayWriter(path, **kwargs) as writer:
         yield writer
-    finally:
-        writer.__exit__(None, None, None)
 
 
 def jsonl_to_json_array(

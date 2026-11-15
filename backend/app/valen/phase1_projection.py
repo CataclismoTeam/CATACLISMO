@@ -554,9 +554,9 @@ def build_arg_parser() -> argparse.ArgumentParser:
     p.add_argument("--output", type=Path, required=True,
                    help="Directorio de salida")
     p.add_argument("--cell-size", type=int, default=1000,
-                   help="Tamaño de celda L0 en metros (default: 1000)")
+                   help="Tamaño de celda L0 en metros (estándar del sistema: 1000)")
     p.add_argument("--grid-prefix", type=str, default=None,
-                   help="Prefijo grid ID (default: ES{size}K, ej. ES5K para 5000, ES1K para 1000)")
+                   help="Prefijo grid ID (default: ES1K para cuadrícula normalizada 1000x1000 m)")
     p.add_argument("--partial-period-start", type=str, default=DEFAULT_PARTIAL_PERIOD_START,
                    help=f"Inicio de periodo incompleto (default: {DEFAULT_PARTIAL_PERIOD_START})")
     p.add_argument("--chunk-size", type=int, default=10000,

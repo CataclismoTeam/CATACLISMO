@@ -15,6 +15,7 @@ import hashlib
 import json
 import os
 import sqlite3
+from contextlib import closing
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any, Literal
@@ -120,7 +121,7 @@ class VegetationCache:
         self._init_db()
 
     def _init_db(self) -> None:
-        with sqlite3.connect(self.db_path) as conn:
+        with closing(sqlite3.connect(self.db_path)) as conn, conn:
             conn.execute("""
                 CREATE TABLE IF NOT EXISTS worldcover_lookup (
                     cache_key TEXT PRIMARY KEY,
@@ -161,7 +162,7 @@ class VegetationCache:
     # WorldCover
     def get_worldcover(self, lon: float, lat: float) -> dict | None:
         key = self._make_key(lon, lat, "worldcover")
-        with sqlite3.connect(self.db_path) as conn:
+        with closing(sqlite3.connect(self.db_path)) as conn, conn:
             conn.row_factory = sqlite3.Row
             row = conn.execute(
                 "SELECT class_id, class_name, flammability FROM worldcover_lookup WHERE cache_key = ?",
@@ -175,7 +176,7 @@ class VegetationCache:
         key = self._make_key(lon, lat, "worldcover")
         class_name = WORLDCOVER_CLASSES.get(class_id, "Unknown")
         flammability = FLAMMABILITY_WORLDCOVER.get(class_id, 1)
-        with sqlite3.connect(self.db_path) as conn:
+        with closing(sqlite3.connect(self.db_path)) as conn, conn:
             conn.execute("""
                 INSERT OR REPLACE INTO worldcover_lookup
                 (cache_key, lon, lat, class_id, class_name, flammability, tile_url, created_at)
@@ -187,7 +188,7 @@ class VegetationCache:
     # IFN3
     def get_ifn3(self, lon: float, lat: float) -> dict | None:
         key = self._make_key(lon, lat, "ifn3")
-        with sqlite3.connect(self.db_path) as conn:
+        with closing(sqlite3.connect(self.db_path)) as conn, conn:
             conn.row_factory = sqlite3.Row
             row = conn.execute(
                 "SELECT species_list, dominant_species, max_flammability FROM ifn3_lookup WHERE cache_key = ?",
@@ -200,7 +201,7 @@ class VegetationCache:
     def set_ifn3(self, lon: float, lat: float, species_list: list[str],
                  dominant: str, max_flammability: int) -> None:
         key = self._make_key(lon, lat, "ifn3")
-        with sqlite3.connect(self.db_path) as conn:
+        with closing(sqlite3.connect(self.db_path)) as conn, conn:
             conn.execute("""
                 INSERT OR REPLACE INTO ifn3_lookup
                 (cache_key, lon, lat, species_list, dominant_species, max_flammability, created_at)
@@ -210,7 +211,7 @@ class VegetationCache:
             conn.commit()
 
     def stats(self) -> dict:
-        with sqlite3.connect(self.db_path) as conn:
+        with closing(sqlite3.connect(self.db_path)) as conn, conn:
             wc = conn.execute("SELECT COUNT(*) FROM worldcover_lookup").fetchone()[0]
             ifn3 = conn.execute("SELECT COUNT(*) FROM ifn3_lookup").fetchone()[0]
             size_mb = self.db_path.stat().st_size / (1024 * 1024)

@@ -27,6 +27,14 @@ except ImportError:
     import config
     from config import ModelConfig
 
+try:
+    from ..valen.laea import cell_centroid_lonlat as _valen_cell_centroid_lonlat
+except ImportError:
+    try:
+        from app.valen.laea import cell_centroid_lonlat as _valen_cell_centroid_lonlat
+    except ImportError:
+        _valen_cell_centroid_lonlat = None
+
 logger = logging.getLogger(__name__)
 
 # ---------------------------------------------------------------------------
@@ -727,6 +735,8 @@ def export_cata_predictions_for_lucia(
                 ix = x0 + c
                 cell_id = f"{config.CELL_PREFIX}:L{config.GRID_LEVEL}:Y{iy:05d}:X{ix:05d}"
                 lonlat = centroids_map.get((iy, ix))
+                if lonlat is None and _valen_cell_centroid_lonlat is not None:
+                    lonlat = list(_valen_cell_centroid_lonlat(iy, ix, config.CHUNK_SIZE_M))
                 flat_cells.append(
                     {
                         "zone_id": zone_id,
@@ -798,6 +808,7 @@ def export_cata_predictions_for_lucia(
         "target_routing_algorithm": config.TARGET_ROUTING_ALGORITHM,
         "created_at": time.strftime("%Y-%m-%dT%H:%M:%S%z"),
         "grid_id": config.GRID_ID,
+        "cell_prefix": config.CELL_PREFIX,
         "crs": config.CRS,
         "grid_level": config.GRID_LEVEL,
         "cell_size_m": config.CHUNK_SIZE_M,
