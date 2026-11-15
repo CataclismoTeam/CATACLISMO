@@ -4,6 +4,12 @@ Propuesta del equipo CATACLISMO para NASA Space Apps 2026.
 
 Web publicada: https://cataclismoteam.github.io/CATACLISMO/
 
+> [!IMPORTANT]
+> **Usa la web en Google Chrome** (o Chromium), versión actual y de escritorio. Es el navegador con
+> el que se prueba todo (e2e y Lighthouse) y el que mejor maneja el mapa 3D (WebGL). Otros
+> navegadores, como Brave, Firefox o Safari, pueden bloquear la conexión con el backend o el
+> mapa: si el chip «API» de la barra sale tachado, ábrela en Chrome.
+
 ## Stack
 
 | Parte               | Tecnología                                                 |

@@ -31,6 +31,9 @@ no como fuente operativa real.
 
 ## Conexión con el backend
 
+**Navegador:** la web se usa y se prueba en Google Chrome (o Chromium). Otros navegadores pueden
+bloquear la conexión con el backend o el mapa 3D.
+
 En la web publicada el front se conecta solo al backend de Render (`render.yaml`, URL en la
 variable del repo `VITE_API_URL`). Si no responde, la app sigue con sus datos estáticos. Con la API de
 `backend/` en marcha, el mapa añade el grupo **Backend** en Capas:
