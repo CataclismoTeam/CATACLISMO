@@ -1,0 +1,420 @@
+{
+  "algorithm": "juli",
+  "updated_at": "2026-11-15T07:06:33+0100",
+  "teams": {
+    "team_brif_huelva": {
+      "team_id": "team_brif_huelva",
+      "name": "Cuadrilla BRIF Alfa — Doñana / Almonte",
+      "unit_code": "BRIF-HU-01",
+      "vehicle_type": "Autobomba Forestal 4x4 + Helitransporte",
+      "radio_channel": "VHF-01",
+      "zone_assigned": "ES1K_block_110_179",
+      "color": "#06b6d4",
+      "created_at": "2026-11-15T04:52:29+0100"
+    },
+    "team_ume_zamora": {
+      "team_id": "team_ume_zamora",
+      "name": "Pelotón UME Bravo — Sierra de la Culebra",
+      "unit_code": "UME-ZA-02",
+      "vehicle_type": "Nodriza Pesada + Dron Térmico",
+      "radio_channel": "VHF-02",
+      "zone_assigned": "ES1K_block_131_201",
+      "color": "#f59e0b",
+      "created_at": "2026-11-15T04:52:29+0100"
+    }
+  },
+  "operators": {
+    "op_hu_01": {
+      "operator_id": "op_hu_01",
+      "name": "Carlos Méndez",
+      "team_id": "team_brif_huelva",
+      "lon": -6.4182,
+      "lat": 37.6415,
+      "elevation_m": 312.0,
+      "role": "jefe_cuadrilla",
+      "status": "en_terreno",
+      "callsign": "ALFA-1",
+      "battery_pct": 92,
+      "heart_rate_bpm": 98,
+      "updated_at": "2026-11-15T04:52:29+0100",
+      "quadrant_id": "ES1K:L0:Y01774:X02873",
+      "quadrant_iy": 1774,
+      "quadrant_ix": 2873,
+      "quadrant_size_m": 1000,
+      "offset_x_m": 453.68,
+      "offset_y_m": 321.31,
+      "sub_x_norm": 0.4537,
+      "sub_y_norm": 0.3213,
+      "sub_100m_rc": [
+        3,
+        4
+      ],
+      "sub_10m_rc": [
+        32,
+        45
+      ],
+      "sub_cell_id": "ES1K:L0:Y01774:X02873:S32_45",
+      "epsg3035_x_m": 2873453.68,
+      "epsg3035_y_m": 1774321.31,
+      "quadrant_location": {
+        "quadrant_id": "ES1K:L0:Y01774:X02873",
+        "quadrant_iy": 1774,
+        "quadrant_ix": 2873,
+        "quadrant_size_m": 1000,
+        "offset_x_m": 453.68,
+        "offset_y_m": 321.31,
+        "sub_x_norm": 0.4537,
+        "sub_y_norm": 0.3213,
+        "sub_100m_rc": [
+          3,
+          4
+        ],
+        "sub_10m_rc": [
+          32,
+          45
+        ],
+        "sub_cell_id": "ES1K:L0:Y01774:X02873:S32_45",
+        "epsg3035_x_m": 2873453.68,
+        "epsg3035_y_m": 1774321.31,
+        "lon": -6.4182,
+        "lat": 37.6415
+      }
+    },
+    "op_hu_02": {
+      "operator_id": "op_hu_02",
+      "name": "Elena Vargas",
+      "team_id": "team_brif_huelva",
+      "lon": -6.4148,
+      "lat": 37.6438,
+      "elevation_m": 318.5,
+      "role": "brigadista",
+      "status": "en_terreno",
+      "callsign": "ALFA-2",
+      "battery_pct": 87,
+      "heart_rate_bpm": 112,
+      "updated_at": "2026-11-15T04:52:29+0100",
+      "quadrant_id": "ES1K:L0:Y01774:X02873",
+      "quadrant_iy": 1774,
+      "quadrant_ix": 2873,
+      "quadrant_size_m": 1000,
+      "offset_x_m": 796.72,
+      "offset_y_m": 506.26,
+      "sub_x_norm": 0.7967,
+      "sub_y_norm": 0.5063,
+      "sub_100m_rc": [
+        5,
+        7
+      ],
+      "sub_10m_rc": [
+        50,
+        79
+      ],
+      "sub_cell_id": "ES1K:L0:Y01774:X02873:S50_79",
+      "epsg3035_x_m": 2873796.72,
+      "epsg3035_y_m": 1774506.26,
+      "quadrant_location": {
+        "quadrant_id": "ES1K:L0:Y01774:X02873",
+        "quadrant_iy": 1774,
+        "quadrant_ix": 2873,
+        "quadrant_size_m": 1000,
+        "offset_x_m": 796.72,
+        "offset_y_m": 506.26,
+        "sub_x_norm": 0.7967,
+        "sub_y_norm": 0.5063,
+        "sub_100m_rc": [
+          5,
+          7
+        ],
+        "sub_10m_rc": [
+          50,
+          79
+        ],
+        "sub_cell_id": "ES1K:L0:Y01774:X02873:S50_79",
+        "epsg3035_x_m": 2873796.72,
+        "epsg3035_y_m": 1774506.26,
+        "lon": -6.4148,
+        "lat": 37.6438
+      }
+    },
+    "op_hu_03": {
+      "operator_id": "op_hu_03",
+      "name": "Javier Romero",
+      "team_id": "team_brif_huelva",
+      "lon": -6.411,
+      "lat": 37.6392,
+      "elevation_m": 305.0,
+      "role": "conductor_autobomba",
+      "status": "en_ruta",
+      "callsign": "ALFA-3",
+      "battery_pct": 96,
+      "heart_rate_bpm": 84,
+      "updated_at": "2026-11-15T04:52:29+0100",
+      "quadrant_id": "ES1K:L0:Y01773:X02874",
+      "quadrant_iy": 1773,
+      "quadrant_ix": 2874,
+      "quadrant_size_m": 1000,
+      "offset_x_m": 29.01,
+      "offset_y_m": 935.33,
+      "sub_x_norm": 0.029,
+      "sub_y_norm": 0.9353,
+      "sub_100m_rc": [
+        9,
+        0
+      ],
+      "sub_10m_rc": [
+        93,
+        2
+      ],
+      "sub_cell_id": "ES1K:L0:Y01773:X02874:S93_02",
+      "epsg3035_x_m": 2874029.01,
+      "epsg3035_y_m": 1773935.33,
+      "quadrant_location": {
+        "quadrant_id": "ES1K:L0:Y01773:X02874",
+        "quadrant_iy": 1773,
+        "quadrant_ix": 2874,
+        "quadrant_size_m": 1000,
+        "offset_x_m": 29.01,
+        "offset_y_m": 935.33,
+        "sub_x_norm": 0.029,
+        "sub_y_norm": 0.9353,
+        "sub_100m_rc": [
+          9,
+          0
+        ],
+        "sub_10m_rc": [
+          93,
+          2
+        ],
+        "sub_cell_id": "ES1K:L0:Y01773:X02874:S93_02",
+        "epsg3035_x_m": 2874029.01,
+        "epsg3035_y_m": 1773935.33,
+        "lon": -6.411,
+        "lat": 37.6392
+      }
+    },
+    "op_hu_04": {
+      "operator_id": "op_hu_04",
+      "name": "Sofía Martín",
+      "team_id": "team_brif_huelva",
+      "lon": -6.4165,
+      "lat": 37.6401,
+      "elevation_m": 310.0,
+      "role": "sanitario",
+      "status": "en_terreno",
+      "callsign": "ALFA-4",
+      "battery_pct": 94,
+      "heart_rate_bpm": 88,
+      "updated_at": "2026-11-15T04:52:29+0100",
+      "quadrant_id": "ES1K:L0:Y01774:X02873",
+      "quadrant_iy": 1774,
+      "quadrant_ix": 2873,
+      "quadrant_size_m": 1000,
+      "offset_x_m": 571.45,
+      "offset_y_m": 137.23,
+      "sub_x_norm": 0.5715,
+      "sub_y_norm": 0.1372,
+      "sub_100m_rc": [
+        1,
+        5
+      ],
+      "sub_10m_rc": [
+        13,
+        57
+      ],
+      "sub_cell_id": "ES1K:L0:Y01774:X02873:S13_57",
+      "epsg3035_x_m": 2873571.45,
+      "epsg3035_y_m": 1774137.23,
+      "quadrant_location": {
+        "quadrant_id": "ES1K:L0:Y01774:X02873",
+        "quadrant_iy": 1774,
+        "quadrant_ix": 2873,
+        "quadrant_size_m": 1000,
+        "offset_x_m": 571.45,
+        "offset_y_m": 137.23,
+        "sub_x_norm": 0.5715,
+        "sub_y_norm": 0.1372,
+        "sub_100m_rc": [
+          1,
+          5
+        ],
+        "sub_10m_rc": [
+          13,
+          57
+        ],
+        "sub_cell_id": "ES1K:L0:Y01774:X02873:S13_57",
+        "epsg3035_x_m": 2873571.45,
+        "epsg3035_y_m": 1774137.23,
+        "lon": -6.4165,
+        "lat": 37.6401
+      }
+    },
+    "op_za_01": {
+      "operator_id": "op_za_01",
+      "name": "Miguel Ángel Prieto",
+      "team_id": "team_ume_zamora",
+      "lon": -3.184,
+      "lat": 41.281,
+      "elevation_m": 582.0,
+      "role": "jefe_cuadrilla",
+      "status": "en_terreno",
+      "callsign": "BRAVO-1",
+      "battery_pct": 89,
+      "heart_rate_bpm": 102,
+      "updated_at": "2026-11-15T04:52:29+0100",
+      "quadrant_id": "ES1K:L0:Y02116:X03218",
+      "quadrant_iy": 2116,
+      "quadrant_ix": 3218,
+      "quadrant_size_m": 1000,
+      "offset_x_m": 213.17,
+      "offset_y_m": 525.84,
+      "sub_x_norm": 0.2132,
+      "sub_y_norm": 0.5258,
+      "sub_100m_rc": [
+        5,
+        2
+      ],
+      "sub_10m_rc": [
+        52,
+        21
+      ],
+      "sub_cell_id": "ES1K:L0:Y02116:X03218:S52_21",
+      "epsg3035_x_m": 3218213.17,
+      "epsg3035_y_m": 2116525.84,
+      "quadrant_location": {
+        "quadrant_id": "ES1K:L0:Y02116:X03218",
+        "quadrant_iy": 2116,
+        "quadrant_ix": 3218,
+        "quadrant_size_m": 1000,
+        "offset_x_m": 213.17,
+        "offset_y_m": 525.84,
+        "sub_x_norm": 0.2132,
+        "sub_y_norm": 0.5258,
+        "sub_100m_rc": [
+          5,
+          2
+        ],
+        "sub_10m_rc": [
+          52,
+          21
+        ],
+        "sub_cell_id": "ES1K:L0:Y02116:X03218:S52_21",
+        "epsg3035_x_m": 3218213.17,
+        "epsg3035_y_m": 2116525.84,
+        "lon": -3.184,
+        "lat": 41.281
+      }
+    },
+    "op_za_02": {
+      "operator_id": "op_za_02",
+      "name": "Laura Domínguez",
+      "team_id": "team_ume_zamora",
+      "lon": -3.1805,
+      "lat": 41.2832,
+      "elevation_m": 590.0,
+      "role": "piloto_dron",
+      "status": "en_terreno",
+      "callsign": "BRAVO-2",
+      "battery_pct": 78,
+      "heart_rate_bpm": 91,
+      "updated_at": "2026-11-15T04:52:29+0100",
+      "quadrant_id": "ES1K:L0:Y02116:X03218",
+      "quadrant_iy": 2116,
+      "quadrant_ix": 3218,
+      "quadrant_size_m": 1000,
+      "offset_x_m": 541.65,
+      "offset_y_m": 715.35,
+      "sub_x_norm": 0.5416,
+      "sub_y_norm": 0.7153,
+      "sub_100m_rc": [
+        7,
+        5
+      ],
+      "sub_10m_rc": [
+        71,
+        54
+      ],
+      "sub_cell_id": "ES1K:L0:Y02116:X03218:S71_54",
+      "epsg3035_x_m": 3218541.65,
+      "epsg3035_y_m": 2116715.35,
+      "quadrant_location": {
+        "quadrant_id": "ES1K:L0:Y02116:X03218",
+        "quadrant_iy": 2116,
+        "quadrant_ix": 3218,
+        "quadrant_size_m": 1000,
+        "offset_x_m": 541.65,
+        "offset_y_m": 715.35,
+        "sub_x_norm": 0.5416,
+        "sub_y_norm": 0.7153,
+        "sub_100m_rc": [
+          7,
+          5
+        ],
+        "sub_10m_rc": [
+          71,
+          54
+        ],
+        "sub_cell_id": "ES1K:L0:Y02116:X03218:S71_54",
+        "epsg3035_x_m": 3218541.65,
+        "epsg3035_y_m": 2116715.35,
+        "lon": -3.1805,
+        "lat": 41.2832
+      }
+    },
+    "op_za_03": {
+      "operator_id": "op_za_03",
+      "name": "David Alonso",
+      "team_id": "team_ume_zamora",
+      "lon": -3.1872,
+      "lat": 41.2794,
+      "elevation_m": 574.0,
+      "role": "brigadista",
+      "status": "en_terreno",
+      "callsign": "BRAVO-3",
+      "battery_pct": 85,
+      "heart_rate_bpm": 116,
+      "updated_at": "2026-11-15T04:52:29+0100",
+      "quadrant_id": "ES1K:L0:Y02116:X03217",
+      "quadrant_iy": 2116,
+      "quadrant_ix": 3217,
+      "quadrant_size_m": 1000,
+      "offset_x_m": 920.14,
+      "offset_y_m": 397.59,
+      "sub_x_norm": 0.9201,
+      "sub_y_norm": 0.3976,
+      "sub_100m_rc": [
+        3,
+        9
+      ],
+      "sub_10m_rc": [
+        39,
+        92
+      ],
+      "sub_cell_id": "ES1K:L0:Y02116:X03217:S39_92",
+      "epsg3035_x_m": 3217920.14,
+      "epsg3035_y_m": 2116397.59,
+      "quadrant_location": {
+        "quadrant_id": "ES1K:L0:Y02116:X03217",
+        "quadrant_iy": 2116,
+        "quadrant_ix": 3217,
+        "quadrant_size_m": 1000,
+        "offset_x_m": 920.14,
+        "offset_y_m": 397.59,
+        "sub_x_norm": 0.9201,
+        "sub_y_norm": 0.3976,
+        "sub_100m_rc": [
+          3,
+          9
+        ],
+        "sub_10m_rc": [
+          39,
+          92
+        ],
+        "sub_cell_id": "ES1K:L0:Y02116:X03217:S39_92",
+        "epsg3035_x_m": 3217920.14,
+        "epsg3035_y_m": 2116397.59,
+        "lon": -3.1872,
+        "lat": 41.2794
+      }
+    }
+  }
+}

@@ -27,6 +27,14 @@ except ImportError:
     import config
     from config import ModelConfig
 
+try:
+    from ..valen.laea import cell_centroid_lonlat as _valen_cell_centroid_lonlat
+except ImportError:
+    try:
+        from app.valen.laea import cell_centroid_lonlat as _valen_cell_centroid_lonlat
+    except ImportError:
+        _valen_cell_centroid_lonlat = None
+
 logger = logging.getLogger(__name__)
 
 # ---------------------------------------------------------------------------
@@ -460,7 +468,7 @@ def set_expansion_warmup(model: keras.Model, warmup: bool) -> None:
 
 
 # ===========================================================================
-# 4. Inferencia (Algoritmo CATA)
+# 4. Inferencia y marcado diferenciado de cuadrantes (Algoritmo CATA)
 # ===========================================================================
 def cata_predict(model: keras.Model, sequence: np.ndarray) -> np.ndarray:
     """Algoritmo CATA: predice la matriz de probabilidad de fuego en t+1.
@@ -480,5 +488,362 @@ def cata_predict(model: keras.Model, sequence: np.ndarray) -> np.ndarray:
     return probs[0] if single else probs
 
 
-# Alias de compatibilidad
+def classify_cata_quadrants(
+    sequence: np.ndarray,
+    probs_t1: np.ndarray,
+    threshold: float = config.PREDICTION_THRESHOLD,
+    include_history_burned: bool = True,
+) -> dict[str, np.ndarray | list[list[str]]]:
+    """Marca los cuadrantes PREDICT de forma distinta a lo quemado de verdad.
+
+    Distingue explícitamente sobre la cuadrícula de 1000x1000m:
+      - `0` (`SAFE` / `.`): Cuadrante seguro (ni quemado real ni predicho).
+      - `1` (`PREDICTED_FIRE` / `P`): Cuadrante NO quemado de verdad que CATA
+            predice que arderá en t+1 (`prob >= threshold`).
+      - `2` (`CONFIRMED_BURNED` / `F`): Cuadrante quemado/activo de verdad
+            observado por satélite (`canal 0 > 0`) que no supera el umbral en t+1.
+      - `3` (`CONFIRMED_AND_CONTINUES` / `B`): Cuadrante quemado de verdad y que
+            además CATA predice que continúa activo en t+1.
+
+    Parámetros:
+      - sequence: (T, H, W, C) o (B, T, H, W, C) historia observada.
+      - probs_t1: (H, W) o (B, H, W) probabilidades predichas por `cata_predict`.
+      - threshold: umbral de probabilidad para marcar predicción (`PREDICTED_FIRE`).
+      - include_history_burned: si True, considera quemado real cualquier celda
+        con actividad observada en la ventana `0..T-1`; si False, sólo en `T-1`.
+
+    Devuelve diccionario con:
+      - `state_matrix`: matriz int8 (H, W) o (B, H, W) con códigos 0, 1, 2, 3.
+      - `burned_real_mask`: máscara booleana de lo quemado de verdad (estados 2 y 3).
+      - `predicted_only_mask`: máscara booleana de nuevos cuadrantes predichos (estado 1).
+      - `predicted_all_mask`: máscara booleana de toda predicción en t+1 (estados 1 y 3).
+      - `probabilities`: matriz float32 de probabilidades en t+1.
+      - `symbol_grid`: cuadrícula de símbolos (`'.'`, `'P'`, `'F'`, `'B'`) lista
+        para visualización o el motor de rutas.
+    """
+    x = np.asarray(sequence, dtype=np.float32)
+    probs = np.asarray(probs_t1, dtype=np.float32)
+    single = x.ndim == 4
+    if single:
+        x = x[None]
+        if probs.ndim == 2:
+            probs = probs[None]
+
+    # El canal 0 (frp_sum_mw) > 0 indica detección térmica satelital real
+    if include_history_burned:
+        burned_real = np.any(x[..., 0] > 0.0, axis=1)
+    else:
+        burned_real = x[:, -1, :, :, 0] > 0.0
+
+    pred_fire = probs >= threshold
+
+    state = np.full(probs.shape, config.QUADRANT_STATE_SAFE, dtype=np.int8)
+    state[(~burned_real) & pred_fire] = config.QUADRANT_STATE_PREDICTED
+    state[burned_real & (~pred_fire)] = config.QUADRANT_STATE_BURNED_REAL
+    state[burned_real & pred_fire] = config.QUADRANT_STATE_PERSISTENT
+
+    predicted_only = state == config.QUADRANT_STATE_PREDICTED
+
+    def _to_symbols(mat_2d: np.ndarray) -> list[list[str]]:
+        return [
+            [config.QUADRANT_SYMBOLS[int(val)] for val in row]
+            for row in mat_2d
+        ]
+
+    if single:
+        return {
+            "state_matrix": state[0],
+            "burned_real_mask": burned_real[0],
+            "predicted_only_mask": predicted_only[0],
+            "predicted_all_mask": pred_fire[0],
+            "probabilities": probs[0],
+            "symbol_grid": _to_symbols(state[0]),
+        }
+
+    return {
+        "state_matrix": state,
+        "burned_real_mask": burned_real,
+        "predicted_only_mask": predicted_only,
+        "predicted_all_mask": pred_fire,
+        "probabilities": probs,
+        "symbol_grid": [_to_symbols(m) for m in state],
+    }
+
+
+def cata_predict_quadrants(
+    model: keras.Model,
+    sequence: np.ndarray,
+    threshold: float = config.PREDICTION_THRESHOLD,
+    include_history_burned: bool = True,
+) -> dict[str, np.ndarray | list[list[str]]]:
+    """Ejecuta `cata_predict` y devuelve los cuadrantes diferenciados (Real vs Predict)."""
+    probs = cata_predict(model, sequence)
+    return classify_cata_quadrants(
+        sequence=sequence,
+        probs_t1=probs,
+        threshold=threshold,
+        include_history_burned=include_history_burned,
+    )
+
+
+def export_cata_predictions_for_lucia(
+    model: keras.Model,
+    sequence: np.ndarray,
+    output_path: str = config.DEFAULT_PREDICTIONS_PATH,
+    threshold: float = config.PREDICTION_THRESHOLD,
+    include_history_burned: bool = True,
+    patch_origins: Sequence[dict] | None = None,
+    y_true_batch: np.ndarray | None = None,
+) -> dict:
+    """Ejecuta CATA sobre secuencias validadas por VALEN y guarda el archivo de predicciones para LUCIA.
+
+    Genera un artefacto JSON estructurado (`cata_predictions.json`) pensado para que
+    el futuro algoritmo **LUCIA** calcule vías de escape de **personas** y **animales**:
+      - `zones`: por cada sub-rejilla táctica (H x W de 1000x1000m), incluye:
+          * `symbol_grid`: matriz 2D de caracteres (`'.'`, `'P'`, `'F'`, `'B'`).
+          * `state_matrix`: matriz 2D de estados (`0=SAFE`, `1=PREDICTED_FIRE`, `2=CONFIRMED_BURNED`, `3=CONFIRMED_AND_CONTINUES`).
+          * `fire_probability_grid`: matriz 2D de probabilidad de fuego en `t+1` `[0, 1]`.
+          * `estimated_fire_arrival_hours`: matriz 2D con el tiempo estimado de llegada del frente de fuego
+            (0.0 en celdas ya quemadas `F`/`B`, inversamente proporcional a `prob_t1`, viento e inflamabilidad en celdas `P`).
+          * `human_traversal_cost_grid`: factor de coste de paso a pie para **personas** (penaliza humo/calor,
+            vegetación densa y proximidad a focos).
+          * `animal_traversal_cost_grid`: factor de coste de paso para **animales** (fauna/ganado: mejor movilidad
+            en monte/matorral que humanos, pero alta aversión térmica y al viento de cara al fuego).
+      - `active_and_predicted_cells`: lista plana georreferenciada (`cell_id`, `iy`, `ix`, `centroid_lonlat`,
+        estado, probabilidad CATA y variables ambientales de VALEN: `meteo`, `rainfall`, `vegetation`, `valen_score`).
+    """
+    import json
+    import time
+
+    x = np.asarray(sequence, dtype=np.float32)
+    single = x.ndim == 4
+    if single:
+        x = x[None]
+
+    q_res = cata_predict_quadrants(
+        model=model,
+        sequence=x,
+        threshold=threshold,
+        include_history_burned=include_history_burned,
+    )
+
+    state_batch = q_res["state_matrix"]
+    probs_batch = q_res["probabilities"]
+    symbols_batch = q_res["symbol_grid"]
+
+    # Aprendizaje continuo: calibración recursiva por bloque + actualización si existe observación real t+1
+    try:
+        from app.continual import continual_engine
+
+        origins_list = list(patch_origins) if patch_origins else None
+        probs_batch = continual_engine.calibrate_cata_probabilities(probs_batch, origins_list)
+        q_cal = classify_cata_quadrants(
+            sequence=x,
+            probs_t1=probs_batch,
+            threshold=threshold,
+            include_history_burned=include_history_burned,
+        )
+        state_batch = q_cal["state_matrix"]
+        symbols_batch = q_cal["symbol_grid"]
+        if y_true_batch is not None:
+            continual_engine.update_cata_from_observation(
+                model=model,
+                seq_batch=x,
+                probs_batch=probs_batch,
+                y_true_batch=y_true_batch,
+                patch_origins=origins_list,
+                threshold=threshold,
+            )
+    except Exception as exc:  # noqa: BLE001
+        logger.debug("Calibración continua de CATA omitida: %s", exc)
+
+    num_batches, _, height, width, num_ch = x.shape
+    ch_names = list(config.CHANNEL_REGISTRY[:num_ch])
+    ch_idx = {name: idx for idx, name in enumerate(ch_names)}
+
+    def _get_channel_last_step(b_idx: int, name: str, default: float = 0.0) -> np.ndarray:
+        idx = ch_idx.get(name)
+        if idx is None:
+            return np.full((height, width), default, dtype=np.float32)
+        return x[b_idx, -1, :, :, idx]
+
+    zones_payload: list[dict] = []
+    flat_cells: list[dict] = []
+
+    for b in range(num_batches):
+        meta_b = (patch_origins[b] if patch_origins and b < len(patch_origins) else {}) or {}
+        y0 = int(meta_b.get("y0", 0))
+        x0 = int(meta_b.get("x0", 0))
+        ref_date = str(meta_b.get("reference_date", "t"))
+        pred_date = str(meta_b.get("predicted_date", "t+1"))
+        zone_id = str(meta_b.get("zone_id", f"zone_{b:03d}_Y{y0:04d}_X{x0:04d}"))
+        centroids_map: dict[tuple[int, int], list[float]] = meta_b.get("centroids", {})
+
+        state_2d = state_batch[b]
+        probs_2d = probs_batch[b]
+        sym_2d = symbols_batch[b]
+
+        frp_norm = _get_channel_last_step(b, "frp_sum_mw", 0.0)
+        fwi_norm = _get_channel_last_step(b, "meteo_fwi", 0.0)
+        wind_norm = _get_channel_last_step(b, "meteo_wind_speed", 0.0)
+        hum_inv_norm = _get_channel_last_step(b, "meteo_humidity_inv", 0.0)
+        temp_norm = _get_channel_last_step(b, "meteo_temp", 0.0)
+        rain_days_norm = _get_channel_last_step(b, "rain_days_since_1mm", 0.0)
+        dry_spell_norm = _get_channel_last_step(b, "rain_dry_spell_max", 0.0)
+        precip_inv_norm = _get_channel_last_step(b, "rain_precip_30d_inv", 0.0)
+        veg_flam_norm = _get_channel_last_step(b, "veg_flammability", 0.5)
+        valen_score_norm = _get_channel_last_step(b, "valen_score", 0.5)
+
+        # Tiempo estimado de llegada del fuego (horas, 999.0 = libre/lejos)
+        burned_now = (state_2d == config.QUADRANT_STATE_BURNED_REAL) | (
+            state_2d == config.QUADRANT_STATE_PERSISTENT
+        )
+        spread_accel = np.clip(
+            1.0 + 0.6 * wind_norm + 0.4 * fwi_norm + 0.3 * veg_flam_norm + 0.2 * rain_days_norm,
+            0.5,
+            2.5,
+        )
+        arrival_hours = np.where(
+            burned_now,
+            0.0,
+            np.where(
+                probs_2d >= 0.05,
+                np.round(np.clip((1.0 - probs_2d) * 24.0 / spread_accel, 0.25, 72.0), 2),
+                999.0,
+            ),
+        )
+
+        # Costes de tránsito diferenciados para LUCIA (Personas vs Animales)
+        # - Personas: penalización mayor en vegetación densa/inflamable y humo/temperatura
+        human_cost = np.round(
+            1.0 + 0.7 * veg_flam_norm + 0.4 * temp_norm + 2.5 * probs_2d,
+            3,
+        )
+        # - Animales (fauna/ganado): mejor paso por matorral/bosque (0.3 * veg), pero mayor sensibilidad al calor/viento
+        animal_cost = np.round(
+            0.85 + 0.3 * veg_flam_norm + 0.6 * wind_norm + 3.0 * probs_2d,
+            3,
+        )
+
+        for r in range(height):
+            for c in range(width):
+                st = int(state_2d[r, c])
+                prob_val = float(probs_2d[r, c])
+                if st == config.QUADRANT_STATE_SAFE and prob_val < max(0.15, threshold * 0.5):
+                    continue
+                iy = y0 + r
+                ix = x0 + c
+                cell_id = f"{config.CELL_PREFIX}:L{config.GRID_LEVEL}:Y{iy:05d}:X{ix:05d}"
+                lonlat = centroids_map.get((iy, ix))
+                if lonlat is None and _valen_cell_centroid_lonlat is not None:
+                    lonlat = list(_valen_cell_centroid_lonlat(iy, ix, config.CHUNK_SIZE_M))
+                flat_cells.append(
+                    {
+                        "zone_id": zone_id,
+                        "cell_id": cell_id,
+                        "iy": iy,
+                        "ix": ix,
+                        "grid_row": r,
+                        "grid_col": c,
+                        "centroid_lonlat": lonlat,
+                        "reference_date": ref_date,
+                        "predicted_date": pred_date,
+                        "quadrant_state": st,
+                        "quadrant_label": config.QUADRANT_LABELS[st],
+                        "quadrant_symbol": config.QUADRANT_SYMBOLS[st],
+                        "fire_probability_t1": round(prob_val, 4),
+                        "estimated_arrival_hours": float(arrival_hours[r, c]),
+                        "lucia_routing_hints": {
+                            "passable_now": not bool(burned_now[r, c]),
+                            "human_traversal_cost": float(human_cost[r, c]),
+                            "animal_traversal_cost": float(animal_cost[r, c]),
+                        },
+                        "valen_features_norm": {
+                            "frp_sum_mw": round(float(frp_norm[r, c]), 4),
+                            "meteo_fwi": round(float(fwi_norm[r, c]), 4),
+                            "meteo_wind_speed": round(float(wind_norm[r, c]), 4),
+                            "meteo_humidity_inv": round(float(hum_inv_norm[r, c]), 4),
+                            "meteo_temp": round(float(temp_norm[r, c]), 4),
+                            "rain_days_since_1mm": round(float(rain_days_norm[r, c]), 4),
+                            "rain_dry_spell_max": round(float(dry_spell_norm[r, c]), 4),
+                            "rain_precip_30d_inv": round(float(precip_inv_norm[r, c]), 4),
+                            "veg_flammability": round(float(veg_flam_norm[r, c]), 4),
+                            "valen_score": round(float(valen_score_norm[r, c]), 4),
+                        },
+                    }
+                )
+
+        zones_payload.append(
+            {
+                "zone_id": zone_id,
+                "origin_iy": y0,
+                "origin_ix": x0,
+                "reference_date": ref_date,
+                "predicted_date": pred_date,
+                "grid_shape": [height, width],
+                "cell_size_m": config.CHUNK_SIZE_M,
+                "summary": {
+                    "confirmed_burned_cells": int(burned_now.sum()),
+                    "predicted_new_fire_cells": int(
+                        (state_2d == config.QUADRANT_STATE_PREDICTED).sum()
+                    ),
+                    "persistent_fire_cells": int(
+                        (state_2d == config.QUADRANT_STATE_PERSISTENT).sum()
+                    ),
+                    "safe_cells": int((state_2d == config.QUADRANT_STATE_SAFE).sum()),
+                    "max_fire_probability": round(float(probs_2d.max()), 4),
+                },
+                "symbol_grid": sym_2d,
+                "state_matrix": state_2d.tolist(),
+                "fire_probability_grid": np.round(probs_2d, 4).tolist(),
+                "estimated_fire_arrival_hours": arrival_hours.tolist(),
+                "human_traversal_cost_grid": human_cost.tolist(),
+                "animal_traversal_cost_grid": animal_cost.tolist(),
+            }
+        )
+
+    payload = {
+        "algorithm": config.ALGORITHM_NAME,
+        "source_validation_algorithm": config.SOURCE_VALIDATION_ALGORITHM,
+        "target_routing_algorithm": config.TARGET_ROUTING_ALGORITHM,
+        "created_at": time.strftime("%Y-%m-%dT%H:%M:%S%z"),
+        "grid_id": config.GRID_ID,
+        "cell_prefix": config.CELL_PREFIX,
+        "crs": config.CRS,
+        "grid_level": config.GRID_LEVEL,
+        "cell_size_m": config.CHUNK_SIZE_M,
+        "prediction_threshold": threshold,
+        "channels_used": ch_names,
+        "quadrant_states": config.QUADRANT_LABELS,
+        "quadrant_symbols": config.QUADRANT_SYMBOLS,
+        "summary": {
+            "total_zones": len(zones_payload),
+            "total_active_or_predicted_cells": len(flat_cells),
+            "total_confirmed_burned": sum(
+                z["summary"]["confirmed_burned_cells"] for z in zones_payload
+            ),
+            "total_predicted_new_fire": sum(
+                z["summary"]["predicted_new_fire_cells"] for z in zones_payload
+            ),
+        },
+        "active_and_predicted_cells": flat_cells,
+        "zones": zones_payload,
+    }
+
+    if output_path:
+        os.makedirs(os.path.dirname(os.path.abspath(output_path)), exist_ok=True)
+        with open(output_path, "w", encoding="utf-8") as f:
+            json.dump(payload, f, ensure_ascii=False, indent=2)
+        logger.info(
+            "Predicciones CATA exportadas para LUCIA en %s (zonas=%d, celdas activas/predichas=%d)",
+            output_path,
+            len(zones_payload),
+            len(flat_cells),
+        )
+
+    return payload
+
+
+# Aliases de compatibilidad
 predict_next_fire = cata_predict
+export_cata_predictions = export_cata_predictions_for_lucia

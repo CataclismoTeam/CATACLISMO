@@ -16,7 +16,10 @@ class ConnectionManager:
 
     async def broadcast(self, message: dict) -> None:
         for websocket in list(self.active):
-            await websocket.send_json(message)
+            try:
+                await websocket.send_json(message)
+            except Exception:
+                self.disconnect(websocket)
 
 
 manager = ConnectionManager()

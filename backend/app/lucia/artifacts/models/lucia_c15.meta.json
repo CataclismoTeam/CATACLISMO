@@ -1,0 +1,51 @@
+{
+  "algorithm": "lucia",
+  "pipeline": [
+    "valen",
+    "cata",
+    "lucia"
+  ],
+  "model_path": "lucia_c15.keras",
+  "saved_at": "2026-11-15T05:04:42+0100",
+  "grid_size": 32,
+  "num_channels": 15,
+  "channel_names": [
+    "is_safe_unburned",
+    "is_burning_active",
+    "is_already_burned",
+    "fire_probability_t1",
+    "fire_proximity_risk",
+    "arrival_urgency",
+    "human_base_cost_norm",
+    "animal_base_cost_norm",
+    "veg_flammability",
+    "meteo_wind_speed",
+    "meteo_fwi_temp",
+    "border_escape_affinity",
+    "road_access",
+    "elevation_norm",
+    "slope_steepness"
+  ],
+  "conv_filters": [
+    32,
+    64,
+    32
+  ],
+  "kernel_size": [
+    3,
+    3
+  ],
+  "dropout_rate": 0.15,
+  "safe_fire_threshold": 0.25,
+  "mode": "train",
+  "real_cata_samples_augmented": 40,
+  "synthetic_samples": 160,
+  "final_metrics": {
+    "loss": 0.0003105169744230807,
+    "mae": 0.016845116391777992,
+    "rmse": 0.024969514459371567,
+    "val_loss": 0.00017556727107148618,
+    "val_mae": 0.012837201356887817,
+    "val_rmse": 0.018738584592938423
+  }
+}

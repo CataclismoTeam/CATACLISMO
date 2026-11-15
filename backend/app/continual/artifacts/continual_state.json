@@ -1,0 +1,112 @@
+{
+  "version": "1.0.0",
+  "updated_at": "2026-11-15T05:56:14.539735+00:00",
+  "cata": {
+    "total_continual_updates": 1,
+    "total_head_micro_steps": 1,
+    "global_logit_bias": 0.00779,
+    "global_temp_scale": 1.0,
+    "ema_precision": 0.6797,
+    "ema_recall": 0.637,
+    "ema_iou": 0.4981,
+    "blocks": {
+      "138_187": {
+        "logit_bias": 0.01091,
+        "temp_scale": 1.00255,
+        "updates": 1,
+        "last_iou": 0.6768
+      },
+      "138_186": {
+        "logit_bias": 0.00652,
+        "temp_scale": 1.00548,
+        "updates": 1,
+        "last_iou": 0.6812
+      },
+      "144_182": {
+        "logit_bias": -0.01373,
+        "temp_scale": 1.02669,
+        "updates": 1,
+        "last_iou": 0.4576
+      },
+      "139_187": {
+        "logit_bias": 0.02187,
+        "temp_scale": 1.00118,
+        "updates": 1,
+        "last_iou": 0.4766
+      },
+      "139_186": {
+        "logit_bias": 0.02125,
+        "temp_scale": 1.00263,
+        "updates": 1,
+        "last_iou": 0.4444
+      },
+      "143_183": {
+        "logit_bias": -0.00692,
+        "temp_scale": 1.021,
+        "updates": 1,
+        "last_iou": 0.4872
+      },
+      "142_180": {
+        "logit_bias": -0.00574,
+        "temp_scale": 1.01206,
+        "updates": 1,
+        "last_iou": 0.7447
+      },
+      "142_181": {
+        "logit_bias": -0.00574,
+        "temp_scale": 1.01206,
+        "updates": 1,
+        "last_iou": 0.7447
+      }
+    },
+    "field_Overrides": []
+  },
+  "lucia": {
+    "total_continual_updates": 9,
+    "total_head_micro_steps": 0,
+    "global_residual_gain": 0.2457,
+    "ema_mae": 0.01027,
+    "zones": {
+      "138_187": {
+        "residual_gain": 0.2418,
+        "updates": 2,
+        "last_mae": 0.00742
+      },
+      "138_186": {
+        "residual_gain": 0.2459,
+        "updates": 1,
+        "last_mae": 0.01088
+      },
+      "144_182": {
+        "residual_gain": 0.2456,
+        "updates": 1,
+        "last_mae": 0.0102
+      },
+      "139_187": {
+        "residual_gain": 0.2469,
+        "updates": 1,
+        "last_mae": 0.01317
+      },
+      "139_186": {
+        "residual_gain": 0.2461,
+        "updates": 1,
+        "last_mae": 0.01144
+      },
+      "143_183": {
+        "residual_gain": 0.2452,
+        "updates": 1,
+        "last_mae": 0.0094
+      },
+      "142_180": {
+        "residual_gain": 0.2452,
+        "updates": 1,
+        "last_mae": 0.00932
+      },
+      "142_181": {
+        "residual_gain": 0.2452,
+        "updates": 1,
+        "last_mae": 0.00923
+      }
+    }
+  }
+}

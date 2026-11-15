@@ -1,7 +1,13 @@
-"""Módulo de búsqueda y cálculo de vías de escape seguras frente a incendios.
+"""Algoritmo LUCIA (Motor base A* espacio-temporal).
 
-Optimizado para mapas reales de gran escala (redes de terreno, elevación,
-viento, cortafuegos y georreferenciación WGS84).
+Para la pipeline completa **VALEN -> CATA -> LUCIA** con el modelo modular de
+TensorFlow/Keras (`lucia_c13.keras`) y exportación GeoJSON (`lucia_routes.geojson`)
+integrada en FastAPI, véase el paquete principal `backend/app/lucia/`:
+  - `backend/app/lucia/config.py`
+  - `backend/app/lucia/model.py`
+  - `backend/app/lucia/router.py`
+  - `backend/app/lucia/train.py`
+  - `backend/app/lucia/FRONTEND_AI_HANDOFF.md`
 """
 
 from __future__ import annotations
@@ -10,6 +16,8 @@ import heapq
 import math
 from dataclasses import dataclass
 from typing import Any
+
+ALGORITHM_NAME: str = "lucia"
 
 # ============================================================================ #
 # 1. Catálogo de terrenos y factores físicos para mapas reales
