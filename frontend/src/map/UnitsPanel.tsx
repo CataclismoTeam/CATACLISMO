@@ -36,7 +36,7 @@ function UnitRow({ unit }: { unit: Unit }) {
   );
 }
 
-/** Panel izquierdo: medios del dispositivo por aire, tierra (en grupos) y mar. */
+/** Panel izquierdo: medios del dispositivo por aire y tierra (en grupos). */
 export function UnitsPanel() {
   const open = useUi((s) => s.leftPanel === 'unidades');
   const setLeftPanel = useUi((s) => s.setLeftPanel);
@@ -46,10 +46,8 @@ export function UnitsPanel() {
   if (!open || !scenario) return null;
 
   const of = (d: Domain) => scenario.units.filter((u) => u.domain === d);
-  const domains = (['aire', 'tierra', 'mar'] as Domain[]).filter(
-    (d) => d !== 'mar' || of('mar').length,
-  );
-  const current = domains.includes(domain) ? domain : 'tierra';
+  const domains: Domain[] = ['aire', 'tierra'];
+  const current = domain;
 
   return (
     <aside

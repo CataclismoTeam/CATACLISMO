@@ -12,7 +12,6 @@ import {
   Fuel,
   Navigation,
   Plane,
-  Ship,
   Tractor,
   ShieldUser,
   Truck,
@@ -31,7 +30,6 @@ export const KIND: Record<UnitKind, { icon: IconNode; label: string }> = {
   nodriza: { icon: Fuel, label: 'Nodriza' },
   maquinaria: { icon: Tractor, label: 'Maquinaria pesada' },
   avion: { icon: Plane, label: 'Avión' },
-  embarcacion: { icon: Ship, label: 'Embarcación' },
 };
 
 export const STATUS: Record<UnitStatus, { icon: IconNode; label: string; color: string }> = {

@@ -4,7 +4,7 @@
 import type { FeatureCollection, LineString, Point, Polygon } from 'geojson';
 import definitions from './scenarios.json';
 
-export type Domain = 'aire' | 'tierra' | 'mar';
+export type Domain = 'aire' | 'tierra';
 export type UnitKind =
   | 'autobomba'
   | 'nodriza'
@@ -14,8 +14,7 @@ export type UnitKind =
   | 'ambulancia'
   | 'helicoptero'
   | 'avion'
-  | 'dron'
-  | 'embarcacion';
+  | 'dron';
 export type UnitStatus = 'disponible' | 'en ruta' | 'en intervencion' | 'no disponible';
 
 export interface Unit {
@@ -55,8 +54,6 @@ interface Definition {
   windFrom: number;
   windKmh: number;
   camera: { center: [number, number]; zoom: number; bearing: number; pitch: number };
-  /** Punto de mar cercano: solo las simulaciones costeras tienen medios marítimos */
-  sea?: [number, number];
 }
 
 export interface Scenario extends Definition {
@@ -220,32 +217,6 @@ function unitsFor(def: Definition): Unit[] {
     const [lon, lat] = place(def, at);
     return { id: code, kind, domain, group, name, status, crew, lon, lat, updated: T };
   });
-  if (def.sea) {
-    units.push(
-      {
-        id: 'SM-1',
-        kind: 'embarcacion',
-        domain: 'mar',
-        name: 'Salvamar (Salvamento Marítimo)',
-        status: 'en ruta',
-        crew: 4,
-        lon: def.sea[0],
-        lat: def.sea[1],
-        updated: T,
-      },
-      {
-        id: 'SM-2',
-        kind: 'embarcacion',
-        domain: 'mar',
-        name: 'Embarcación de evacuación costera',
-        status: 'disponible',
-        crew: 6,
-        lon: def.sea[0] + 0.02,
-        lat: def.sea[1] - 0.01,
-        updated: T,
-      },
-    );
-  }
   return units;
 }
 
@@ -260,7 +231,7 @@ export const SCENARIOS: Record<string, Scenario> = Object.fromEntries(
 
 export const DEFAULT_SCENARIO = SCENARIO_LIST[0].id;
 
-export const DOMAIN_LABEL: Record<Domain, string> = { aire: 'Aire', tierra: 'Tierra', mar: 'Mar' };
+export const DOMAIN_LABEL: Record<Domain, string> = { aire: 'Aire', tierra: 'Tierra' };
 
 export interface Channel {
   id: string;
@@ -273,7 +244,7 @@ export interface Channel {
 
 /**
  * Canales de radio del dispositivo (SIMULADOS): uno de aire, un canal general de tierra donde
- * hablan todos los medios terrestres, uno por grupo de tierra y uno de mar si hay medios marítimos.
+ * hablan todos los medios terrestres y uno por grupo de tierra.
  */
 export function channelsFor(s: Scenario): Channel[] {
   const of = (d: Domain) => s.units.filter((u) => u.domain === d);
@@ -307,16 +278,6 @@ export function channelsFor(s: Scenario): Channel[] {
       ][i],
     })),
   ];
-  const sea = of('mar');
-  if (sea.length) {
-    channels.push({
-      id: 'mar',
-      domain: 'mar',
-      name: 'Salvamento marítimo',
-      members: sea.map((u) => u.id),
-      last: 'SM-1: preparados para evacuar por mar desde la playa',
-    });
-  }
   return channels;
 }
 

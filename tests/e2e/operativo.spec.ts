@@ -1,4 +1,4 @@
-// Unidades por aire, tierra y mar; radio por grupos; ajustes de tema y accesibilidad.
+// Unidades por aire y tierra; radio por grupos; ajustes de tema y accesibilidad.
 import { test, expect, type Page } from '@playwright/test';
 
 // Sin GPU el relieve 3D satura el navegador: estas pruebas usan el mapa en 2D
@@ -13,7 +13,7 @@ async function start(page: Page) {
   await page.getByRole('button', { name: 'Empezar' }).click();
 }
 
-test('las unidades se separan en aire, tierra y mar, y tierra va por grupos', async ({ page }) => {
+test('las unidades se separan en aire y tierra, y tierra va por grupos', async ({ page }) => {
   await start(page);
   const rail = page.getByRole('navigation', { name: 'Módulos' });
   // El rail lateral (escritorio) y la barra inferior (móvil) son la misma navegación
@@ -22,13 +22,12 @@ test('las unidades se separan en aire, tierra y mar, y tierra va por grupos', as
   const tabs = panel.getByRole('tablist', { name: 'Dominio' });
   await expect(tabs.getByRole('tab', { name: /Aire/ })).toBeVisible();
   await expect(tabs.getByRole('tab', { name: /Tierra/ })).toHaveAttribute('aria-selected', 'true');
-  // La simulación inicial (Sierra Bermeja) es costera: tiene medios de mar
-  await expect(tabs.getByRole('tab', { name: /Mar/ })).toBeVisible();
+  // Sin medios de mar: solo salvamento por tierra y aire
+  await expect(tabs.getByRole('tab', { name: /Mar/ })).toHaveCount(0);
 
   const count = async (name: RegExp) =>
     Number((await tabs.getByRole('tab', { name }).innerText()).match(/\((\d+)\)/)?.[1]);
   expect(await count(/Tierra/)).toBeGreaterThan(await count(/Aire/));
-  expect(await count(/Tierra/)).toBeGreaterThan(await count(/Mar/));
 
   await expect(panel.getByText('Canal General Tierra')).toBeVisible();
   await expect(panel.getByRole('heading', { name: /Grupo 1 · Ataque directo/ })).toBeVisible();
@@ -39,16 +38,11 @@ test('las unidades se separan en aire, tierra y mar, y tierra va por grupos', as
   );
 });
 
-test('la radio tiene canal de aire, general de tierra, uno por grupo y mar', async ({ page }) => {
+test('la radio tiene canal de aire, general de tierra y uno por grupo', async ({ page }) => {
   await start(page);
   await page.getByRole('button', { name: 'Radio', exact: true }).click();
   const radio = page.getByRole('complementary', { name: 'Radio' });
-  for (const name of [
-    'Coordinación aérea',
-    'General Tierra',
-    'Grupo 2 · Flanco',
-    'Salvamento marítimo',
-  ]) {
+  for (const name of ['Coordinación aérea', 'General Tierra', 'Grupo 2 · Flanco']) {
     await expect(radio.getByRole('radio', { name: new RegExp(name) })).toBeVisible();
   }
   await expect(radio.getByRole('button', { name: 'Pulsar para hablar' })).toBeDisabled();

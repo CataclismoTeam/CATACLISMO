@@ -60,7 +60,7 @@ export function RadioPanel() {
         </div>
       </header>
       <div role="radiogroup" aria-label="Canal" className="max-h-[60dvh] overflow-y-auto p-2">
-        {(['aire', 'tierra', 'mar'] as Domain[]).map((domain) => {
+        {(['aire', 'tierra'] as Domain[]).map((domain) => {
           const list = channels.filter((c) => c.domain === domain);
           if (!list.length) return null;
           return (
