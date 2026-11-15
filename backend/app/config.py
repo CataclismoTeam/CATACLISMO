@@ -14,6 +14,9 @@ class Settings(BaseSettings):
     # Clave de NASA FIRMS para ingesta Near Real-Time (NRT)
     firms_map_key: str = ""
     live_nrt_interval_sec: int = 0  # >0 activa auto-refresco periódico en segundo plano
+    # Release con los resultados del ciclo en vivo de GitHub Actions ("" = desactivado)
+    live_data_url: str = ""
+    live_data_interval_sec: int = 600
 
     @property
     def cors_origin_list(self) -> list[str]:

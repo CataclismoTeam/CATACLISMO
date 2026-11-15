@@ -111,15 +111,28 @@ async def _proof_of_life_monitor() -> None:
 
 @asynccontextmanager
 async def lifespan(_app: FastAPI):
-    task = asyncio.create_task(_proof_of_life_monitor())
+    tasks = [asyncio.create_task(_proof_of_life_monitor())]
+    # Resultados del ciclo en vivo (FIRMS → CATA → LUCIA) publicados por GitHub Actions
+    if settings.live_data_url:
+        from app.live_sync import live_sync_loop
+
+        tasks.append(
+            asyncio.create_task(
+                live_sync_loop(
+                    settings.live_data_url, settings.live_data_interval_sec, manager.broadcast
+                )
+            )
+        )
     try:
         yield
     finally:
-        task.cancel()
-        try:
-            await task
-        except asyncio.CancelledError:
-            pass
+        for task in tasks:
+            task.cancel()
+        for task in tasks:
+            try:
+                await task
+            except asyncio.CancelledError:
+                pass
 
 
 app = FastAPI(
@@ -374,7 +387,16 @@ async def get_cata_predictions() -> dict:
     path = lucia_config.DEFAULT_CATA_PREDICTIONS_PATH
     data = await asyncio.to_thread(_read_json_if_exists, path)
     if data is None:
-        raise HTTPException(status_code=404, detail="No se encontró cata_predictions.json.")
+        # Aún sin ciclo en vivo (o sin incendios activos): respuesta válida y vacía, no un error
+        status = await asyncio.to_thread(_read_json_if_exists, LIVE_STATUS_PATH)
+        return {
+            "algorithm": "cata",
+            "status": "pending",
+            "message": "Aún no hay predicción: el ciclo en vivo (FIRMS → CATA) no ha publicado.",
+            "live": status,
+            "zones": [],
+            "summary": {"total_zones": 0},
+        }
     return data
 
 
@@ -427,8 +449,26 @@ async def get_live_nrt_status() -> dict:
 
 @app.post("/api/live/refresh")
 async def trigger_live_nrt_refresh(days: int = Query(default=2, ge=1, le=10)) -> dict:
-    """Descarga detecciones FIRMS NRT en directo, predice con CATA y actualiza rutas LUCIA."""
-    run_live_nrt_cycle = _load_live_nrt_runner()
+    """Descarga detecciones FIRMS NRT en directo, predice con CATA y actualiza rutas LUCIA.
+
+    En producción (LIVE_DATA_URL) el ciclo corre en GitHub Actions: aquí solo se trae al momento
+    lo último que haya publicado.
+    """
+    if settings.live_data_url:
+        from app.live_sync import sync_once
+
+        changed = await asyncio.to_thread(sync_once, settings.live_data_url)
+        status = await asyncio.to_thread(_read_json_if_exists, LIVE_STATUS_PATH) or {}
+        if changed:
+            await manager.broadcast({**status, "event": "live_nrt_updated", "files": changed})
+        return {**status, "synced_files": changed}
+    try:
+        run_live_nrt_cycle = _load_live_nrt_runner()
+    except ImportError as exc:
+        raise HTTPException(
+            status_code=503,
+            detail="El ciclo en vivo necesita las dependencias de entrenamiento (--extra trainer).",
+        ) from exc
     try:
         res = run_live_nrt_cycle(days=days)
     except RuntimeError as exc:

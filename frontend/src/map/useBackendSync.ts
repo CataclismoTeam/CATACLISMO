@@ -2,7 +2,7 @@ import { Popup, type Map as MapLibre, type MapGeoJSONFeature } from 'maplibre-gl
 import { useEffect, useRef, type RefObject } from 'react';
 import { apiGet, wsUrl } from '../lib/api.ts';
 import { t } from '../lib/i18n.ts';
-import { useBackend } from '../store/backend.ts';
+import { useBackend, type LiveStatus } from '../store/backend.ts';
 import { useUi } from '../store/ui.ts';
 import {
   BACKEND_CLICKABLE,
@@ -96,13 +96,18 @@ export function useBackendSync(mapRef: RefObject<MapLibre | null>, ready: boolea
       }
       socket.onopen = () => alive && store.set({ socket: true });
       socket.onmessage = (message) => {
-        let event = '';
+        let data: { event?: unknown } & Record<string, unknown>;
         try {
-          event = String((JSON.parse(String(message.data)) as { event?: unknown }).event ?? '');
+          data = JSON.parse(String(message.data)) as typeof data;
         } catch {
           return;
         }
-        if (event === 'live_nrt_updated') void loadLucia();
+        const event = String(data.event ?? '');
+        if (event === 'live_nrt_updated') {
+          // Nuevo ciclo FIRMS → CATA → LUCIA: estado y capas al momento
+          if (typeof data.status === 'string') store.set({ live: data as unknown as LiveStatus });
+          void loadLucia();
+        }
         if (event.startsWith('juli_') || event.startsWith('proof_of_life')) {
           // Varios eventos seguidos (un equipo entero se mueve): una sola descarga
           window.clearTimeout(debounce);

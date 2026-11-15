@@ -20,6 +20,10 @@ services:
       # Orígenes del front con permiso para llamar a la API
       - key: CORS_ORIGINS
         value: https://cataclismoteam.github.io,http://localhost:5173,http://localhost:4173
-      # Clave de NASA FIRMS para datos casi en vivo: se pone a mano en Render (no va en git)
+      # Resultados del ciclo en vivo (FIRMS → CATA → LUCIA) que publica GitHub Actions cada 3 h
+      - key: LIVE_DATA_URL
+        value: https://github.com/CataclismoTeam/CATACLISMO/releases/download/live-data
+      # Clave de NASA FIRMS (solo si se lanza el ciclo en el propio servidor; en producción lo
+      # hace GitHub Actions con el secreto del repo)
       - key: FIRMS_MAP_KEY
         sync: false

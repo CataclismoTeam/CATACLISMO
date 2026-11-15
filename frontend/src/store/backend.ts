@@ -6,9 +6,13 @@ import type { JuliCollection, LuciaCollection } from '../map/backend.ts';
 /** apagado: sin URL · conectando: primera comprobación · conectado · sin-conexion: no responde */
 export type BackendStatus = 'apagado' | 'conectando' | 'conectado' | 'sin-conexion';
 
+/** Estado del ciclo en vivo FIRMS → CATA → LUCIA (/api/live/status) */
 export interface LiveStatus {
   status: string;
   firms_key_configured?: boolean;
+  checked_at?: string;
+  firms_detections?: number;
+  zones_predicted?: number;
 }
 
 interface BackendState {

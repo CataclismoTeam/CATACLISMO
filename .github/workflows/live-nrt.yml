@@ -1,0 +1,81 @@
+# Ciclo en vivo (NRT): NASA FIRMS → VALEN → CATA → LUCIA cada 3 horas.
+# CATA necesita TensorFlow, que no cabe en el servidor gratuito de la API (512 MB), así que el
+# ciclo corre aquí y publica sus resultados en la release «live-data». La API de Render los
+# descarga sola (backend/app/live_sync.py) y avisa al front por WebSocket.
+name: Live NRT
+
+on:
+  schedule:
+    - cron: '17 */3 * * *' # cada 3 horas
+  workflow_dispatch:
+    inputs:
+      days:
+        description: 'Días hacia atrás de FIRMS (1 a 10)'
+        default: '2'
+
+permissions: {}
+
+concurrency:
+  group: live-nrt
+  cancel-in-progress: false
+
+jobs:
+  ciclo:
+    name: FIRMS → CATA → LUCIA
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write # subir los resultados a la release live-data
+    timeout-minutes: 30
+    defaults:
+      run:
+        working-directory: backend
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: astral-sh/setup-uv@68559e99cc807c1eb7e9238fd43a15bba460eec2 # v10.3.3
+        with:
+          enable-cache: false
+      # TensorFlow solo publica ruedas para Python 3.13
+      - name: Dependencias con TensorFlow (Python 3.13)
+        run: uv sync --frozen --python 3.13 --extra trainer --no-dev
+      - name: Modelo de CATA
+        # El modelo entrenado está versionado en checkpoints/ (app/cata/artifacts está ignorado)
+        run: |
+          mkdir -p app/cata/artifacts/models
+          cp checkpoints/best_model.keras app/cata/artifacts/models/cata_c22.keras
+      - name: Ciclo NRT
+        env:
+          FIRMS_MAP_KEY: ${{ secrets.FIRMS_MAP_KEY }}
+          DAYS: ${{ inputs.days || '2' }}
+        run: |
+          case "$DAYS" in ''|*[!0-9]*) echo "::error::days no es un número"; exit 1;; esac
+          uv run --frozen --no-sync python -m app.live_nrt --days "$DAYS"
+      - name: Resultado
+        run: |
+          status=app/continual/artifacts/live_nrt_status.json
+          test -f "$status" || { echo "::error::El ciclo no escribió su estado"; exit 1; }
+          cat "$status"
+          {
+            echo '### Ciclo NRT'
+            echo '```json'
+            cat "$status"
+            echo '```'
+          } >> "$GITHUB_STEP_SUMMARY"
+      - name: Publicar en la release live-data
+        env:
+          GH_TOKEN: ${{ github.token }}
+          REPO: ${{ github.repository }}
+        run: |
+          gh release view live-data --repo "$REPO" >/dev/null 2>&1 ||
+            gh release create live-data --repo "$REPO" --prerelease --latest=false \
+              --title 'Datos en vivo (NRT)' \
+              --notes 'Resultados del ciclo en vivo FIRMS → CATA → LUCIA (.github/workflows/live-nrt.yml). Se reemplazan cada 3 horas.'
+          status=app/continual/artifacts/live_nrt_status.json
+          files=("$status")
+          # Sin incendios activos no hay predicción nueva: se mantiene la última publicada
+          if [ "$(jq -r .status "$status")" = updated_live ]; then
+            files+=(app/cata/artifacts/predictions/cata_predictions.json
+                    app/lucia/artifacts/routes/lucia_routes.geojson)
+          fi
+          gh release upload live-data --repo "$REPO" --clobber "${files[@]}"

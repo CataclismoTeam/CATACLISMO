@@ -496,6 +496,11 @@ const en: Record<string, string> = {
   'Punto de inicio en riesgo': 'Starting point at risk',
   'Celda de CATA (1 km)': 'CATA cell (1 km)',
   'Sin respuesta': 'No response',
+  'FIRMS en vivo · {n} detecciones · {d}': 'Live FIRMS · {n} detections · {d}',
+  'FIRMS en vivo · sin incendios activos en la península · {d}':
+    'Live FIRMS · no active fires in the peninsula · {d}',
+  'FIRMS en vivo · sin predicción nueva · {d}': 'Live FIRMS · no new prediction · {d}',
+  'FIRMS en vivo · esperando el primer ciclo': 'Live FIRMS · waiting for the first cycle',
 };
 
 export default en;

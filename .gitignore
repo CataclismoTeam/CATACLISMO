@@ -128,3 +128,5 @@ desktop.ini
 backend/app/valen/output/
 backend/app/valen/cache/
 backend/app/continual/artifacts/*.npz
+# Estado del ciclo en vivo (lo genera live_nrt o lo descarga live_sync)
+backend/app/continual/artifacts/live_nrt_status.json

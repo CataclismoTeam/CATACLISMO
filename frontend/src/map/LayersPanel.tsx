@@ -1,8 +1,8 @@
-import { useT } from '../lib/i18n.ts';
+import { locale, useT } from '../lib/i18n.ts';
 import { Eye, EyeOff, X } from 'lucide-react';
 import type { ReactNode } from 'react';
 import { cn } from '../lib/cn.ts';
-import { useBackend } from '../store/backend.ts';
+import { useBackend, type LiveStatus } from '../store/backend.ts';
 import { useUi, type Basemap, type LayerId } from '../store/ui.ts';
 import { Button } from '../ui/Button.tsx';
 import type { Detections } from './detections.ts';
@@ -130,12 +130,43 @@ function Group({ title, children }: { title: string; children: ReactNode }) {
   );
 }
 
+/** Estado del ciclo en vivo NASA FIRMS → CATA → LUCIA (GitHub Actions, cada 3 h). */
+function LiveLine({ live }: { live?: LiveStatus }) {
+  const t = useT();
+  const when = live?.checked_at
+    ? new Date(live.checked_at).toLocaleString(locale(), {
+        day: 'numeric',
+        month: 'short',
+        hour: '2-digit',
+        minute: '2-digit',
+      })
+    : undefined;
+  const text =
+    live?.status === 'updated_live'
+      ? t('FIRMS en vivo · {n} detecciones · {d}', {
+          n: live.firms_detections ?? 0,
+          d: when ?? '—',
+        })
+      : live?.status === 'no_active_fires_in_iberia'
+        ? t('FIRMS en vivo · sin incendios activos en la península · {d}', { d: when ?? '—' })
+        : when
+          ? t('FIRMS en vivo · sin predicción nueva · {d}', { d: when })
+          : t('FIRMS en vivo · esperando el primer ciclo');
+  return (
+    <span className="flex items-center gap-1.5 text-xs font-semibold text-ok">
+      <span aria-hidden className="size-2 rounded-full bg-ok" />
+      {text}
+    </span>
+  );
+}
+
 /** Capas del backend: solo aparecen con una URL de API puesta en Ajustes. */
 function BackendGroup() {
   const status = useBackend((s) => s.status);
   const lucia = useBackend((s) => s.lucia);
   const juli = useBackend((s) => s.juli);
   const socket = useBackend((s) => s.socket);
+  const live = useBackend((s) => s.live);
   const flyTo = useUi((s) => s.flyTo);
   const t = useT();
   if (status === 'apagado') return null;
@@ -169,6 +200,7 @@ function BackendGroup() {
         origin="modelo"
         legend={
           <div className="flex flex-col gap-1">
+            <LiveLine live={live} />
             {(Object.keys(CATA_COLORS) as FireCategory[]).map((c) => (
               <Swatch key={c} fill={CATA_COLORS[c][0]}>
                 {CATEGORY_LABEL[c]}

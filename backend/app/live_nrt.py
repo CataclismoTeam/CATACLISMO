@@ -53,6 +53,14 @@ LIVE_METEO_PATH = os.path.join(BASE_DIR, "valen", "output", "cell_day_meteo_live
 LIVE_STATUS_PATH = os.path.join(BASE_DIR, "continual", "artifacts", "live_nrt_status.json")
 
 
+def _write_status(status: dict[str, Any]) -> dict[str, Any]:
+    """Guarda el estado del ciclo (lo lee /api/live/status) y lo devuelve."""
+    os.makedirs(os.path.dirname(LIVE_STATUS_PATH), exist_ok=True)
+    with open(LIVE_STATUS_PATH, "w", encoding="utf-8") as f:
+        json.dump(status, f, ensure_ascii=False, indent=2)
+    return status
+
+
 def _get_firms_map_key(explicit_key: str | None = None) -> str:
     if explicit_key and explicit_key.strip():
         return explicit_key.strip()
@@ -252,18 +260,17 @@ def run_live_nrt_cycle(
             "firms_detections": 0,
             "message": "Sin detecciones térmicas activas en la Península Ibérica recientemente.",
         }
-        os.makedirs(os.path.dirname(LIVE_STATUS_PATH), exist_ok=True)
-        with open(LIVE_STATUS_PATH, "w", encoding="utf-8") as f:
-            json.dump(status, f, ensure_ascii=False, indent=2)
-        return status
+        return _write_status(status)
 
     df_6h, meteo_records = build_live_cell_6h_from_firms(raw_rows)
     if df_6h.empty:
-        return {
-            "status": "no_valid_cells",
-            "checked_at": now_iso,
-            "firms_detections": len(raw_rows),
-        }
+        return _write_status(
+            {
+                "status": "no_valid_cells",
+                "checked_at": now_iso,
+                "firms_detections": len(raw_rows),
+            }
+        )
 
     os.makedirs(os.path.dirname(LIVE_CELL_6H_PATH), exist_ok=True)
     df_6h.to_parquet(LIVE_CELL_6H_PATH, index=False)
@@ -306,11 +313,13 @@ def run_live_nrt_cycle(
     all_meta = (meta_tr + meta_va) if (meta_tr or meta_va) else []
 
     if len(all_x) == 0:
-        return {
-            "status": "insufficient_live_window",
-            "checked_at": now_iso,
-            "firms_detections": len(raw_rows),
-        }
+        return _write_status(
+            {
+                "status": "insufficient_live_window",
+                "checked_at": now_iso,
+                "firms_detections": len(raw_rows),
+            }
+        )
 
     scores_act = all_x[:, -1, :, :, 0].sum(axis=(1, 2))
     top_idx = np.argsort(scores_act)[::-1][: min(len(all_x), max_zones)]
@@ -343,10 +352,7 @@ def run_live_nrt_cycle(
             "cell_size_m": CELL_SIZE_M,
         },
     }
-    os.makedirs(os.path.dirname(LIVE_STATUS_PATH), exist_ok=True)
-    with open(LIVE_STATUS_PATH, "w", encoding="utf-8") as f:
-        json.dump(status, f, ensure_ascii=False, indent=2)
-    return status
+    return _write_status(status)
 
 
 def main() -> None:
