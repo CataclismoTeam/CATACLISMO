@@ -24,3 +24,13 @@ def test_sync_ignora_lo_que_falta_o_no_es_json(tmp_path):
     assert sync_once("https://x", remote.get, files) == []
     assert not (tmp_path / "a.json").exists()
     assert not (tmp_path / "b.json").exists()
+
+
+def test_live_data_url_solo_en_render(monkeypatch):
+    from app.config import LIVE_DATA_RELEASE, Settings
+
+    monkeypatch.delenv("LIVE_DATA_URL", raising=False)
+    monkeypatch.delenv("RENDER", raising=False)
+    assert Settings(_env_file=None).live_data_url == ""
+    monkeypatch.setenv("RENDER", "true")
+    assert Settings(_env_file=None).live_data_url == LIVE_DATA_RELEASE
