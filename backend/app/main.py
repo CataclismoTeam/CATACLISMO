@@ -302,11 +302,6 @@ async def get_lucia_routes(
 @app.post("/api/lucia/route")
 async def compute_lucia_interactive_route(req: LuciaRouteRequest) -> dict:
     """Calcula una ruta GeoJSON desde `(lon, lat)` hacia el Punto de Encuentro más seguro."""
-    if not await asyncio.to_thread(os.path.exists, lucia_config.DEFAULT_CATA_PREDICTIONS_PATH):
-        raise HTTPException(
-            status_code=404,
-            detail="No se encontró cata_predictions.json. Ejecuta primero CATA.",
-        )
     lon, lat = req.lon, req.lat
     if (lon is None or lat is None) and req.quadrant_id:
         try:
@@ -325,6 +320,12 @@ async def compute_lucia_interactive_route(req: LuciaRouteRequest) -> dict:
             detail=(
                 "Se requiere (lon, lat) o quadrant_id (ES1K:L0:Y...:X...) para calcular la ruta."
             ),
+        )
+    # Primero la entrada (400) y después los datos del servidor (404)
+    if not await asyncio.to_thread(os.path.exists, lucia_config.DEFAULT_CATA_PREDICTIONS_PATH):
+        raise HTTPException(
+            status_code=404,
+            detail="No se encontró cata_predictions.json. Ejecuta primero CATA.",
         )
     custom_mps = (
         [mp.model_dump(exclude_none=True) for mp in req.meeting_points]
