@@ -88,10 +88,10 @@ test.beforeEach(async ({ page }) => {
   );
 });
 
-test('sin backend la app sigue en modo demo', async ({ page }) => {
+test('sin backend la app sigue con sus datos y no muestra nada del backend', async ({ page }) => {
   await page.goto('./');
-  await expect(page.getByText('Demo · sin conexión a backend')).toBeVisible();
   await page.getByRole('button', { name: 'Empezar' }).click();
+  await expect(page.getByTitle('Backend conectado')).toHaveCount(0);
   await page.locator('[data-abre="capas"]').first().click();
   await expect(page.getByRole('heading', { name: 'Backend' })).toHaveCount(0);
 });
@@ -99,8 +99,8 @@ test('sin backend la app sigue en modo demo', async ({ page }) => {
 test('con ?api= se conecta y muestra CATA, LUCIA y JULI', async ({ page }) => {
   await mockApi(page);
   await page.goto(`./?api=${API}`);
-  await expect(page.getByText('Backend conectado')).toBeVisible();
   await page.getByRole('button', { name: 'Empezar' }).click();
+  await expect(page.getByTitle('Backend conectado')).toBeVisible();
   await page.locator('[data-abre="capas"]').first().click();
   const layers = page.getByRole('complementary', { name: 'Capas del mapa' });
   await expect(layers.getByText('CATA · predicción neuronal')).toBeVisible();
@@ -110,15 +110,13 @@ test('con ?api= se conecta y muestra CATA, LUCIA y JULI', async ({ page }) => {
   await expect(layers.getByText(/1 equipos · 1 operarios · 1 sin prueba de vida/)).toBeVisible();
 });
 
-test('si el backend no responde se avisa y se puede desconectar', async ({ page }) => {
+test('si el backend no responde se avisa en Capas y el mapa sigue', async ({ page }) => {
   await mockApi(page, false);
   await page.goto(`./?api=${API}`);
   await page.getByRole('button', { name: 'Empezar' }).click();
-  await page.locator('[data-abre="ajustes"]').first().click();
-  const settings = page.getByRole('complementary', { name: 'Ajustes' });
+  await expect(page.getByTitle('El backend no responde')).toBeVisible({ timeout: 15000 });
+  await page.locator('[data-abre="capas"]').first().click();
   await expect(
-    settings.getByRole('status').filter({ hasText: 'El backend no responde' }),
+    page.getByText('El backend no responde: se muestran solo los datos de la demo.'),
   ).toBeVisible();
-  await settings.getByRole('button', { name: 'Desconectar' }).click();
-  await expect(settings.getByText('Sin backend: la app usa sus datos de demo.')).toBeVisible();
 });

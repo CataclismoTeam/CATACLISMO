@@ -1,6 +1,6 @@
 import { useEffect } from 'react';
 import { create } from 'zustand';
-import { apiGet, initialApiBase, normalizeBase, saveApiBase, validBase } from '../lib/api.ts';
+import { apiGet, initialApiBase } from '../lib/api.ts';
 import type { JuliCollection, LuciaCollection } from '../map/backend.ts';
 
 /** apagado: sin URL · conectando: primera comprobación · conectado · sin-conexion: no responde */
@@ -27,27 +27,13 @@ interface BackendState {
   lucia?: LuciaCollection;
   /** Equipos y operarios de JULI */
   juli?: JuliCollection;
-  setBase: (url: string) => boolean;
-  set: (patch: Partial<Omit<BackendState, 'setBase' | 'set'>>) => void;
+  set: (patch: Partial<Omit<BackendState, 'set'>>) => void;
 }
 
 export const useBackend = create<BackendState>()((set) => ({
   base: typeof window === 'undefined' ? '' : initialApiBase(),
   status: 'apagado',
   socket: false,
-  setBase: (url) => {
-    const base = normalizeBase(url);
-    if (base && !validBase(base)) return false;
-    saveApiBase(base);
-    set({
-      base,
-      status: base ? 'conectando' : 'apagado',
-      lucia: undefined,
-      juli: undefined,
-      socket: false,
-    });
-    return true;
-  },
   set: (patch) => set(patch),
 }));
 

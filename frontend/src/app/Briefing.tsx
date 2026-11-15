@@ -1,6 +1,5 @@
 import { useEnglish, useT } from '../lib/i18n.ts';
 import { ArrowRight } from 'lucide-react';
-import { useBackend } from '../store/backend.ts';
 import { useUi } from '../store/ui.ts';
 import { Button } from '../ui/Button.tsx';
 import { ModalDialog } from '../ui/ModalDialog.tsx';
@@ -13,7 +12,6 @@ export function Briefing() {
   const open = useUi((s) => s.briefingOpen);
   const close = useUi((s) => s.closeBriefing);
   const t = useT();
-  const backend = useBackend((s) => s.status);
   const en = useEnglish();
 
   return (
@@ -68,13 +66,6 @@ export function Briefing() {
       <div className="mt-4 flex flex-wrap gap-2">
         <Tag tone="real">{t('Real · NASA FIRMS')}</Tag>
         <Tag tone="simulado">{t('Escenario simulado')}</Tag>
-        <Tag>
-          {backend === 'conectado'
-            ? t('Backend conectado')
-            : backend === 'conectando'
-              ? t('Conectando con el backend…')
-              : t('Demo · sin conexión a backend')}
-        </Tag>
       </div>
       <div className="mt-6 flex flex-wrap gap-3">
         <Button variant="primary" size="lg" onClick={close}>

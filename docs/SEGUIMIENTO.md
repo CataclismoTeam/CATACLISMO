@@ -54,7 +54,7 @@ Estado a 15 nov 2026, 15:50. Hoja de ruta de lo que falta:
 La web publicada se conecta sola al backend en Render (`https://cataclismo-api.onrender.com`,
 desplegado con `render.yaml` en cada push a `main` que toque `backend/`). La URL va en la
 variable del repo `VITE_API_URL`. Si no responde, la app sigue con sus datos estáticos. En
-local se usa con `?api=` o Ajustes: [frontend/README.md](../frontend/README.md#conexión-con-el-backend).
+local se usa con `?api=`: [frontend/README.md](../frontend/README.md#conexión-con-el-backend).
 
 - **CATA**: celdas de 1 km por categoría, sacadas de `/api/lucia/routes` (el fichero de
   `/api/cata/predictions` aún no existe en el backend y da 404).

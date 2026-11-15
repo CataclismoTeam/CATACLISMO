@@ -448,15 +448,9 @@ const en: Record<string, string> = {
   'Backend conectado': 'Backend connected',
   'Conectando con el backend…': 'Connecting to the backend…',
   'El backend no responde': 'The backend is not responding',
-  'URL del backend': 'Backend URL',
-  Conectar: 'Connect',
-  'La URL debe empezar por http:// o https://': 'The URL must start with http:// or https://',
   'en vivo': 'live',
-  'sin WebSocket': 'no WebSocket',
-  Desconectar: 'Disconnect',
   'El backend no responde: se muestran solo los datos de la demo.':
     'The backend is not responding: only the demo data is shown.',
-  'Sin backend: la app usa sus datos de demo.': 'No backend: the app uses its demo data.',
   '{n} zonas · predicción para {d} en celdas de 1 km':
     '{n} zones · prediction for {d} in 1 km cells',
   '{n} rutas': '{n} routes',

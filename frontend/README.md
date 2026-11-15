@@ -41,7 +41,7 @@ variable del repo `VITE_API_URL`). Si no responde, la app sigue con sus datos es
   de vida.
 
 La URL de la API se elige, por orden, con `?api=` en la dirección (se recuerda; `?api=` vacío
-la olvida), en **Ajustes → Backend** o con `VITE_API_URL` al compilar:
+la olvida) o con `VITE_API_URL` al compilar:
 
 ```bash
 cd backend && uv run uvicorn app.main:app --port 8000
