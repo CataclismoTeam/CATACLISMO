@@ -4,7 +4,7 @@ import { useHistory } from '../../store/history.ts';
 import { useUi } from '../../store/ui.ts';
 import { SourceLink } from '../../app/Provenance.tsx';
 import { SOURCES } from '../../lib/sources.ts';
-import { Dialog } from '../../ui/Dialog.tsx';
+import { ModalDialog as Dialog } from '../../ui/ModalDialog.tsx';
 import { HORIZON_H, NOW_H } from '../../map/scenario.ts';
 import { monthInfo } from './series.ts';
 

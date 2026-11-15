@@ -15,7 +15,7 @@ interface Props {
 /**
  * Diálogo modal con el <dialog> nativo: el navegador da el modo modal, el foco atrapado, el fondo
  * inerte y el cierre con Esc. Pesa casi nada, así que puede ir en el bundle inicial (el briefing
- * es lo primero que se ve). Misma interfaz que Dialog (Radix), que se usa en lo cargado después.
+ * es lo primero que se ve). Es el único diálogo de la app.
  */
 export function ModalDialog({
   open,
