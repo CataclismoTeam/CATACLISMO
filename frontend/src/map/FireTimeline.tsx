@@ -58,7 +58,7 @@ export function FireTimeline() {
   return (
     <section
       aria-label="Línea de tiempo del incendio"
-      className="flex w-88 max-w-full shrink-0 items-center gap-3 rounded-md border border-line-strong bg-surface px-3 py-2 shadow-panel"
+      className="flex w-88 max-w-full shrink-0 items-center gap-2 rounded-md border border-line-strong bg-surface px-3 py-2 shadow-panel"
     >
       <Button
         variant="ghost"
@@ -74,8 +74,10 @@ export function FireTimeline() {
       </Button>
       <label className="flex min-w-0 flex-1 flex-col gap-0.5 text-xs">
         <span className="flex items-baseline justify-between gap-2">
-          <span className="text-ink-muted">Tiempo tras la ignición · simulado</span>
-          <output className="font-mono text-sm font-semibold text-ink">{hourLabel(hour)}</output>
+          <span className="truncate text-ink-muted">Tiempo tras la ignición · simulado</span>
+          <output className="shrink-0 font-mono text-sm font-semibold whitespace-nowrap text-ink">
+            {hourLabel(hour)}
+          </output>
         </span>
         <input
           type="range"

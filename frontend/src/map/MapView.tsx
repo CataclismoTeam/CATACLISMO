@@ -8,8 +8,9 @@ import {
 } from 'maplibre-gl';
 // MapLibre 6 carga su worker como fichero aparte: Vite lo publica y aquí se le dice dónde está
 import workerUrl from 'maplibre-gl/dist/maplibre-gl-worker.mjs?url';
-import { useEffect, useMemo, useRef, useState } from 'react';
-import { X } from 'lucide-react';
+import { useEffect, useMemo, useRef, useState, useSyncExternalStore } from 'react';
+import { createPortal } from 'react-dom';
+import { Check, X } from 'lucide-react';
 import { areaRing, monthCells } from '../features/history/mapLayers.ts';
 import { formatMonth } from '../lib/format.ts';
 import { useHistory } from '../store/history.ts';
@@ -37,7 +38,13 @@ import {
 import { provider } from './providers.ts';
 import { DEFAULT_SCENARIO, loadEscapeRoutes, SCENARIOS, type Route } from './scenario.ts';
 import { UnitsPanel } from './UnitsPanel.tsx';
+import { initialView } from '../lib/hash.ts';
 import { useAreaDraw } from './useAreaDraw.ts';
+import { useShareHash } from './useShareHash.ts';
+import { MapToolbar } from './MapToolbar.tsx';
+import { formatArea, formatLength } from './measure.ts';
+import { SearchBox } from './SearchBox.tsx';
+import { useMeasure } from './useMeasure.ts';
 import { ready as readyData, useRemote } from './useRemote.ts';
 import {
   CoordinatesBar,
@@ -54,6 +61,15 @@ const PITCH_3D = 60;
 const LABEL_ZOOM = 13;
 const SIMULATIONS = Object.values(SCENARIOS);
 const NO_ROUTES: Route[] = [];
+
+/** A partir de 1024 px el buscador va en la barra superior; por debajo, sobre el mapa. */
+const WIDE = '(min-width: 1024px)';
+const subscribeWide = (cb: () => void) => {
+  const media = window.matchMedia(WIDE);
+  media.addEventListener('change', cb);
+  return () => media.removeEventListener('change', cb);
+};
+const isWide = () => window.matchMedia(WIDE).matches;
 
 /** Mapa de mando: un único MapLibre que cambia de estilo, relieve y cámara sin recrearse. */
 export default function MapView() {
@@ -149,8 +165,9 @@ export default function MapView() {
     const map = new MapLibre({
       container: container.current,
       style: provider.style(useUi.getState().basemap),
-      center: camera.center,
-      zoom: camera.zoom,
+      // Un enlace compartido abre con su encuadre; si no, el de la simulación
+      center: initialView.center ?? camera.center,
+      zoom: initialView.zoom ?? camera.zoom,
       bearing: live.current.mode === '3d' ? camera.bearing : 0,
       pitch: live.current.mode === '3d' ? camera.pitch : 0,
       maxPitch: 80,
@@ -322,16 +339,36 @@ export default function MapView() {
   }, [monthFc, areaFc, ready]);
 
   useAreaDraw(mapRef, ready);
+  useShareHash(mapRef, ready);
+  const measure = useMeasure(mapRef, ready);
+  const wide = useSyncExternalStore(subscribeWide, isWide);
+  const [searchOpen, setSearchOpen] = useState(false);
+  const [copied, setCopied] = useState<boolean>();
+  useEffect(() => {
+    if (copied === undefined) return;
+    const id = window.setTimeout(() => setCopied(undefined), 2500);
+    return () => window.clearTimeout(id);
+  }, [copied]);
+  const searchSlot =
+    typeof document === 'undefined' ? null : document.getElementById('buscador-barra');
 
   // Fuera de cuadro o de lejos no hay nada que animar: se pausa
-  const showTimeline = ready && !far && simInView && (layers.incendio || layers.prediccion);
+  // Oculta también con una herramienta activa: dibujar o medir necesitan el mapa libre
+  const showTimeline =
+    ready && !far && simInView && !tool && (layers.incendio || layers.prediccion);
   useEffect(() => {
     if (!showTimeline) useUi.getState().setPlaying(false);
   }, [showTimeline]);
 
+  // Con un encuadre compartido en el enlace, la primera vez no se vuela a la cámara del escenario
+  const keepSharedCamera = useRef(!!initialView.center);
   useEffect(() => {
     const map = mapRef.current;
     if (!map) return;
+    if (keepSharedCamera.current) {
+      keepSharedCamera.current = false;
+      return;
+    }
     const { camera } = scenario;
     map.flyTo({
       center: camera.center,
@@ -445,6 +482,7 @@ export default function MapView() {
           <span className="rounded-sm bg-canvas px-3 py-1.5">Cargando el mapa…</span>
         </p>
       )}
+      {wide && searchSlot && createPortal(<SearchBox className="w-full max-w-sm" />, searchSlot)}
       <IncidentsPanel
         incidents={incidentsLoad}
         routes={routes}
@@ -460,6 +498,12 @@ export default function MapView() {
       {/* Esquina superior derecha: capas y ficha del incendio se apilan, nunca se pisan.
           En móvil cada una va a su sitio (capas como hoja inferior). */}
       <div className="contents md:pointer-events-none md:absolute md:top-3 md:right-14 md:bottom-3 md:z-(--z-panel) md:flex md:flex-col md:items-end md:gap-2 md:*:pointer-events-auto">
+        <MapToolbar
+          showSearch={!wide}
+          searchOpen={searchOpen}
+          onSearch={() => setSearchOpen(!searchOpen)}
+          onCopied={setCopied}
+        />
         <LayersPanel detections={detectionsLoad} />
         {selectedIncident && (
           <IncidentCard
@@ -487,6 +531,62 @@ export default function MapView() {
       </div>
       {/* Arriba al centro: herramienta activa, rótulo de la capa del mes y avisos, apilados */}
       <div className="pointer-events-none absolute top-14 left-1/2 flex w-max max-w-[calc(100%-1.5rem)] -translate-x-1/2 flex-col items-center gap-2 *:pointer-events-auto md:top-3 md:max-w-[min(32rem,calc(100%-30rem))]">
+        {!wide && searchOpen && (
+          <SearchBox className="w-[min(24rem,calc(100vw-1.5rem))]" autoFocus />
+        )}
+        {copied !== undefined && (
+          <p
+            role="status"
+            className="m-0 flex items-center gap-2 rounded-md border border-line-strong bg-surface px-3 py-1.5 text-sm shadow-panel"
+          >
+            {copied ? (
+              <>
+                <Check size={16} strokeWidth={2} aria-hidden className="text-ok" />
+                Enlace copiado
+              </>
+            ) : (
+              'No se ha podido copiar: copia la dirección de la barra del navegador.'
+            )}
+          </p>
+        )}
+        {measure && (
+          <section
+            aria-label="Regla"
+            className="flex flex-col gap-1.5 rounded-md border border-[#ffe066] bg-surface px-3 py-2 text-sm shadow-panel"
+          >
+            <p role="status" className="m-0 flex flex-wrap items-baseline gap-x-3 gap-y-0.5">
+              <span>
+                <span className="text-ink-muted">Distancia </span>
+                <strong className="font-mono">{formatLength(measure.km)}</strong>
+              </span>
+              {measure.closed && (
+                <span>
+                  <span className="text-ink-muted">Superficie </span>
+                  <strong className="font-mono">{formatArea(measure.km2)}</strong>
+                </span>
+              )}
+            </p>
+            <p className="m-0 text-xs text-ink-muted">
+              {measure.closed
+                ? 'Área cerrada. Borra para medir otra.'
+                : 'Pulsa en el mapa para añadir puntos; pulsa el primero para cerrar el área. Esc para salir.'}
+            </p>
+            <div className="flex flex-wrap gap-2">
+              {!measure.closed && measure.points >= 3 && (
+                <Button onClick={measure.close}>Cerrar área</Button>
+              )}
+              {measure.points > 0 && (
+                <Button variant="ghost" onClick={measure.clear}>
+                  Borrar
+                </Button>
+              )}
+              <Button variant="ghost" onClick={() => useUi.getState().setMapTool(null)}>
+                <X size={16} strokeWidth={1.5} aria-hidden />
+                Salir
+              </Button>
+            </div>
+          </section>
+        )}
         {tool === 'dibujar' && (
           <p
             role="status"

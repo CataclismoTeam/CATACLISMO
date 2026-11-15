@@ -8,27 +8,6 @@ import { channelsFor, DOMAIN_LABEL, SCENARIOS, type Domain } from '../map/scenar
 
 // Canales de la simulación activa (SIMULADOS). La voz real llegará con el backend (WebSocket /ws).
 
-export function RadioButton() {
-  const open = useUi((s) => s.radioOpen);
-  const setOpen = useUi((s) => s.setRadioOpen);
-  return (
-    <Button
-      variant={open ? 'secondary' : 'ghost'}
-      aria-pressed={open}
-      aria-label="Radio"
-      title="Radio: canales del operativo"
-      onClick={() => {
-        useUi.getState().setSettingsOpen(false);
-        setOpen(!open);
-      }}
-      className="px-2.5"
-    >
-      <Radio size={20} strokeWidth={1.5} aria-hidden />
-      <span className="hidden xl:inline">Radio</span>
-    </Button>
-  );
-}
-
 /** Panel de radio: canales del operativo y último mensaje de cada uno. */
 export function RadioPanel() {
   const open = useUi((s) => s.radioOpen);

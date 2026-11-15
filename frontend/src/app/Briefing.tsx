@@ -4,7 +4,7 @@ import { Button } from '../ui/Button.tsx';
 import { ModalDialog } from '../ui/ModalDialog.tsx';
 import { Tag } from '../ui/Tag.tsx';
 import { SOURCES } from '../lib/sources.ts';
-import { SourceLink } from './Provenance.tsx';
+import { SourceLink } from '../ui/SourceLink.tsx';
 
 /** Briefing inicial: qué es, para quién y por dónde empezar. Se puede volver a abrir con "?". */
 export function Briefing() {

@@ -1,12 +1,17 @@
 import { CircleHelp } from 'lucide-react';
-import { useEffect, useState } from 'react';
+import { lazy, Suspense, useEffect, useState } from 'react';
 import { useUi } from '../store/ui.ts';
 import { Button } from '../ui/Button.tsx';
 import { Logo } from './Logo.tsx';
 import { ModeSwitch } from './ModeSwitch.tsx';
 import { Provenance } from './Provenance.tsx';
-import { RadioButton, RadioPanel } from './RadioPanel.tsx';
-import { SettingsButton, SettingsPanel } from './SettingsPanel.tsx';
+import { RadioButton, SettingsButton } from './TopBarButtons.tsx';
+
+// Los paneles de radio y ajustes solo se descargan al abrirlos
+const RadioPanel = lazy(() => import('./RadioPanel.tsx').then((m) => ({ default: m.RadioPanel })));
+const SettingsPanel = lazy(() =>
+  import('./SettingsPanel.tsx').then((m) => ({ default: m.SettingsPanel })),
+);
 
 function UtcClock() {
   const [now, setNow] = useState(() => new Date());
@@ -29,6 +34,8 @@ function UtcClock() {
 
 export function TopBar() {
   const openBriefing = useUi((s) => s.openBriefing);
+  const radioOpen = useUi((s) => s.radioOpen);
+  const settingsOpen = useUi((s) => s.settingsOpen);
 
   return (
     <header className="relative z-(--z-bar) flex h-14 shrink-0 items-center gap-2 border-b border-line bg-surface px-2 sm:gap-3 sm:px-3">
@@ -42,6 +49,8 @@ export function TopBar() {
       <h1 className="sr-only sm:hidden">CATACLISMO</h1>
 
       <ModeSwitch />
+      {/* Hueco del buscador: lo rellena el mapa al cargarse (va en su chunk, no en el inicial) */}
+      <div id="buscador-barra" className="hidden min-w-0 flex-1 justify-center lg:flex" />
 
       <div className="ml-auto flex items-center gap-1.5">
         <Provenance />
@@ -58,8 +67,10 @@ export function TopBar() {
           <CircleHelp size={20} strokeWidth={1.5} aria-hidden />
         </Button>
       </div>
-      <RadioPanel />
-      <SettingsPanel />
+      <Suspense fallback={null}>
+        {radioOpen && <RadioPanel />}
+        {settingsOpen && <SettingsPanel />}
+      </Suspense>
     </header>
   );
 }

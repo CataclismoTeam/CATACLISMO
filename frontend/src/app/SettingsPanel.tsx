@@ -1,4 +1,4 @@
-import { Monitor, Moon, Settings, Sun, X, type LucideIcon } from 'lucide-react';
+import { Monitor, Moon, Sun, X, type LucideIcon } from 'lucide-react';
 import { cn } from '../lib/cn.ts';
 import { useUi, type Cvd, type Theme } from '../store/ui.ts';
 import { Button } from '../ui/Button.tsx';
@@ -15,27 +15,6 @@ const CVD: [Cvd, string, string][] = [
   ['deuteranopia', 'Deuteranopía', 'Dificultad con el verde: estados en azul, naranja y rosa.'],
   ['tritanopia', 'Tritanopía', 'Dificultad con azul y amarillo: estados en verde, rojo y rosa.'],
 ];
-
-export function SettingsButton() {
-  const open = useUi((s) => s.settingsOpen);
-  const setOpen = useUi((s) => s.setSettingsOpen);
-  const setRadioOpen = useUi((s) => s.setRadioOpen);
-  return (
-    <Button
-      variant="ghost"
-      size="icon"
-      aria-pressed={open}
-      aria-label="Ajustes"
-      title="Ajustes: tema, accesibilidad y pantalla"
-      onClick={() => {
-        setRadioOpen(false);
-        setOpen(!open);
-      }}
-    >
-      <Settings size={20} strokeWidth={1.5} aria-hidden />
-    </Button>
-  );
-}
 
 function Option({
   checked,

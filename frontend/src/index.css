@@ -242,6 +242,13 @@
   border: 1px solid #c2331f;
 }
 
+/* En pantallas estrechas la escala no cabe junto a la línea de tiempo y la atribución */
+@media (width < 48rem) {
+  .maplibregl-ctrl-scale {
+    display: none;
+  }
+}
+
 /* Con una herramienta activa (dibujar, medir) los clics atraviesan los marcadores hasta el mapa */
 .map-tool .maplibregl-marker {
   pointer-events: none;

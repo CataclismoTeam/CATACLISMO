@@ -1,4 +1,4 @@
-import { Eye, EyeOff, Layers, X } from 'lucide-react';
+import { Eye, EyeOff, X } from 'lucide-react';
 import type { ReactNode } from 'react';
 import { cn } from '../lib/cn.ts';
 import { useUi, type Basemap, type LayerId } from '../store/ui.ts';
@@ -108,17 +108,7 @@ export function LayersPanel({ detections: load }: { detections: Remote<Detection
   const exaggeration = useUi((s) => s.exaggeration);
   const setExaggeration = useUi((s) => s.setExaggeration);
 
-  if (!open) {
-    return (
-      <Button
-        className="max-md:absolute max-md:top-3 max-md:right-14"
-        onClick={() => setOpen(true)}
-      >
-        <Layers size={16} strokeWidth={1.5} aria-hidden />
-        Capas
-      </Button>
-    );
-  }
+  if (!open) return null;
 
   return (
     <aside

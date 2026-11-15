@@ -2,7 +2,7 @@ import type { Manifest } from '../../data/types.ts';
 import { formatCount, MONTHS_SHORT } from '../../lib/format.ts';
 import { useHistory } from '../../store/history.ts';
 import { useUi } from '../../store/ui.ts';
-import { SourceLink } from '../../app/Provenance.tsx';
+import { SourceLink } from '../../ui/SourceLink.tsx';
 import { SOURCES } from '../../lib/sources.ts';
 import { ModalDialog as Dialog } from '../../ui/ModalDialog.tsx';
 import { HORIZON_H, NOW_H } from '../../map/scenario.ts';

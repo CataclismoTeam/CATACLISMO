@@ -5,6 +5,8 @@ import type { RasterDEMSourceSpecification, StyleSpecification } from 'maplibre-
 import type { Basemap } from '../store/ui.ts';
 
 const KEY: string | undefined = import.meta.env.VITE_MAPTILER_KEY || undefined;
+/** Clave de MapTiler (también para el buscador), o undefined sin ella */
+export const MAPTILER_KEY = KEY;
 const MT = 'https://api.maptiler.com';
 
 export interface Provider {

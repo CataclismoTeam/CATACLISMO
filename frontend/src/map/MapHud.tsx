@@ -5,7 +5,7 @@ import { cn } from '../lib/cn.ts';
 import { Button } from '../ui/Button.tsx';
 import { ago, shortDate, SOURCES } from '../lib/sources.ts';
 import { Tag } from '../ui/Tag.tsx';
-import { SourceLink } from '../app/Provenance.tsx';
+import { SourceLink } from '../ui/SourceLink.tsx';
 import { KIND, STATUS } from './markers.ts';
 import type { Incident } from './incidents.ts';
 import { DOMAIN_LABEL, type Unit } from './scenario.ts';

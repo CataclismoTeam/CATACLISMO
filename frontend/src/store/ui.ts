@@ -1,6 +1,7 @@
 import { create } from 'zustand';
 import { readStored, writeStored } from '../lib/storage.ts';
-import { DEFAULT_SCENARIO, NOW_H } from '../map/scenario.ts';
+import { initialView } from '../lib/hash.ts';
+import { DEFAULT_SCENARIO, NOW_H, SCENARIOS } from '../map/scenario.ts';
 
 export type MapMode = '2d' | '3d';
 export type Basemap = 'satelite' | 'topografico';
@@ -123,10 +124,12 @@ export const useUi = create<UiState>((set, get) => ({
   // Capas plegado de inicio: el mapa necesita el espacio; se abre con su botón
   layersOpen: false,
   leftPanel: narrow() ? null : 'incendios',
-  mapMode: storedMap.mode === '2d' ? '2d' : '3d',
+  // Un enlace compartido (#sim=…&m=…) manda sobre lo guardado
+  mapMode: initialView.mode ?? (storedMap.mode === '2d' ? '2d' : '3d'),
   exaggeration: 1.2,
   basemap: storedMap.basemap === 'topografico' ? 'topografico' : 'satelite',
-  scenario: DEFAULT_SCENARIO,
+  scenario: initialView.sim && SCENARIOS[initialView.sim] ? initialView.sim : DEFAULT_SCENARIO,
+  selectedIncident: initialView.inc,
   layers: DEFAULT_LAYERS,
   fireHour: NOW_H,
   playing: false,
