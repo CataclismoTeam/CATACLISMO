@@ -86,3 +86,29 @@ test('dibujar un área en el mapa cambia el calendario', async ({ page }) => {
   await expect(page.getByRole('table')).toBeVisible();
   await expect(page.getByRole('button', { name: 'Ver en el mapa' })).toBeVisible();
 });
+
+test('los avisos se ordenan por la llegada del fuego y encuadran su ruta', async ({ page }) => {
+  await start(page);
+  const rail = page.getByRole('navigation', { name: 'Módulos' });
+  const incidents = rail.getByRole('button', { name: 'Incendios' });
+  if ((await incidents.getAttribute('aria-pressed')) !== 'true') await incidents.click();
+  await page
+    .getByRole('complementary', { name: 'Incendios' })
+    .getByRole('button', { name: /Interfaz urbano-forestal de Estepona/ })
+    .click();
+
+  // Estepona: un núcleo con margen de 29 min (crítico); el rail lo cuenta
+  const alertsButton = rail.getByRole('button', { name: /Avisos/ });
+  await expect(alertsButton).toContainText('1');
+  await alertsButton.click();
+  const panel = page.getByRole('complementary', { name: 'Avisos' });
+  const items = panel.getByRole('list', { name: 'Núcleos en riesgo' }).getByRole('button');
+  await expect(items).toHaveCount(3);
+  await expect(items.nth(0)).toContainText('Valle Romano');
+  await expect(items.nth(0)).toContainText('Crítico');
+  await expect(items.nth(1)).toContainText('Alto');
+  await expect(items.nth(2)).toContainText('Vigilancia');
+
+  await items.nth(0).click();
+  await expect(items.nth(0)).toHaveAttribute('aria-pressed', 'true');
+});

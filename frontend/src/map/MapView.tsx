@@ -21,9 +21,12 @@ import { LayersPanel } from './LayersPanel.tsx';
 import { declutterUnits, ignitionElement, meetingElement, unitElement } from './markers.ts';
 import { IncidentsPanel } from './IncidentsPanel.tsx';
 import { loadIncidents } from './incidents.ts';
+import { alertsFor } from './alerts.ts';
+import { AlertsPanel } from './AlertsPanel.tsx';
 import { FireTimeline } from './FireTimeline.tsx';
 import {
   applyFireHour,
+  applyHighlight,
   applyVisibility,
   FAR_ZOOM,
   installCalendarLayers,
@@ -172,6 +175,7 @@ export default function MapView() {
       );
       installCalendarLayers(map, s.monthFc, s.areaFc, s.layers);
       applyFireHour(map, useUi.getState().fireHour);
+      applyHighlight(map, useUi.getState().highlightRoute);
       map.setTerrain(s.mode === '3d' ? { source: 'dem', exaggeration: s.exaggeration } : null);
       setReady(true);
     });
@@ -293,7 +297,20 @@ export default function MapView() {
     if (!map || !ready) return;
     installOverlays(map, scenario, routes, SIMULATIONS, detections, incidents, live.current.layers);
     applyFireHour(map, useUi.getState().fireHour);
+    applyHighlight(map, useUi.getState().highlightRoute);
   }, [scenario, routes, detections, incidents, ready]);
+
+  const highlightRoute = useUi((s) => s.highlightRoute);
+  useEffect(() => {
+    if (mapRef.current && ready) applyHighlight(mapRef.current, highlightRoute);
+  }, [highlightRoute, ready]);
+
+  // El botón del rail muestra cuántos avisos críticos tiene la simulación activa
+  useEffect(() => {
+    useUi
+      .getState()
+      .setCriticalAlerts(alertsFor(routes).filter((a) => a.level === 'critico').length);
+  }, [routes]);
 
   useEffect(() => {
     if (mapRef.current && ready) applyFireHour(mapRef.current, fireHour);
@@ -434,6 +451,12 @@ export default function MapView() {
         routesRetry={escapeLoad.status === 'error' ? escapeLoad.retry : undefined}
       />
       <UnitsPanel />
+      <AlertsPanel
+        routes={routes}
+        nucleos={escape?.escenarios[scenario.id]?.nucleos}
+        loading={escapeLoad.status === 'cargando'}
+        retry={escapeLoad.status === 'error' ? escapeLoad.retry : undefined}
+      />
       {/* Esquina superior derecha: capas y ficha del incendio se apilan, nunca se pisan.
           En móvil cada una va a su sitio (capas como hoja inferior). */}
       <div className="contents md:pointer-events-none md:absolute md:top-3 md:right-14 md:bottom-3 md:z-(--z-panel) md:flex md:flex-col md:items-end md:gap-2 md:*:pointer-events-auto">

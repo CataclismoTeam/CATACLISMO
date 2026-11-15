@@ -1,4 +1,4 @@
-import { Flame, Truck, type LucideIcon } from 'lucide-react';
+import { Flame, Siren, Truck, type LucideIcon } from 'lucide-react';
 import { cn } from '../lib/cn.ts';
 import { useUi } from '../store/ui.ts';
 
@@ -7,18 +7,20 @@ interface Module {
   label: string;
   icon: LucideIcon;
   /** Panel que abre y cierra el botón */
-  panel: 'incendios' | 'unidades';
+  panel: 'incendios' | 'unidades' | 'avisos';
 }
 
 // Registro de módulos: solo los que funcionan (nada de botones desactivados que parezcan humo)
 const MODULES: Module[] = [
   { id: 'incendios', label: 'Incendios', icon: Flame, panel: 'incendios' },
   { id: 'unidades', label: 'Unidades', icon: Truck, panel: 'unidades' },
+  { id: 'avisos', label: 'Avisos', icon: Siren, panel: 'avisos' },
 ];
 
 export function NavRail() {
   const leftPanel = useUi((s) => s.leftPanel);
   const setLeftPanel = useUi((s) => s.setLeftPanel);
+  const critical = useUi((s) => s.criticalAlerts);
 
   return (
     <nav
@@ -39,7 +41,15 @@ export function NavRail() {
               open ? 'border-line-strong bg-hover' : 'border-transparent',
             )}
           >
-            <Icon size={20} strokeWidth={1.5} aria-hidden />
+            <span className="relative">
+              <Icon size={20} strokeWidth={1.5} aria-hidden />
+              {panel === 'avisos' && critical > 0 && (
+                <span className="absolute -top-1.5 -right-2.5 grid h-4 min-w-4 place-items-center rounded-full bg-fire px-1 font-mono text-[0.6875rem] leading-none font-bold text-canvas">
+                  {critical}
+                  <span className="sr-only"> {critical === 1 ? 'crítico' : 'críticos'}</span>
+                </span>
+              )}
+            </span>
             {label}
           </button>
         );

@@ -10,7 +10,7 @@ export type Theme = 'sistema' | 'claro' | 'oscuro';
 export type Cvd = 'ninguno' | 'protanopia' | 'deuteranopia' | 'tritanopia';
 /** Herramienta activa sobre el mapa: mientras hay una, los clics no seleccionan nada */
 export type MapTool = 'dibujar' | 'medir' | null;
-export type LeftPanel = 'incendios' | 'unidades' | null;
+export type LeftPanel = 'incendios' | 'unidades' | 'avisos' | null;
 export type LayerId =
   | 'detecciones'
   | 'halo'
@@ -69,6 +69,10 @@ interface UiState {
   /** La línea de tiempo se está reproduciendo */
   playing: boolean;
   mapTool: MapTool;
+  /** Vía de escape resaltada en el mapa (nombre de la ruta) */
+  highlightRoute?: string;
+  /** Avisos críticos de la simulación activa (para el botón del rail) */
+  criticalAlerts: number;
   closeBriefing: () => void;
   openBriefing: () => void;
   setCalendarOpen: (open: boolean) => void;
@@ -90,6 +94,8 @@ interface UiState {
   setFireHour: (hour: number) => void;
   setPlaying: (playing: boolean) => void;
   setMapTool: (tool: MapTool) => void;
+  setHighlightRoute: (route: string | undefined) => void;
+  setCriticalAlerts: (count: number) => void;
   setLayer: (id: LayerId, on: boolean) => void;
   /** Encuadra un rectángulo [oeste, sur, este, norte] */
   flyTo: (bbox: [number, number, number, number]) => void;
@@ -125,6 +131,7 @@ export const useUi = create<UiState>((set, get) => ({
   fireHour: NOW_H,
   playing: false,
   mapTool: null,
+  criticalAlerts: 0,
   closeBriefing: () => {
     writeStored(BRIEFING_KEY, true);
     set({ briefingOpen: false });
@@ -182,11 +189,19 @@ export const useUi = create<UiState>((set, get) => ({
   },
   // Cada simulación empieza en «ahora», sin reproducir
   setScenario: (scenario) =>
-    set({ scenario, selectedUnit: undefined, fireHour: NOW_H, playing: false }),
+    set({
+      scenario,
+      selectedUnit: undefined,
+      fireHour: NOW_H,
+      playing: false,
+      highlightRoute: undefined,
+    }),
   toggleLayer: (id) => set({ layers: { ...get().layers, [id]: !get().layers[id] } }),
   setFireHour: (fireHour) => set({ fireHour }),
   setPlaying: (playing) => set({ playing }),
   setMapTool: (mapTool) => set({ mapTool }),
+  setHighlightRoute: (highlightRoute) => set({ highlightRoute }),
+  setCriticalAlerts: (criticalAlerts) => set({ criticalAlerts }),
   setLayer: (id, on) => set({ layers: { ...get().layers, [id]: on } }),
   flyTo: (bbox) => set({ flyTarget: { bbox, at: Date.now() } }),
 }));

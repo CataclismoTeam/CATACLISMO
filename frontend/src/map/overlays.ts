@@ -34,7 +34,7 @@ export const LAYER_IDS: Record<LayerId, string[]> = {
   incendio: ['inc-fill', 'inc-line'],
   prediccion: ['pred-tint', 'pred-fill', 'pred-line'],
   unidades: [],
-  evacuacion: ['ruta-casing', 'ruta-line'],
+  evacuacion: ['ruta-casing', 'ruta-line', 'ruta-destacada'],
   curvas: ['curvas-line', 'curvas-label'],
   sombreado: ['sombreado'],
 };
@@ -417,6 +417,19 @@ export function installOverlays(
         'line-width': ['interpolate', ['linear'], ['zoom'], 9, 1.5, 13, 3.5, 16, 6],
       },
     });
+    // Ruta del aviso elegido: encima, más ancha y clara (se elige con applyHighlight)
+    map.addLayer({
+      id: 'ruta-destacada',
+      type: 'line',
+      source: 'rutas',
+      filter: ['==', ['get', 'nombre'], ''],
+      layout: { 'line-cap': 'round', 'line-join': 'round' },
+      paint: {
+        'line-color': '#f4fbff',
+        'line-width': ['interpolate', ['linear'], ['zoom'], 9, 3, 13, 6, 16, 9],
+        'line-opacity': 0.95,
+      },
+    });
   }
 
   for (const id of NEAR_ONLY) if (map.getLayer(id)) map.setLayerZoomRange(id, FAR_ZOOM, 24);
@@ -502,6 +515,13 @@ export function installCalendarLayers(
     });
   }
   applyVisibility(map, visible);
+}
+
+/** Resalta una vía de escape por su nombre (o ninguna). */
+export function applyHighlight(map: MapLibre, route: string | undefined) {
+  if (map.getLayer('ruta-destacada')) {
+    map.setFilter('ruta-destacada', ['==', ['get', 'nombre'], route ?? '']);
+  }
 }
 
 export function applyVisibility(map: MapLibre, visible: Record<LayerId, boolean>) {
