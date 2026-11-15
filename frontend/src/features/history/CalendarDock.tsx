@@ -1,4 +1,4 @@
-import { ChevronDown, ChevronUp, Pause, Play } from 'lucide-react';
+import { Maximize2, Minimize2, Pause, Play } from 'lucide-react';
 import { lazy, Suspense, useEffect, useState } from 'react';
 import { ErrorBoundary } from '../../app/ErrorBoundary.tsx';
 import { cn } from '../../lib/cn.ts';
@@ -118,11 +118,11 @@ export function CalendarDock() {
           onClick={() => setOpen(!open)}
         >
           {open ? (
-            <ChevronDown size={20} strokeWidth={1.5} aria-hidden />
+            <Minimize2 size={20} strokeWidth={1.5} aria-hidden />
           ) : (
-            <ChevronUp size={20} strokeWidth={1.5} aria-hidden />
+            <Maximize2 size={20} strokeWidth={1.5} aria-hidden />
           )}
-          {open ? 'Plegar' : 'Desplegar'}
+          {open ? 'Minimizar' : 'Maximizar'}
         </Button>
       </header>
 

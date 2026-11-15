@@ -12,7 +12,7 @@ test.beforeEach(async ({ page }) => {
 
 /** En pantallas estrechas el calendario empieza plegado: se despliega si hace falta. */
 async function openCalendar(page: Page) {
-  const toggle = page.getByRole('button', { name: /^(Plegar|Desplegar)$/ });
+  const toggle = page.getByRole('button', { name: /^(Minimizar|Maximizar)$/ });
   await expect(toggle).toBeVisible();
   if ((await toggle.getAttribute('aria-expanded')) === 'false') await toggle.click();
   await expect(page.getByRole('table')).toBeVisible();
@@ -63,7 +63,7 @@ test('el texto principal no baja de 14 px y los botones se pueden pulsar', async
   await openCalendar(page);
   const bodySize = await page.evaluate(() => parseFloat(getComputedStyle(document.body).fontSize));
   expect(bodySize).toBeGreaterThanOrEqual(14);
-  for (const name of ['Descargar CSV', 'Descargar PNG', 'Plegar']) {
+  for (const name of ['Descargar CSV', 'Descargar PNG', 'Minimizar']) {
     const box = await page.getByRole('button', { name }).boundingBox();
     expect(box?.height, name).toBeGreaterThanOrEqual(36);
   }

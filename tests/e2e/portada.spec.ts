@@ -11,7 +11,7 @@ test.beforeEach(async ({ page }) => {
 
 /** En pantallas estrechas el calendario empieza plegado: se despliega si hace falta. */
 async function openCalendar(page: Page) {
-  const toggle = page.getByRole('button', { name: /^(Plegar|Desplegar)$/ });
+  const toggle = page.getByRole('button', { name: /^(Minimizar|Maximizar)$/ });
   await expect(toggle).toBeVisible();
   if ((await toggle.getAttribute('aria-expanded')) === 'false') await toggle.click();
   await expect(page.getByRole('table')).toBeVisible();

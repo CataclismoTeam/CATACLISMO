@@ -36,7 +36,7 @@ test.describe('regresión visual', () => {
   test('calendario', async ({ page }) => {
     await page.goto('./');
     await page.getByRole('button', { name: 'Empezar' }).click();
-    const toggle = page.getByRole('button', { name: /^(Plegar|Desplegar)$/ });
+    const toggle = page.getByRole('button', { name: /^(Minimizar|Maximizar)$/ });
     if ((await toggle.getAttribute('aria-expanded')) === 'false') await toggle.click();
     await expect(page.getByRole('img', { name: /Detecciones de/ })).toBeVisible();
     await page.evaluate(() => document.fonts.ready);

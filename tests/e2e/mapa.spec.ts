@@ -39,7 +39,7 @@ test('de lejos no hay línea de tiempo', async ({ page }) => {
 });
 
 async function openCalendar(page: Page) {
-  const toggle = page.getByRole('button', { name: /^(Plegar|Desplegar)$/ });
+  const toggle = page.getByRole('button', { name: /^(Minimizar|Maximizar)$/ });
   if ((await toggle.getAttribute('aria-expanded')) === 'false') await toggle.click();
   await expect(page.getByRole('table')).toBeVisible();
 }
