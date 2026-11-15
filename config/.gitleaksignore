@@ -1,0 +1,5 @@
+# Falsos positivos revisados de gitleaks, por huella exacta (commit:fichero:regla:línea).
+# Añadir solo tras comprobar a mano que NO es un secreto real.
+
+# Huella de clave ficticia en un test ("abcdef0123456789" * 4)
+dc31678d55e16fc039630e19c20ffedfe09ddcaf:backend/tests/test_argon_security_crypto.py:generic-api-key:343

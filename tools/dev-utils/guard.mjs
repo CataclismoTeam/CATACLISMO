@@ -1,6 +1,9 @@
 // Guardián del repositorio: falla (exit 1) si se versiona algo que no debe o si se
 // debilitan las protecciones del repo. Se ejecuta en el CI y en local con `pnpm check:guard`.
 // Sin dependencias: solo Node y git.
+//
+// Con --staged (hook pre-commit) las reglas por fichero (1, 2, 5 y 6) solo miran lo que va en el
+// commit, para que nadie quede bloqueado por ficheros que no ha tocado; el CI revisa siempre todo.
 import { execFileSync } from 'node:child_process';
 import { readFileSync, statSync, existsSync } from 'node:fs';
 
@@ -13,9 +16,14 @@ const git = (...args) =>
 const tracked = [
   ...new Set([...git('ls-files'), ...git('ls-files', '--others', '--exclude-standard')]),
 ];
+const staged = process.argv.includes('--staged');
+// Ficheros a los que se aplican las reglas por fichero
+const scope = staged ? git('diff', '--cached', '--name-only', '--diff-filter=ACMR') : tracked;
+const inScope = new Set(scope);
 
 // ── 1. Nada versionado que .gitignore diga que se ignora ──────────────────────
 for (const file of git('ls-files', '-ci', '--exclude-standard')) {
+  if (!inScope.has(file)) continue;
   fail(`${file}: está versionado pero .gitignore lo ignora. Sácalo con "git rm --cached ${file}".`);
 }
 
@@ -38,7 +46,7 @@ const forbidden = [
   [/(^|\/)(\.claude|\.codex|\.cursor|\.idea)\//, 'configuración local de agentes o editores'],
   [/\.log$/i, 'log'],
 ];
-for (const file of tracked) {
+for (const file of scope) {
   for (const [pattern, what] of forbidden) {
     if (pattern.test(file)) fail(`${file}: ${what}; no debe estar en el repositorio.`);
   }
@@ -112,10 +120,14 @@ for (const file of required) {
 
 // ── 5. Tamaño máximo (evita binarios enormes o volcados por error) ────────────
 const MAX_KB = 1024;
-for (const file of tracked) {
+// Modelos entrenados y sus salidas: límite propio, más alto, solo en sus carpetas del backend
+const MODEL_KB = 5120;
+const modelArtifact = /^backend\/(checkpoints\/|app\/[^/]+\/artifacts\/)/;
+for (const file of scope) {
   if (!existsSync(file)) continue; // borrado en el árbol de trabajo
   const kb = statSync(file).size / 1024;
-  if (kb > MAX_KB) fail(`${file}: ocupa ${Math.round(kb)} KB (máximo ${MAX_KB} KB).`);
+  const max = modelArtifact.test(file) ? MODEL_KB : MAX_KB;
+  if (kb > max) fail(`${file}: ocupa ${Math.round(kb)} KB (máximo ${max} KB).`);
 }
 
 // ── 6. Contenido: claves privadas y tokens con formato conocido ───────────────
@@ -131,7 +143,7 @@ const secretPatterns = [
 const textExt =
   /\.(tsx?|mjs|js|py|json|toml|ya?ml|md|html|css|txt|svg|cfg|ini)$|(^|\/)(\.gitignore|\.env\.example|Dockerfile)$/;
 const lockfiles = new Set(['pnpm-lock.yaml', 'backend/uv.lock']);
-for (const file of tracked) {
+for (const file of scope) {
   if (!textExt.test(file) || !existsSync(file) || lockfiles.has(file)) continue;
   const text = readFileSync(file, 'utf8');
   for (const [pattern, what] of secretPatterns) {
@@ -193,4 +205,6 @@ if (errors.length) {
   console.error(`✗ Guardián: ${errors.length} problema(s)\n  - ${errors.join('\n  - ')}`);
   process.exit(1);
 }
-console.log(`✓ Guardián: ${tracked.length} ficheros revisados, todo en orden`);
+console.log(
+  `✓ Guardián: ${scope.length} ficheros revisados${staged ? ' (en stage)' : ''}, todo en orden`,
+);

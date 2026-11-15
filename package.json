@@ -10,7 +10,6 @@
     "check": "pnpm --filter frontend check",
     "lint": "pnpm --filter frontend lint",
     "test": "pnpm --filter frontend test",
-    "test": "pnpm --filter frontend test",
     "format": "prettier --write . --ignore-path .gitignore --ignore-path config/application/prettierignore",
     "format:check": "prettier --check . --ignore-path .gitignore --ignore-path config/application/prettierignore",
     "check:guard": "node tools/dev-utils/guard.mjs",

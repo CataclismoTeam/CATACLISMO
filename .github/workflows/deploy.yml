@@ -1,7 +1,8 @@
 # Despliegue seguro de CATACLISMO (frontend) en GitHub Pages.
 #
-# Módulos de revisión (en paralelo). Si CUALQUIERA falla, no se publica nada y Pages
-# sigue sirviendo la última versión buena:
+# Módulos de revisión (en paralelo). Si cualquiera de los módulos 0-8 falla, no se publica nada
+# y Pages sigue sirviendo la última versión buena. El 9 (backend) se revisa igual y queda en rojo
+# si falla, pero no frena la web: Pages solo publica el frontend.
 #   0. guardián    → ficheros prohibidos, estructura, secretos y endurecimiento (tools/guard.mjs)
 #   1. calidad     → formato (Prettier), tipos (tsc) y lint (oxlint) del frontend
 #   2. workflows   → lint de GitHub Actions (actionlint) y auditoría de seguridad (zizmor)
@@ -97,8 +98,6 @@ jobs:
         run: pnpm lint
       - name: Pruebas unitarias (Vitest)
         run: pnpm test
-      - name: Pruebas unitarias (Vitest)
-        run: pnpm test
 
   # ─── 2. Workflows ─────────────────────────────────────────────────────────
   workflows:
@@ -131,7 +130,7 @@ jobs:
           persist-credentials: false
           fetch-depth: 0 # todo el historial: un secreto borrado sigue en git
       - name: Escaneo de credenciales (gitleaks)
-        run: docker run --rm -v "$PWD:/repo" ghcr.io/gitleaks/gitleaks:v8.30.1 git /repo --redact --verbose
+        run: docker run --rm -v "$PWD:/repo" ghcr.io/gitleaks/gitleaks:v8.30.1 git /repo --redact --verbose --gitleaks-ignore-path /repo/config/.gitleaksignore
 
   # ─── 4. Dependencias ──────────────────────────────────────────────────────
   dependencias:
@@ -323,22 +322,10 @@ jobs:
           uv run --frozen ruff check . && uv run --frozen ruff format --check .
           uv run --frozen pytest -q
 
-  # ─── Empaquetado: solo si TODOS los módulos pasan, y solo desde main ──────
+  # ─── Empaquetado: solo si pasan los módulos 0-8, y solo desde main ───────
   empaquetar:
     name: Empaquetar web
-    needs:
-      [
-        guardian,
-        calidad,
-        workflows,
-        secretos,
-        dependencias,
-        codeql,
-        build,
-        lighthouse,
-        e2e,
-        backend,
-      ]
+    needs: [guardian, calidad, workflows, secretos, dependencias, codeql, build, lighthouse, e2e]
     if: github.event_name != 'pull_request' && github.ref == 'refs/heads/main'
     runs-on: ubuntu-latest
     permissions:

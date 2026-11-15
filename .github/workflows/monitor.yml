@@ -34,7 +34,7 @@ jobs:
           }
           check "Portada" "$SITE_URL" 200 "<title>CATACLISMO</title>"
           check "404 propia" "${SITE_URL}no-existe-monitor" 404 "no-encontrada"
-          check "Recursos de Cesium" "${SITE_URL}cesium/Widgets/widgets.css" 200
+          check "Datos de incendios" "${SITE_URL}data/incidents-v1.json" 200
           printf '%s' "$errors" > errores.md
           if [ -n "$errors" ]; then
             echo "::error::La web en producción tiene problemas"
