@@ -1,8 +1,11 @@
 # CATACLISMO
 
-Propuesta del equipo CATACLISMO para NASA Space Apps 2026.
+Plataforma de mando para incendios forestales en España: une las detecciones de fuego de los
+satélites de la NASA, una predicción de propagación con redes neuronales, las vías de evacuación y
+el seguimiento de los equipos en terreno en un solo mapa. Propuesta del equipo CATACLISMO para
+**NASA Space Apps 2026**.
 
-Web publicada: https://cataclismoteam.github.io/CATACLISMO/
+**Web publicada:** https://cataclismoteam.github.io/CATACLISMO/
 
 > [!IMPORTANT]
 > **Usa la web en Google Chrome** (o Chromium), versión actual y de escritorio. Es el navegador con
@@ -10,86 +13,185 @@ Web publicada: https://cataclismoteam.github.io/CATACLISMO/
 > navegadores, como Brave, Firefox o Safari, pueden bloquear la conexión con el backend o el
 > mapa: si el chip «API» de la barra sale tachado, ábrela en Chrome.
 
+Para equipos de emergencias, gestores del territorio y personal científico.
+
+## Qué hace
+
+- **Mapa de mando** 2D y 3D (relieve real), con satélite o topográfico y curvas de nivel.
+- **Incendios reales** de NASA FIRMS de los últimos 90 días, por comunidad autónoma, en celdas de
+  250 m: rojo si siguen activos al cierre del dato y gris ceniza si ya no.
+- **Predicción en vivo** (backend): cada 3 horas, la red neuronal CATA predice hacia dónde avanza
+  el fuego detectado hoy y LUCIA calcula las vías de escape para personas y animales.
+- **Equipos en terreno** (JULI): posición y estado en vivo por WebSocket, con aviso si alguien no
+  da prueba de vida.
+- **12 escenarios simulados** con línea de tiempo del fuego (0 a 6 h), unidades por tierra y aire,
+  radio, avisos de núcleos en riesgo y vías de escape por carretera.
+- **Histórico** mes a mes desde 2012 sobre cualquier área: cuánto ha ardido y si el mes se sale de
+  lo normal; se pinta en el mapa y se exporta a CSV y PNG.
+- **Herramientas**: buscar lugares o coordenadas, medir distancias y áreas, compartir la vista con
+  un enlace, español e inglés, tema claro u oscuro y modo para daltonismo.
+
+## Qué es real, qué es predicción y qué es simulado
+
+La interfaz lo rotula siempre (chip de procedencia en la barra superior).
+
+| Capa                                   | Origen                                          | Actualización              |
+| -------------------------------------- | ----------------------------------------------- | -------------------------- |
+| Incendios detectados e histórico       | **Real**: NASA FIRMS (MODIS 1 km y VIIRS 375 m) | Preproceso del dato (fijo) |
+| CATA · predicción neuronal             | **Predicción** sobre FIRMS de hoy (celdas 1 km) | Cada 3 h (GitHub Actions)  |
+| LUCIA · vías de escape                 | **Predicción** a partir de CATA                 | Cada 3 h, con CATA         |
+| JULI · equipos en terreno              | **Backend** (equipos de demostración)           | En vivo (WebSocket)        |
+| Escenarios, unidades y rutas simuladas | **Simulado**: modelo elíptico de demostración   | Fijo                       |
+| Halo de avance de los incendios reales | **Ilustrativo** (viento de ejemplo, apagado)    | Fijo                       |
+
+## Arquitectura
+
+```mermaid
+flowchart LR
+    FIRMS["NASA FIRMS<br/>(MODIS + VIIRS)"] --> GHA["GitHub Actions · Live NRT<br/>cada 3 h: VALEN → CATA → LUCIA"]
+    GHA --> REL["Release live-data<br/>(predicciones y rutas)"]
+    REL --> API["API FastAPI en Render<br/>(sincroniza cada 10 min)"]
+    API -- "REST + WebSocket /ws" --> WEB["Web en GitHub Pages<br/>(React + MapLibre)"]
+    PRE["tools/build-hotspots<br/>(preproceso FIRMS histórico)"] --> WEB
+```
+
+- **Web** (`frontend/`): estática en GitHub Pages. Se conecta sola a la API (`VITE_API_URL` del
+  build); si la API no responde, sigue con sus datos estáticos.
+- **API** (`backend/`): en Render (`render.yaml`), sin TensorFlow. Sirve CATA, LUCIA y JULI y
+  descarga los resultados del ciclo en vivo (`backend/app/live_sync.py`).
+- **Ciclo en vivo** (`.github/workflows/live-nrt.yml`): corre en GitHub Actions porque CATA
+  necesita TensorFlow, que no cabe en el servidor gratuito.
+- **Preproceso** (`tools/build-hotspots/`): armoniza 2012–2026 de FIRMS y genera los datos
+  estáticos de la web (rejilla histórica, incendios y vías de escape de los escenarios).
+
+## Backend en cuatro piezas
+
+Detalle completo en [backend/README.md](backend/README.md).
+
+- **VALEN**: valida y enriquece las detecciones (meteorología, lluvia, vegetación, relieve y
+  carreteras) en una cuadrícula de 1 km (`EPSG:3035`, `ES1K`).
+- **CATA**: red neuronal ConvLSTM (22 canales) que predice el estado del fuego a 6 horas.
+- **LUCIA**: red neuronal + A\* que calcula rutas de evacuación seguras y puntos de encuentro.
+- **JULI**: mando y control de equipos en terreno: posición, prueba de vida, radio y chat cifrado.
+
 ## Stack
 
-| Parte               | Tecnología                                                 |
-| ------------------- | ---------------------------------------------------------- |
-| Interfaz            | React + TypeScript (Vite)                                  |
-| Motor geográfico 3D | CesiumJS                                                   |
-| Capas geoespaciales | deck.gl                                                    |
-| Efectos 3D          | Three.js                                                   |
-| Backend             | Python + FastAPI                                           |
-| Datos geográficos   | PostgreSQL + PostGIS                                       |
-| Tiempo real         | WebSockets (`/ws` en la API)                               |
-| CI/CD               | GitHub Actions → GitHub Pages (solo el frontend, estático) |
+| Parte      | Tecnología                                                      |
+| ---------- | --------------------------------------------------------------- |
+| Interfaz   | React + TypeScript (Vite), Tailwind, Zustand                    |
+| Mapa       | MapLibre GL + MapTiler (relieve, satélite y geocodificación)    |
+| Gráficos   | ECharts                                                         |
+| Backend    | Python + FastAPI (uv), WebSocket `/ws`                          |
+| Modelos    | TensorFlow / Keras (CATA y LUCIA)                               |
+| Datos      | PostgreSQL + PostGIS (en local), GeoJSON y binarios propios     |
+| Despliegue | GitHub Pages (web), Render (API), GitHub Actions (CI y en vivo) |
 
 ## Estructura
 
 ```
-frontend/   React + TS + Cesium (Vite). El build sale a dist/ en la raíz
-backend/    API FastAPI (uv): app/main.py, app/db.py (PostGIS), app/ws.py (WebSockets) — cuadrícula unificada 1000×1000 m (EPSG:3035, ES1K); ver backend/README.md (incluye feed NRT con FIRMS_MAP_KEY en secretos del repo)
-tests/      e2e y regresión visual con Playwright sobre el build real
-tools/      scripts del CI: guardián, enlaces, peso, servidor estático, commits
-config/     Playwright, Lighthouse, html-validate, release-please
-ops/        página de mantenimiento
+frontend/   web React + TS + MapLibre (Vite); el build sale a dist/ en la raíz
+backend/    API FastAPI: app/main.py, app/{valen,cata,lucia,juli}, app/live_nrt.py y app/live_sync.py
+tests/      e2e, regresión visual e integración con Playwright sobre el build real
+tools/      build-hotspots (preproceso FIRMS) y dev-utils (guardián, enlaces, peso, commits)
+config/     application/: Playwright, Lighthouse, html-validate, Prettier y release-please
+ops/        docker/ (imagen de la API) y deployment/ (página de mantenimiento)
+docs/       seguimiento, hoja de ruta, evaluación heurística y traspaso
+render.yaml despliegue de la API en Render
 ```
 
 ## Puesta en marcha
 
-Requisitos: Node 26, pnpm 12 (nunca npm ni yarn), uv y Docker.
+Requisitos: Node 26, pnpm 12 (nunca npm ni yarn), uv y, opcionalmente, Docker.
 
 ```bash
-pnpm install          # dependencias del frontend y herramientas (instala también los hooks de git)
-pnpm dev              # frontend en http://localhost:5173/CATACLISMO/
+pnpm install   # dependencias y hooks de git
+pnpm dev       # web en http://localhost:5173/CATACLISMO/
 ```
+
+API en local y la web conectada a ella:
 
 ```bash
-cp .env.example .env  # y cambia la contraseña
-docker compose up     # PostGIS en :5432 y la API en http://localhost:8000 (docs en /docs)
+cd backend && uv sync && uv run uvicorn app.main:app --reload --port 8000
+# abre http://localhost:5173/CATACLISMO/?api=http://localhost:8000
 ```
 
-API sin Docker (con la base de datos levantada):
+En local la web no usa el backend de producción: hay que pedirlo con `?api=` (vale para esa
+pestaña). Con Docker, `cp .env.example .env` y `docker compose up` levantan PostGIS y la API.
 
-```bash
-cd backend && uv sync && uv run uvicorn app.main:app --reload
-```
+## Datos en vivo y `FIRMS_MAP_KEY`
 
-## Clave de API de la NASA (`FIRMS_MAP_KEY`)
+- La clave de NASA FIRMS está en los **secretos del repositorio** (`FIRMS_MAP_KEY`) y nunca se
+  versiona. La usa el workflow **Live NRT**, que publica los resultados en la release `live-data`.
+- La API de Render los descarga sola (`LIVE_DATA_URL`, activa por defecto cuando corre en Render)
+  y avisa a la web con el evento `live_nrt_updated`.
+- Ciclo completo en local (necesita la clave en `backend/.env` y Python 3.13, que es la versión con
+  TensorFlow):
 
-Para consultar el feed Near Real-Time (NRT) de **NASA FIRMS** (`https://firms.modaps.eosdis.nasa.gov/api/area/csv/...` en [`backend/app/live_nrt.py`](backend/app/live_nrt.py) y el endpoint `POST /api/live/refresh`), el backend **necesita obligatoriamente** la clave `FIRMS_MAP_KEY`:
+  ```bash
+  cd backend
+  uv sync --python 3.13 --extra trainer
+  mkdir -p app/cata/artifacts/models && cp checkpoints/best_model.keras app/cata/artifacts/models/cata_c22.keras
+  uv run python -m app.live_nrt --days 2
+  ```
 
-- **En GitHub / producción:** la clave real está guardada en **GitHub Secrets** (`FIRMS_MAP_KEY`) y nunca se versiona en el repositorio. Cualquier workflow o despliegue que active la ingesta NRT debe inyectarla desde `${{ secrets.FIRMS_MAP_KEY }}`.
-- **En local:** cópiala en `backend/.env` (puedes partir de `.env.example`) o expórtala como variable de entorno antes de arrancar `uvicorn` o ejecutar `python -m app.live_nrt`.
-- **Comportamiento sin clave:** NASA FIRMS rechaza la petición con `HTTP 400 (Invalid MAP_KEY.)` y el endpoint `POST /api/live/refresh` responde `HTTP 400` indicando que falta `FIRMS_MAP_KEY`. Por su parte, la API **NASA POWER** ([`backend/app/valen/rainfall_client.py`](backend/app/valen/rainfall_client.py)) y **Open-Meteo** no requieren clave.
+- Sin clave, FIRMS rechaza la petición. NASA POWER y Open-Meteo no necesitan clave.
 
-## Origen de los datos de predicción de CATA y consumo en el frontend
+## Despliegue
 
-Hay que distinguir entre la **web estática publicada hoy en GitHub Pages** y el **pipeline neuronal del backend**:
-
-1. **Predicciones reales de CATA (`backend/`):**
-   - El modelo entrenado **CATA** (`ConvLSTM2D` de 22 canales, `backend/app/cata/artifacts/models/cata_c22.keras`) genera [`backend/app/cata/artifacts/predictions/cata_predictions.json`](backend/app/cata/artifacts/predictions/cata_predictions.json), con matrices 2D por zona (`fire_probability_grid`, `state_matrix`, `estimated_fire_arrival_hours`, costes `human`/`animal`) y `active_and_predicted_cells` (que incluye passthrough de `valen_features_norm`).
-   - El backend FastAPI lo sirve en **`GET /api/cata/predictions`** (`backend/app/main.py`) y lo consume **LUCIA** (`lucia_c15.keras`) para generar [`backend/app/lucia/artifacts/routes/lucia_routes.geojson`](backend/app/lucia/artifacts/routes/lucia_routes.geojson), expuesto en **`GET /api/lucia/routes`**, **`GET /api/lucia/meeting-points`** y **`POST /api/lucia/route`** (`POST /api/live/refresh` regenera ambos en caliente cuando hay `FIRMS_MAP_KEY`).
-2. **Datos actuales del frontend estático (`frontend/`):**
-   - En su estado actual, el frontend desplegado en GitHub Pages **todavía no llama al backend FastAPI** (`frontend/src/data/source.ts` usa únicamente `LocalSource` sobre `frontend/public/data/`).
-   - Las detecciones reales de NASA FIRMS (`hotspots-manifest-v1.json`, `hotspots-cells-v1.bin`, `hotspots-grid-v1-*.bin`, `detections-recent-v1.json`, `incidents-v1.json`) proceden del preproceso offline [`tools/build-hotspots`](tools/build-hotspots/README.md).
-   - La capa visual rotulada como _SIMULADO / PREDICCIÓN_ y las rutas estáticas (`escape-routes-v1.json`) se calculan con [`frontend/src/map/scenarios.json`](frontend/src/map/scenarios.json) y el modelo elíptico simplificado en el cliente ([`frontend/src/map/scenario.ts`](frontend/src/map/scenario.ts)), a la espera de conectar la UI a `/api/cata/predictions` y `/api/lucia/routes`.
+- **Web**: cada push a `main` pasa por [`deploy.yml`](.github/workflows/deploy.yml): 10 módulos
+  en paralelo (guardián, calidad, workflows, secretos, dependencias, CodeQL, build, Lighthouse, e2e
+  y backend). Solo si pasan todos se publica en GitHub Pages, con prueba de humo. La URL de la API
+  va en la variable del repo `VITE_API_URL`. Modo mantenimiento: _Run workflow → maintenance_ o la
+  variable `MAINTENANCE_MODE=true`.
+- **API**: Render la redespliega en cada push a `main` que toque `backend/` (`render.yaml`).
+- **Ciclo en vivo**: workflow **Live NRT** cada 3 horas (o a mano desde Actions).
+- Los commits siguen [Conventional Commits](https://www.conventionalcommits.org/es/);
+  release-please genera las versiones y el CHANGELOG.
 
 ## Comprobaciones locales
 
 ```bash
-pnpm format:check && pnpm check && pnpm lint
-pnpm build && pnpm check:links && pnpm check:html && pnpm check:size
+pnpm format:check && pnpm check && pnpm lint && pnpm test
+pnpm build && pnpm check:links && pnpm check:html && pnpm check:size && pnpm check:guard
 CHROME_PATH=/usr/bin/chromium pnpm test:e2e
-cd backend && uv run ruff check . && uv run pytest
+cd backend && uv run ruff check . && uv run pytest -m "not trainer"
+cd tools/build-hotspots && uv run pytest
 ```
 
-## Despliegue
+## Limitaciones conocidas
 
-Cada push a `main` pasa por [`deploy.yml`](.github/workflows/deploy.yml): 10 módulos de revisión en
-paralelo (guardián, calidad, workflows, secretos, dependencias, CodeQL, build, Lighthouse, e2e y
-backend). Solo si pasan todos se publica en GitHub Pages, con atestación de procedencia y prueba de
-humo. Los PR solo revisan. Modo mantenimiento: _Run workflow → maintenance_ o la variable del repo
-`MAINTENANCE_MODE=true`.
+- Los escenarios simulados usan un modelo elíptico de demostración: no tiene en cuenta
+  combustible, humedad ni pendiente. No es una herramienta operativa.
+- La API está en el plan gratuito de Render: tras 15 min sin uso se duerme y la primera visita
+  tarda hasta un minuto en conectar (la web lo indica y funciona igual con sus datos).
+- En Render no hay base de datos PostGIS (`/health` lo indica); nada de lo que muestra el mapa la
+  necesita hoy.
+- El área de FIRMS del ciclo en vivo (35–44° N, 10° O–4,5° E) incluye el norte de Marruecos y
+  Argelia, así que alguna zona predicha puede caer fuera de España.
+- El histórico de la web se genera con el preproceso y no se actualiza solo.
 
-Los commits siguen [Conventional Commits](https://www.conventionalcommits.org/es/); release-please
-genera las versiones y el CHANGELOG.
+## Fuentes y créditos
+
+- [NASA FIRMS](https://firms.modaps.eosdis.nasa.gov/): detecciones de fuego activo
+  ([MODIS](https://modis.gsfc.nasa.gov/) y [VIIRS](https://www.earthdata.nasa.gov/sensors/viirs)).
+- [NASA POWER](https://power.larc.nasa.gov/): lluvia histórica.
+- [Open-Meteo](https://open-meteo.com/): meteorología actual.
+- [ESA WorldCover](https://esa-worldcover.org/): vegetación.
+- [OpenStreetMap](https://www.openstreetmap.org/copyright): carreteras y núcleos de población.
+- [MapTiler](https://www.maptiler.com/copyright/): mapas base, relieve y geocodificación.
+
+## Documentación
+
+- [docs/SEGUIMIENTO.md](docs/SEGUIMIENTO.md): estado del proyecto.
+- [docs/MEJORAS.md](docs/MEJORAS.md): hoja de ruta y pendientes.
+- [docs/evaluacion-heuristica.md](docs/evaluacion-heuristica.md): evaluación de usabilidad.
+- [frontend/README.md](frontend/README.md), [backend/README.md](backend/README.md) y
+  [tools/build-hotspots/README.md](tools/build-hotspots/README.md).
+
+## Equipo
+
+Equipo CATACLISMO · NASA Space Apps Challenge 2026.
+
+## Licencia
+
+[MIT](LICENSE).

@@ -69,6 +69,7 @@ const allowedRoot = new Set([
   '.env.example',
   '.gitignore',
   'CHANGELOG.md',
+  'LICENSE',
   'README.md',
   'docker-compose.yml',
   'lefthook.yml',
