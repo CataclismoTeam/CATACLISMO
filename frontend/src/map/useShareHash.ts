@@ -1,6 +1,7 @@
 import type { Map as MapLibre } from 'maplibre-gl';
 import { useEffect, type RefObject } from 'react';
 import { formatHash } from '../lib/hash.ts';
+import { useLang } from '../lib/i18n.ts';
 import { useUi } from '../store/ui.ts';
 
 /** Escribe el hash ya (lo usa «Copiar enlace»); null sin mapa */
@@ -25,6 +26,7 @@ export function useShareHash(map: RefObject<MapLibre | null>, ready: boolean) {
         zoom: m.getZoom(),
         center: [c.lng, c.lat],
         mode: mapMode,
+        lang: useLang.getState().lang,
       });
       if (hash !== window.location.hash) {
         window.history.replaceState(
@@ -49,8 +51,10 @@ export function useShareHash(map: RefObject<MapLibre | null>, ready: boolean) {
         write();
       }
     });
+    const unsubscribeLang = useLang.subscribe(write);
     write();
     return () => {
+      unsubscribeLang();
       window.clearTimeout(timer);
       flush = null;
       m.off('moveend', write);

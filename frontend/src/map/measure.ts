@@ -1,4 +1,5 @@
 // Geometría de la regla del mapa: longitud de una línea y superficie de un polígono cerrado.
+import { locale } from '../lib/i18n.ts';
 import { haversineKm } from '../features/history/area.ts';
 
 export type LonLat = [lon: number, lat: number];
@@ -37,7 +38,7 @@ export function areaKm2(points: LonLat[]): number {
 }
 
 const decimal = (v: number, digits: number) =>
-  v.toLocaleString('es-ES', { maximumFractionDigits: digits, minimumFractionDigits: 0 });
+  v.toLocaleString(locale(), { maximumFractionDigits: digits, minimumFractionDigits: 0 });
 
 /** «850 m», «3,25 km» o «42 km». */
 export function formatLength(km: number): string {

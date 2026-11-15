@@ -1,3 +1,4 @@
+import { useT } from '../lib/i18n.ts';
 import { Flame, Siren, Truck, type LucideIcon } from 'lucide-react';
 import { cn } from '../lib/cn.ts';
 import { useUi } from '../store/ui.ts';
@@ -21,10 +22,11 @@ export function NavRail() {
   const leftPanel = useUi((s) => s.leftPanel);
   const setLeftPanel = useUi((s) => s.setLeftPanel);
   const critical = useUi((s) => s.criticalAlerts);
+  const t = useT();
 
   return (
     <nav
-      aria-label="Módulos"
+      aria-label={t('Módulos')}
       className="order-last flex shrink-0 gap-1 border-t border-line bg-surface p-1.5 pb-[max(0.375rem,env(safe-area-inset-bottom))] lg:order-first lg:w-21 lg:flex-col lg:border-t-0 lg:border-r lg:pb-1.5"
     >
       {MODULES.map(({ id, label, icon: Icon, panel }) => {
@@ -34,7 +36,7 @@ export function NavRail() {
             key={id}
             type="button"
             aria-pressed={open}
-            title={`${open ? 'Cerrar' : 'Abrir'} ${label.toLowerCase()}`}
+            title={t(open ? 'Cerrar {x}' : 'Abrir {x}', { x: t(label).toLowerCase() })}
             onClick={() => setLeftPanel(open ? null : panel)}
             className={cn(
               'flex h-14 flex-1 cursor-pointer flex-col items-center justify-center gap-1 rounded-md border text-xs text-ink hover:bg-hover lg:flex-none',
@@ -46,11 +48,11 @@ export function NavRail() {
               {panel === 'avisos' && critical > 0 && (
                 <span className="absolute -top-1.5 -right-2.5 grid h-4 min-w-4 place-items-center rounded-full bg-fire px-1 font-mono text-[0.6875rem] leading-none font-bold text-canvas">
                   {critical}
-                  <span className="sr-only"> {critical === 1 ? 'crítico' : 'críticos'}</span>
+                  <span className="sr-only"> {critical === 1 ? t('crítico') : t('críticos')}</span>
                 </span>
               )}
             </span>
-            {label}
+            {t(label)}
           </button>
         );
       })}

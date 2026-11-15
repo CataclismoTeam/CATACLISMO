@@ -1,3 +1,4 @@
+import { useT } from '../lib/i18n.ts';
 import { Eye, EyeOff, X } from 'lucide-react';
 import type { ReactNode } from 'react';
 import { cn } from '../lib/cn.ts';
@@ -36,13 +37,14 @@ function Toggle({
 }) {
   const on = useUi((s) => s.layers[id]);
   const toggle = useUi((s) => s.toggleLayer);
+  const t = useT();
   return (
     <li className="border-t border-line py-2 first:border-t-0">
       <button
         type="button"
         aria-pressed={on}
         disabled={!!disabled}
-        title={disabled}
+        title={disabled && t(disabled)}
         onClick={() => toggle(id)}
         className="flex min-h-9 w-full cursor-pointer items-center gap-2 rounded-sm text-left text-sm disabled:cursor-not-allowed disabled:opacity-50 pointer-coarse:min-h-11"
       >
@@ -51,7 +53,7 @@ function Toggle({
         ) : (
           <EyeOff size={16} strokeWidth={1.5} aria-hidden className="shrink-0 text-ink-muted" />
         )}
-        <span className={cn('flex-1', !on && 'text-ink-muted')}>{label}</span>
+        <span className={cn('flex-1', !on && 'text-ink-muted')}>{t(label)}</span>
         {origin && (
           <span
             className={cn(
@@ -59,17 +61,18 @@ function Toggle({
               ORIGIN[origin].className,
             )}
           >
-            {ORIGIN[origin].label}
+            {t(ORIGIN[origin].label)}
           </span>
         )}
       </button>
-      {disabled && <p className="m-0 mt-1 pl-6 text-xs text-ink-muted">{disabled}</p>}
+      {disabled && <p className="m-0 mt-1 pl-6 text-xs text-ink-muted">{t(disabled)}</p>}
       {on && legend && <div className="mt-1.5 pl-6">{legend}</div>}
     </li>
   );
 }
 
 function Swatch({ fill, hatch, children }: { fill: string; hatch?: boolean; children: ReactNode }) {
+  const t = useT();
   return (
     <span className="flex items-center gap-2 text-xs">
       <span
@@ -81,16 +84,17 @@ function Swatch({ fill, hatch, children }: { fill: string; hatch?: boolean; chil
             : fill,
         }}
       />
-      {children}
+      {typeof children === 'string' ? t(children) : children}
     </span>
   );
 }
 
 function Group({ title, children }: { title: string; children: ReactNode }) {
+  const t = useT();
   return (
     <section className="border-t border-line px-4 py-3">
       <h3 className="m-0 mb-1 text-xs font-semibold tracking-wide text-ink-muted uppercase">
-        {title}
+        {t(title)}
       </h3>
       <ul className="m-0 list-none p-0">{children}</ul>
     </section>
@@ -107,20 +111,21 @@ export function LayersPanel({ detections: load }: { detections: Remote<Detection
   const mode = useUi((s) => s.mapMode);
   const exaggeration = useUi((s) => s.exaggeration);
   const setExaggeration = useUi((s) => s.setExaggeration);
+  const t = useT();
 
   if (!open) return null;
 
   return (
     <aside
-      aria-label="Capas del mapa"
+      aria-label={t('Capas del mapa')}
       className="overflow-y-auto border border-line-strong bg-surface shadow-panel max-md:absolute max-md:inset-x-0 max-md:bottom-0 max-md:z-(--z-panel) max-md:max-h-[70%] max-md:rounded-t-lg md:min-h-0 md:w-80 md:rounded-lg"
     >
       <header className="sticky top-0 flex items-center justify-between bg-surface px-4 py-2">
-        <h2 className="m-0 text-base font-semibold">Capas</h2>
+        <h2 className="m-0 text-base font-semibold">{t('Capas')}</h2>
         <Button
           variant="ghost"
           size="icon"
-          aria-label="Cerrar capas"
+          aria-label={t('Cerrar capas')}
           onClick={() => setOpen(false)}
         >
           <X size={20} strokeWidth={1.5} aria-hidden />
@@ -129,26 +134,25 @@ export function LayersPanel({ detections: load }: { detections: Remote<Detection
 
       <section className="px-4 pb-3">
         <h3 className="m-0 mb-1.5 text-xs font-semibold tracking-wide text-ink-muted uppercase">
-          Mapa base
+          {t('Mapa base')}
         </h3>
-        <div role="radiogroup" aria-label="Mapa base" className="grid grid-cols-2 gap-1">
+        <div role="radiogroup" aria-label={t('Mapa base')} className="grid grid-cols-2 gap-1">
           {BASEMAPS.map(([id, label]) => (
             <Button
               key={id}
               role="radio"
               aria-checked={basemap === id}
-              aria-pressed={basemap === id}
-              className="px-2"
+              className={cn('px-2', basemap === id && 'border-accent bg-hover')}
               onClick={() => setBasemap(id)}
             >
-              {label}
+              {t(label)}
             </Button>
           ))}
         </div>
         {mode === '3d' && (
           <label className="mt-3 flex flex-col gap-1 text-sm">
             <span className="flex justify-between">
-              Exageración del relieve
+              {t('Exageración del relieve')}
               <span className="font-mono">{exaggeration.toFixed(1)}×</span>
             </span>
             <input
@@ -162,8 +166,9 @@ export function LayersPanel({ detections: load }: { detections: Remote<Detection
               className="accent-accent pointer-coarse:h-11"
             />
             <span className="text-xs text-ink-muted">
-              Inclinar y girar: clic derecho (o Ctrl) y arrastrar; en táctil, dos dedos en vertical.
-              La brújula vuelve al norte.
+              {t(
+                'Inclinar y girar: clic derecho (o Ctrl) y arrastrar; en táctil, dos dedos en vertical. La brújula vuelve al norte.',
+              )}
             </span>
           </label>
         )}
@@ -179,11 +184,11 @@ export function LayersPanel({ detections: load }: { detections: Remote<Detection
               <span className="text-xs text-ink-muted">
                 NASA FIRMS,{' '}
                 {detections
-                  ? `${detections.from} a ${detections.to}`
+                  ? t('{a} a {b}', { a: detections.from, b: detections.to })
                   : load.status === 'error'
-                    ? 'no se han podido descargar'
-                    : 'cargando…'}
-                . Celdas de 250 m con fuego detectado.
+                    ? t('no se han podido descargar')
+                    : t('cargando…')}
+                . {t('Celdas de 250 m con fuego detectado.')}
               </span>
               <div className="flex flex-wrap gap-x-3 gap-y-1 text-xs">
                 <span className="flex items-center gap-1.5">
@@ -191,21 +196,21 @@ export function LayersPanel({ detections: load }: { detections: Remote<Detection
                     aria-hidden
                     className="size-3 rounded-full border-2 border-[#fff1d6] bg-[#c2331f]"
                   />
-                  Activo al cierre del dato
+                  {t('Activo al cierre del dato')}
                 </span>
                 <span className="flex items-center gap-1.5">
                   <span
                     aria-hidden
                     className="size-3 rounded-full border-2 border-[#d9905a] bg-[#1d2026]"
                   />
-                  Sin detecciones al cierre
+                  {t('Sin detecciones al cierre')}
                 </span>
                 <span className="flex items-center gap-1.5">
                   <span
                     aria-hidden
                     className="size-3 rotate-45 border-2 border-[#e0a640] bg-[#2a2110]"
                   />
-                  Simulación
+                  {t('Simulación')}
                 </span>
               </div>
             </div>
@@ -219,8 +224,9 @@ export function LayersPanel({ detections: load }: { detections: Remote<Detection
             <div className="flex flex-col gap-1">
               <Swatch fill={HALO_COLOR}>Hasta dónde podría llegar en 6 h</Swatch>
               <span className="text-xs text-ink-muted">
-                No es un pronóstico: FIRMS no da el viento y se usa un poniente fijo de ejemplo (15
-                km/h). Solo en los incendios con actividad al cierre del dato.
+                {t(
+                  'No es un pronóstico: FIRMS no da el viento y se usa un poniente fijo de ejemplo (15 km/h). Solo en los incendios con actividad al cierre del dato.',
+                )}
               </span>
             </div>
           }
@@ -238,7 +244,7 @@ export function LayersPanel({ detections: load }: { detections: Remote<Detection
           legend={
             <div className="flex flex-col gap-1">
               <span className="text-xs text-ink-muted">
-                Modelo de demostración: dónde llegaría el fuego, no dónde está.
+                {t('Modelo de demostración: dónde llegaría el fuego, no dónde está.')}
               </span>
               <div className="flex flex-wrap gap-x-3 gap-y-1">
                 {PREDICTION_BANDS.map(([h, c, label]) => (
@@ -260,7 +266,7 @@ export function LayersPanel({ detections: load }: { detections: Remote<Detection
           legend={
             <div className="flex flex-col gap-1">
               <span className="flex items-center gap-2 text-xs">
-                Menos
+                {t('Menos')}
                 <span
                   aria-hidden
                   className="h-2.5 flex-1 rounded-[2px]"
@@ -268,11 +274,12 @@ export function LayersPanel({ detections: load }: { detections: Remote<Detection
                     background: `linear-gradient(90deg, ${MONTH_RAMP.map(([, c]) => c).join(', ')})`,
                   }}
                 />
-                Más
+                {t('Más')}
               </span>
               <span className="text-xs text-ink-muted">
-                Celdas de 5 km del mes elegido en el calendario, en detecciones equivalentes MODIS.
-                Pulsa otro mes para cambiarla.
+                {t(
+                  'Celdas de 5 km del mes elegido en el calendario, en detecciones equivalentes MODIS. Pulsa otro mes para cambiarla.',
+                )}
               </span>
               <Swatch fill={AREA_COLOR}>Área de interés del calendario</Swatch>
             </div>
@@ -290,8 +297,9 @@ export function LayersPanel({ detections: load }: { detections: Remote<Detection
             <div className="flex flex-col gap-1">
               <Swatch fill="var(--color-route)">Ruta hasta el refugio</Swatch>
               <span className="text-xs text-ink-muted">
-                Calculadas con el algoritmo de evacuación del equipo sobre carreteras de
-                OpenStreetMap, teniendo en cuenta cómo avanzaría el fuego.
+                {t(
+                  'Calculadas con el algoritmo de evacuación del equipo sobre carreteras de OpenStreetMap, teniendo en cuenta cómo avanzaría el fuego.',
+                )}
               </span>
             </div>
           }
@@ -308,7 +316,7 @@ export function LayersPanel({ detections: load }: { detections: Remote<Detection
       </Group>
 
       <p className="m-0 border-t border-line px-4 py-2 text-xs text-ink-muted">
-        Cartografía: {provider.attribution}
+        {t('Cartografía:')} {provider.attribution}
       </p>
     </aside>
   );

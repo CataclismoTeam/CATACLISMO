@@ -1,3 +1,4 @@
+import { t } from '../lib/i18n.ts';
 import { ExternalLink } from 'lucide-react';
 import { cn } from '../lib/cn.ts';
 import type { Source } from '../lib/sources.ts';
@@ -16,7 +17,7 @@ export function SourceLink({ source, className }: { source: Source; className?: 
     >
       {source.name}
       <ExternalLink size={12} strokeWidth={1.5} aria-hidden />
-      <span className="sr-only">(se abre en otra pestaña)</span>
+      <span className="sr-only">{t('(se abre en otra pestaña)')}</span>
     </a>
   );
 }

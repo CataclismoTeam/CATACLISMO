@@ -1,3 +1,4 @@
+import { useT } from '../../lib/i18n.ts';
 import { Maximize2, Minimize2, Pause, Play } from 'lucide-react';
 import { lazy, Suspense, useEffect, useState } from 'react';
 import { ErrorBoundary } from '../../app/ErrorBoundary.tsx';
@@ -13,9 +14,10 @@ import { useCalendarModel } from './model.ts';
 const CalendarPanel = lazy(() => import('./CalendarPanel.tsx'));
 
 function Skeleton() {
+  const t = useT();
   return (
     <div role="status" className="flex flex-col gap-2 p-4">
-      <span className="sr-only">Cargando el calendario…</span>
+      <span className="sr-only">{t('Cargando el calendario…')}</span>
       {Array.from({ length: 8 }, (_, i) => (
         <div key={i} className="h-7 animate-pulse rounded-sm bg-raised" />
       ))}
@@ -39,6 +41,7 @@ export function CalendarDock() {
   const manifest = useHistory((s) => s.manifest);
   const [playing, setPlaying] = useState(false);
   const [speed, setSpeed] = useState(1);
+  const t = useT();
 
   useEffect(() => {
     if (!playing || !manifest) return;
@@ -61,10 +64,11 @@ export function CalendarDock() {
       <header className="flex min-h-14 shrink-0 items-center gap-3 border-b border-line px-4">
         <div className="min-w-0">
           <p className="m-0 text-[10px] font-semibold uppercase tracking-[0.18em] text-accent">
-            Análisis histórico
+            {t('Análisis histórico')}
           </p>
           <h2 id="calendario-titulo" className="m-0 truncate text-sm font-semibold">
-            Actividad de fuego <span className="font-normal text-ink-muted">/ {areaName}</span>
+            {t('Actividad de fuego')}{' '}
+            <span className="font-normal text-ink-muted">/ {t(areaName)}</span>
           </h2>
         </div>
         {model && !open && (
@@ -76,14 +80,14 @@ export function CalendarDock() {
           </span>
         )}
         <Tag tone="real" className="ml-auto hidden lg:inline-flex">
-          Real · MODIS + VIIRS
+          {t('Real · MODIS + VIIRS')}
         </Tag>
         {model && manifest && (
-          <div className="hidden items-center gap-1 xl:flex" aria-label="Línea de tiempo">
+          <div className="hidden items-center gap-1 xl:flex" aria-label={t('Línea de tiempo')}>
             <Button
               variant="ghost"
               size="icon"
-              aria-label={playing ? 'Pausar línea de tiempo' : 'Reproducir línea de tiempo'}
+              aria-label={playing ? t('Pausar línea de tiempo') : t('Reproducir línea de tiempo')}
               aria-pressed={playing}
               onClick={() => setPlaying(!playing)}
             >
@@ -97,14 +101,14 @@ export function CalendarDock() {
               max={manifest.tiempo.meses - 1}
               value={selected}
               onChange={(event) => select(Number(event.target.value))}
-              aria-label="Mes de la línea de tiempo"
+              aria-label={t('Mes de la línea de tiempo')}
             />
             <select
               name="velocidad"
               className="h-8 rounded-md border border-line-strong bg-canvas px-1 text-xs"
               value={speed}
               onChange={(event) => setSpeed(Number(event.target.value))}
-              aria-label="Velocidad de reproducción"
+              aria-label={t('Velocidad de reproducción')}
             >
               <option value={0.5}>0,5×</option>
               <option value={1}>1×</option>
@@ -124,7 +128,7 @@ export function CalendarDock() {
           ) : (
             <Maximize2 size={20} strokeWidth={1.5} aria-hidden />
           )}
-          {open ? 'Minimizar' : 'Maximizar'}
+          {open ? t('Minimizar') : t('Maximizar')}
         </Button>
       </header>
 
@@ -133,15 +137,15 @@ export function CalendarDock() {
           {failed ? (
             <div role="alert" className="flex flex-col items-center gap-3 p-8 text-center">
               <p className="m-0 text-base">
-                No se pudieron cargar los datos de fuego. {error} Comprueba la conexión y vuelve a
-                intentarlo.
+                {t('No se pudieron cargar los datos de fuego.')} {error && t(error)}{' '}
+                {t('Comprueba la conexión y vuelve a intentarlo.')}
               </p>
               <Button variant="primary" onClick={() => void load()}>
-                Reintentar
+                {t('Reintentar')}
               </Button>
             </div>
           ) : model ? (
-            <ErrorBoundary what="el calendario">
+            <ErrorBoundary what={t('el calendario')}>
               <Suspense fallback={<Skeleton />}>
                 <CalendarPanel model={model} />
               </Suspense>

@@ -1,3 +1,4 @@
+import { useT } from '../../lib/i18n.ts';
 import { Crosshair, SquareDashed } from 'lucide-react';
 import { useState, type FormEvent } from 'react';
 import { formatArea, formatCount } from '../../lib/format.ts';
@@ -38,6 +39,7 @@ export function AreaForm() {
   };
   const drawing = useUi((s) => s.mapTool === 'dibujar');
   const setMapTool = useUi((s) => s.setMapTool);
+  const t = useT();
   const setYearRange = useHistory((s) => s.setYearRange);
   const setMetric = useHistory((s) => s.setMetric);
 
@@ -59,12 +61,17 @@ export function AreaForm() {
     const [la, lo, r] = [parse(lat), parse(lon), parse(radius)];
     if (!(la >= grid.sur && la <= grid.norte && lo >= grid.oeste && lo <= grid.este)) {
       setError(
-        `El punto queda fuera de los datos. Latitud entre ${grid.sur} y ${grid.norte}; longitud entre ${grid.oeste} y ${grid.este}.`,
+        t('El punto queda fuera de los datos. Latitud entre {s} y {n}; longitud entre {o} y {e}.', {
+          s: grid.sur,
+          n: grid.norte,
+          o: grid.oeste,
+          e: grid.este,
+        }),
       );
       return;
     }
     if (!(r >= 3 && r <= 500)) {
-      setError('El radio debe estar entre 3 y 500 km.');
+      setError(t('El radio debe estar entre 3 y 500 km.'));
       return;
     }
     setError('');
@@ -73,7 +80,7 @@ export function AreaForm() {
 
   return (
     <div className="flex flex-col gap-3">
-      <Field label="Área de interés">
+      <Field label={t('Área de interés')}>
         <Select
           name="area"
           value={custom ? CUSTOM : area.name}
@@ -86,10 +93,12 @@ export function AreaForm() {
           }}
         >
           {AREA_PRESETS.map((p) => (
-            <option key={p.name}>{p.name}</option>
+            <option key={p.name} value={p.name}>
+              {t(p.name)}
+            </option>
           ))}
-          {drawn && <option value={DRAWN}>{DRAWN}</option>}
-          <option value={CUSTOM}>Punto y radio…</option>
+          {drawn && <option value={DRAWN}>{t(DRAWN)}</option>}
+          <option value={CUSTOM}>{t('Punto y radio…')}</option>
         </Select>
       </Field>
 
@@ -102,12 +111,12 @@ export function AreaForm() {
           }}
         >
           <SquareDashed size={16} strokeWidth={1.5} aria-hidden />
-          {drawing ? 'Dibujando… (Esc)' : 'Dibujar en el mapa'}
+          {drawing ? t('Dibujando… (Esc)') : t('Dibujar en el mapa')}
         </Button>
         {area.kind !== 'all' && (
           <Button variant="ghost" onClick={() => frame(area)}>
             <Crosshair size={16} strokeWidth={1.5} aria-hidden />
-            Ver en el mapa
+            {t('Ver en el mapa')}
           </Button>
         )}
       </div>
@@ -115,7 +124,7 @@ export function AreaForm() {
       {custom && (
         <form onSubmit={apply} className="flex flex-col gap-2" noValidate>
           <div className="grid grid-cols-3 gap-2">
-            <Field label="Latitud">
+            <Field label={t('Latitud')}>
               <Input
                 name="latitud"
                 inputMode="decimal"
@@ -124,7 +133,7 @@ export function AreaForm() {
                 onChange={(e) => setLat(e.target.value)}
               />
             </Field>
-            <Field label="Longitud">
+            <Field label={t('Longitud')}>
               <Input
                 name="longitud"
                 inputMode="decimal"
@@ -133,7 +142,7 @@ export function AreaForm() {
                 onChange={(e) => setLon(e.target.value)}
               />
             </Field>
-            <Field label="Radio" hint="km">
+            <Field label={t('Radio')} hint="km">
               <Input
                 name="radio"
                 inputMode="decimal"
@@ -149,21 +158,27 @@ export function AreaForm() {
             </p>
           )}
           <Button type="submit" variant="primary">
-            Aplicar área
+            {t('Aplicar área')}
           </Button>
         </form>
       )}
 
       <p className="m-0 text-sm text-ink-muted" aria-live="polite">
         {!cells
-          ? 'Calculando la superficie del área…'
+          ? t('Calculando la superficie del área…')
           : area.kind === 'all'
-            ? `Toda el área con datos: ${formatCount(cells.dataCells)} celdas de 5 km con detecciones`
-            : `${formatArea(cells.km2)} · ${formatCount(cells.gridCells)} celdas de 5 km, ${formatCount(cells.dataCells)} con detecciones`}
+            ? t('Toda el área con datos: {n} celdas de 5 km con detecciones', {
+                n: formatCount(cells.dataCells),
+              })
+            : t('{area} · {celdas} celdas de 5 km, {datos} con detecciones', {
+                area: formatArea(cells.km2),
+                celdas: formatCount(cells.gridCells),
+                datos: formatCount(cells.dataCells),
+              })}
       </p>
 
       <div className="grid grid-cols-2 gap-2">
-        <Field label="Desde">
+        <Field label={t('Desde')}>
           <Select
             name="desde"
             value={yearRange[0]}
@@ -176,7 +191,7 @@ export function AreaForm() {
               ))}
           </Select>
         </Field>
-        <Field label="Hasta">
+        <Field label={t('Hasta')}>
           <Select
             name="hasta"
             value={yearRange[1]}
@@ -191,11 +206,11 @@ export function AreaForm() {
         </Field>
       </div>
 
-      <Field label="Serie">
+      <Field label={t('Serie')}>
         <Select name="serie" value={metric} onChange={(e) => setMetric(e.target.value as Metric)}>
           {(Object.keys(METRIC_LABEL) as Metric[]).map((m) => (
             <option key={m} value={m}>
-              {METRIC_LABEL[m]}
+              {t(METRIC_LABEL[m])}
             </option>
           ))}
         </Select>

@@ -1,6 +1,7 @@
 // Imagen PNG del calendario (y del gráfico del mes, si está cargado), dibujada en un canvas
 // propio para que salga igual en cualquier pantalla e incluya área, unidad y atribución.
-import { formatCount, formatMonth, MONTHS_SHORT, slugify } from '../../lib/format.ts';
+import { t } from '../../lib/i18n.ts';
+import { formatCount, formatMonth, monthsShort, slugify } from '../../lib/format.ts';
 import { describeArea, type Area } from './area.ts';
 import { chartImage } from './chartHandle.ts';
 import { UNIT, type CalendarModel } from './model.ts';
@@ -59,9 +60,9 @@ export async function calendarPng(model: CalendarModel, area: Area): Promise<Blo
     ctx.fillText(value, x, y);
   };
 
-  text('CATACLISMO · Calendario de actividad de fuego', PAD, 36, '600 22px');
+  text(`CATACLISMO · ${t('Calendario de actividad de fuego')}`, PAD, 36, '600 22px');
   text(
-    `${describeArea(area)} · ${METRIC_LABEL[model.metric]} (${UNIT[model.metric]}) · ${model.yearRange[0]}–${model.yearRange[1]}`,
+    `${describeArea(area)} · ${t(METRIC_LABEL[model.metric])} (${t(UNIT[model.metric])}) · ${model.yearRange[0]}–${model.yearRange[1]}`,
     PAD,
     66,
     '400 14px',
@@ -69,10 +70,10 @@ export async function calendarPng(model: CalendarModel, area: Area): Promise<Blo
   );
 
   const cellW = (W - PAD * 2 - YEAR_W - TOTAL_W) / 12;
-  MONTHS_SHORT.forEach((m, i) =>
+  monthsShort().forEach((m, i) =>
     text(m, PAD + YEAR_W + cellW * (i + 0.5), tableTop - 14, '500 13px', MUTED, 'center'),
   );
-  text('Total', W - PAD, tableTop - 14, '500 13px', MUTED, 'right');
+  text(t('Total'), W - PAD, tableTop - 14, '500 13px', MUTED, 'right');
 
   years.forEach((year, yi) => {
     const y = tableTop + yi * CELL_H;
@@ -100,7 +101,7 @@ export async function calendarPng(model: CalendarModel, area: Area): Promise<Blo
   });
 
   const medianY = tableTop + years.length * CELL_H + CELL_H / 2;
-  text('Mediana', PAD, medianY, '500 12px', MUTED);
+  text(t('Mediana'), PAD, medianY, '500 12px', MUTED);
   model.monthMedians.forEach((median, month) =>
     text(
       Number.isFinite(median) ? formatCount(median) : '–',
@@ -114,7 +115,10 @@ export async function calendarPng(model: CalendarModel, area: Area): Promise<Blo
 
   if (chartSrc) {
     text(
-      `${formatMonth(model.selectedYear, model.selectedMonth)} frente a los demás años · mediana ${formatCount(model.reference.median)}`,
+      t('{mes} frente a los demás años · mediana {m}', {
+        mes: formatMonth(model.selectedYear, model.selectedMonth),
+        m: formatCount(model.reference.median),
+      }),
       PAD,
       chartTop - 20,
       '600 15px',
@@ -123,14 +127,17 @@ export async function calendarPng(model: CalendarModel, area: Area): Promise<Blo
   }
 
   text(
-    `* provisional (casi tiempo real) · ≥ mes incompleto · Fuente: NASA FIRMS (MODIS C6.1 y VIIRS S-NPP C2), datos hasta ${model.manifest.tiempo.ultimoDato}`,
+    t(
+      '* provisional (casi tiempo real) · ≥ mes incompleto · Fuente: NASA FIRMS (MODIS C6.1 y VIIRS S-NPP C2), datos hasta {d}',
+      { d: model.manifest.tiempo.ultimoDato },
+    ),
     PAD,
     H - 44,
     '400 12px',
     MUTED,
   );
   text(
-    `Método: ${model.manifest.metodo.nombre}. NASA no avala este producto.`,
+    t('Método: {m}. NASA no avala este producto.', { m: model.manifest.metodo.nombre }),
     PAD,
     H - 24,
     '400 12px',

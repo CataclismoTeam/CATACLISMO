@@ -1,3 +1,4 @@
+import { isEnglish, t, useT } from '../lib/i18n.ts';
 import { MapPin, Search, X } from 'lucide-react';
 import { useId, useRef, useState, type FormEvent } from 'react';
 import { cn } from '../lib/cn.ts';
@@ -26,14 +27,14 @@ interface GeocodingFeature {
 }
 
 async function geocode(query: string): Promise<Place[]> {
-  const url = `https://api.maptiler.com/geocoding/${encodeURIComponent(query)}.json?key=${MAPTILER_KEY}&country=es&language=es&limit=5`;
+  const url = `https://api.maptiler.com/geocoding/${encodeURIComponent(query)}.json?key=${MAPTILER_KEY}&country=es&language=${isEnglish() ? 'en' : 'es'}&limit=5`;
   const response = await fetch(url);
   if (!response.ok) throw new Error(String(response.status));
   const data = (await response.json()) as { features?: GeocodingFeature[] };
   return (data.features ?? [])
     .filter((f) => f.bbox || f.center)
     .map((f) => ({
-      name: f.place_name ?? f.text ?? 'Lugar',
+      name: f.place_name ?? f.text ?? t('Lugar'),
       bbox: f.bbox ?? around(f.center!),
     }));
 }
@@ -50,6 +51,7 @@ export function SearchBox({ className, autoFocus }: { className?: string; autoFo
   const [busy, setBusy] = useState(false);
   const input = useRef<HTMLInputElement>(null);
   const listId = useId();
+  useT();
 
   const go = (bbox: [number, number, number, number]) => {
     flyTo(bbox);
@@ -69,7 +71,9 @@ export function SearchBox({ className, autoFocus }: { className?: string; autoFo
     if (!MAPTILER_KEY) {
       setPlaces([]);
       setMessage(
-        'Buscar lugares por nombre necesita la clave de MapTiler. Prueba con coordenadas: 36.49, -5.2',
+        t(
+          'Buscar lugares por nombre necesita la clave de MapTiler. Prueba con coordenadas: 36.49, -5.2',
+        ),
       );
       return;
     }
@@ -78,13 +82,13 @@ export function SearchBox({ className, autoFocus }: { className?: string; autoFo
     try {
       const found = await geocode(q);
       setPlaces(found);
-      if (!found.length) setMessage(`No se ha encontrado «${q}» en España.`);
+      if (!found.length) setMessage(t('No se ha encontrado «{q}» en España.', { q }));
     } catch {
       setPlaces([]);
       setMessage(
         navigator.onLine
-          ? 'El buscador no responde ahora. Prueba con coordenadas: 36.49, -5.2'
-          : 'Sin conexión: solo se puede buscar por coordenadas (36.49, -5.2).',
+          ? t('El buscador no responde ahora. Prueba con coordenadas: 36.49, -5.2')
+          : t('Sin conexión: solo se puede buscar por coordenadas (36.49, -5.2).'),
       );
     } finally {
       setBusy(false);
@@ -93,9 +97,9 @@ export function SearchBox({ className, autoFocus }: { className?: string; autoFo
 
   return (
     <div className={cn('relative', className)}>
-      <form role="search" aria-label="Buscar en el mapa" onSubmit={submit} className="flex">
+      <form role="search" aria-label={t('Buscar en el mapa')} onSubmit={submit} className="flex">
         <label className="relative flex min-w-0 flex-1 items-center">
-          <span className="sr-only">Buscar un lugar o coordenadas</span>
+          <span className="sr-only">{t('Buscar un lugar o coordenadas')}</span>
           <Search
             size={16}
             strokeWidth={1.5}
@@ -115,7 +119,7 @@ export function SearchBox({ className, autoFocus }: { className?: string; autoFo
                 setMessage('');
               }
             }}
-            placeholder="Lugar o «lat, lon»"
+            placeholder={t('Lugar o «lat, lon»')}
             aria-controls={places.length ? listId : undefined}
             aria-busy={busy}
             className="h-9 w-full min-w-0 rounded-md border border-line-strong bg-canvas pr-2 pl-8 text-sm text-ink placeholder:text-ink-muted pointer-coarse:h-11"
@@ -130,7 +134,7 @@ export function SearchBox({ className, autoFocus }: { className?: string; autoFo
               <Button
                 variant="ghost"
                 size="icon"
-                aria-label="Cerrar aviso de búsqueda"
+                aria-label={t('Cerrar aviso de búsqueda')}
                 className="-my-1 ml-auto"
                 onClick={() => setMessage('')}
               >
@@ -139,7 +143,7 @@ export function SearchBox({ className, autoFocus }: { className?: string; autoFo
             </p>
           )}
           {places.length > 0 && (
-            <ul id={listId} aria-label="Resultados" className="m-0 list-none p-0">
+            <ul id={listId} aria-label={t('Resultados')} className="m-0 list-none p-0">
               {places.map((p) => (
                 <li key={p.name + p.bbox.join()}>
                   <button

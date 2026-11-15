@@ -1,3 +1,4 @@
+import { locale, useT } from '../lib/i18n.ts';
 import { ArrowUp, ChevronRight, X } from 'lucide-react';
 import { useMemo, useState } from 'react';
 import { cn } from '../lib/cn.ts';
@@ -15,16 +16,17 @@ const COMPASS = ['N', 'NE', 'E', 'SE', 'S', 'SO', 'O', 'NO'];
 const ALL = 'todas';
 
 function Status({ active, end }: { active: boolean; end: string }) {
+  const t = useT();
   // Forma + texto, no solo color. «Activo» es medible: con detecciones en los últimos días del dato
   return active ? (
     <span className="inline-flex items-center gap-1 text-xs font-semibold text-fire">
       <span aria-hidden className="size-2.5 rounded-full bg-fire" />
-      Activo al {shortDate(end)} (cierre del dato)
+      {t('Activo al {d} (cierre del dato)', { d: shortDate(end) })}
     </span>
   ) : (
     <span className="inline-flex items-center gap-1 text-xs text-ink-muted">
       <span aria-hidden className="size-2.5 rounded-full border-2 border-ink-muted" />
-      Sin detecciones al cierre del dato
+      {t('Sin detecciones al cierre del dato')}
     </span>
   );
 }
@@ -33,6 +35,7 @@ function IncidentRow({ incident, end }: { incident: Incident; end: string }) {
   const selected = useUi((s) => s.selectedIncident === incident.id);
   const focus = useUi((s) => s.focusIncident);
   const sameDay = incident.desde === incident.hasta;
+  const t = useT();
   return (
     <li>
       <button
@@ -54,7 +57,7 @@ function IncidentRow({ incident, end }: { incident: Incident; end: string }) {
             </span>
           </span>
           <span className="text-xs text-ink-muted">
-            {formatCount(incident.detecciones)} detecciones ·{' '}
+            {formatCount(incident.detecciones)} {t('detecciones')} ·{' '}
             {incident.areaKm2 < 1
               ? `${Math.round(incident.areaKm2 * 100)} ha`
               : `${formatCount(incident.areaKm2)} km²`}
@@ -84,6 +87,7 @@ export function IncidentsPanel({
   const setOpen = (next: boolean) => setLeftPanel(next ? 'incendios' : null);
   const scenarioId = useUi((s) => s.scenario);
   const setScenario = useUi((s) => s.setScenario);
+  const t = useT();
   const [region, setRegion] = useState(ALL);
   const [onlyActive, setOnlyActive] = useState(false);
 
@@ -103,15 +107,15 @@ export function IncidentsPanel({
 
   return (
     <aside
-      aria-label="Incendios"
+      aria-label={t('Incendios')}
       className="absolute inset-x-0 bottom-0 z-(--z-panel) flex max-h-[70%] flex-col rounded-t-lg border border-line-strong bg-surface shadow-panel md:inset-x-auto md:top-3 md:bottom-3 md:left-3 md:max-h-none md:w-80 md:rounded-lg"
     >
       <header className="flex items-center justify-between border-b border-line px-4 py-2">
-        <h2 className="m-0 text-base font-semibold">Incendios</h2>
+        <h2 className="m-0 text-base font-semibold">{t('Incendios')}</h2>
         <Button
           variant="ghost"
           size="icon"
-          aria-label="Cerrar incendios"
+          aria-label={t('Cerrar incendios')}
           onClick={() => setOpen(false)}
         >
           <X size={20} strokeWidth={1.5} aria-hidden />
@@ -122,9 +126,9 @@ export function IncidentsPanel({
         <section className="border-b border-line px-4 py-3">
           <div className="mb-2 flex items-center justify-between gap-2">
             <h3 className="m-0 text-xs font-semibold tracking-wide text-ink-muted uppercase">
-              Simulaciones
+              {t('Simulaciones')}
             </h3>
-            <Tag tone="simulado">Simulado</Tag>
+            <Tag tone="simulado">{t('Simulado')}</Tag>
           </div>
           <ul className="m-0 flex list-none flex-col gap-1 p-0">
             {SCENARIO_LIST.map((s) => {
@@ -143,7 +147,7 @@ export function IncidentsPanel({
                     <span className="flex items-baseline justify-between gap-2">
                       <strong>{s.name}</strong>
                       <span className="shrink-0 text-xs text-ink-muted">
-                        {s.kind === 'urbano' ? 'Urbano-forestal' : 'Forestal'}
+                        {s.kind === 'urbano' ? t('Urbano-forestal') : t('Forestal')}
                       </span>
                     </span>
                     <span className="text-xs text-ink-muted">
@@ -151,7 +155,7 @@ export function IncidentsPanel({
                     </span>
                     {active && (
                       <>
-                        <span className="text-ink-muted">{s.description}</span>
+                        <span className="text-ink-muted">{t(s.description)}</span>
                         <span className="flex items-center gap-1.5 text-xs">
                           <ArrowUp
                             size={14}
@@ -159,24 +163,28 @@ export function IncidentsPanel({
                             aria-hidden
                             style={{ transform: `rotate(${(s.windFrom + 180) % 360}deg)` }}
                           />
-                          Viento del {COMPASS[Math.round(s.windFrom / 45) % 8]}, {s.windKmh} km/h
+                          {t('Viento del {dir}, {v} km/h', {
+                            dir: t(COMPASS[Math.round(s.windFrom / 45) % 8]),
+                            v: s.windKmh,
+                          })}
                         </span>
                         {!routesRetry && routes.length === 0 && (
                           <span className="mt-1 border-t border-line pt-1.5 text-xs text-ink-muted">
-                            Sin vías de escape calculadas: el algoritmo no encontró núcleos de
-                            población amenazados en el área analizada.
+                            {t(
+                              'Sin vías de escape calculadas: el algoritmo no encontró núcleos de población amenazados en el área analizada.',
+                            )}
                           </span>
                         )}
                         {routes.length > 0 && (
                           <span className="mt-1 flex flex-col gap-1 border-t border-line pt-1.5">
-                            <span className="text-xs font-semibold">Vías de escape</span>
+                            <span className="text-xs font-semibold">{t('Vías de escape')}</span>
                             {routes.map((r) => (
                               <span key={r.nombre} className="text-xs">
                                 <span className="text-ink">{r.nombre}</span>
                                 <span className="block text-ink-muted">
-                                  {r.distanciaKm.toLocaleString('es-ES')} km · {r.tiempoMin} min
+                                  {r.distanciaKm.toLocaleString(locale())} km · {r.tiempoMin} min
                                   {r.margenMin !== null &&
-                                    ` · margen con el fuego ${r.margenMin} min`}
+                                    ` · ${t('margen con el fuego {m} min', { m: r.margenMin })}`}
                                 </span>
                               </span>
                             ))}
@@ -200,32 +208,39 @@ export function IncidentsPanel({
         <section className="px-4 py-3">
           <div className="mb-2 flex items-center justify-between gap-2">
             <h3 className="m-0 text-xs font-semibold tracking-wide text-ink-muted uppercase">
-              Detectados por satélite
+              {t('Detectados por satélite')}
             </h3>
-            <Tag tone="real">Real · FIRMS</Tag>
+            <Tag tone="real">{t('Real · FIRMS')}</Tag>
           </div>
           {load.status === 'error' ? (
             <LoadError what="los incendios detectados" onRetry={load.retry} />
           ) : !incidents ? (
             <p role="status" className="m-0 text-sm text-ink-muted">
-              Cargando incendios…
+              {t('Cargando incendios…')}
             </p>
           ) : (
             <>
               <p className="m-0 mb-2 text-xs text-ink-muted">
-                Del {shortDate(incidents.desde)} al {shortDate(incidents.hasta)} (último dato,{' '}
-                <span data-dinamico>{ago(incidents.hasta)}</span>): grupos de 3 o más detecciones a
-                menos de 2 km y 3 días entre sí. Activo: con detecciones en los 3 últimos días.
+                {t('Del {a} al {b} (último dato,', {
+                  a: shortDate(incidents.desde),
+                  b: shortDate(incidents.hasta),
+                })}{' '}
+                <span data-dinamico>{ago(incidents.hasta)}</span>
+                {t(
+                  '): grupos de 3 o más detecciones a menos de 2 km y 3 días entre sí. Activo: con detecciones en los 3 últimos días.',
+                )}
               </p>
               <label className="mb-2 flex flex-col gap-1 text-sm">
-                <span className="text-ink-muted">Comunidad autónoma</span>
+                <span className="text-ink-muted">{t('Comunidad autónoma')}</span>
                 <select
                   name="comunidad"
                   value={region}
                   onChange={(e) => setRegion(e.target.value)}
                   className="h-9 rounded-md border border-line-strong bg-canvas px-2 text-sm text-ink pointer-coarse:h-11"
                 >
-                  <option value={ALL}>Todas ({incidents.incendios.length})</option>
+                  <option value={ALL}>
+                    {t('Todas')} ({incidents.incendios.length})
+                  </option>
                   {byRegion(incidents).map(([name, list]) => (
                     <option key={name} value={name}>
                       {name} ({list.length})
@@ -241,12 +256,13 @@ export function IncidentsPanel({
                   onChange={(e) => setOnlyActive(e.target.checked)}
                   className="size-4 accent-accent"
                 />
-                Solo activos al {shortDate(incidents.hasta)}
+                {t('Solo activos al {d}', { d: shortDate(incidents.hasta) })}
               </label>
               {shown === 0 ? (
                 <p className="m-0 text-sm">
-                  Ningún incendio activo al cierre del dato en esta selección. Quita el filtro o
-                  elige otra comunidad.
+                  {t(
+                    'Ningún incendio activo al cierre del dato en esta selección. Quita el filtro o elige otra comunidad.',
+                  )}
                 </p>
               ) : (
                 groups.map(([name, list]) => (

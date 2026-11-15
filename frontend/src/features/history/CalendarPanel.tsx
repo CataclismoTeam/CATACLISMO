@@ -1,3 +1,4 @@
+import { useT } from '../../lib/i18n.ts';
 import { Download, FileImage, Info } from 'lucide-react';
 import { lazy, Suspense, useCallback, useState } from 'react';
 import { ErrorBoundary } from '../../app/ErrorBoundary.tsx';
@@ -19,6 +20,7 @@ function Exports({ model }: { model: CalendarModel }) {
   const setMethodOpen = useUi((s) => s.setMethodOpen);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState('');
+  const t = useT();
 
   const savePng = async () => {
     setBusy(true);
@@ -26,7 +28,7 @@ function Exports({ model }: { model: CalendarModel }) {
     try {
       download(pngFileName(area, model.yearRange), await calendarPng(model, area));
     } catch {
-      setError('No se pudo crear la imagen. Vuelve a intentarlo.');
+      setError(t('No se pudo crear la imagen. Vuelve a intentarlo.'));
     } finally {
       setBusy(false);
     }
@@ -37,7 +39,7 @@ function Exports({ model }: { model: CalendarModel }) {
       <div className="flex flex-wrap gap-2">
         <Button
           disabled={!gridReady}
-          title={gridReady ? undefined : 'Disponible cuando terminen de cargar los datos'}
+          title={gridReady ? undefined : t('Disponible cuando terminen de cargar los datos')}
           onClick={() =>
             download(
               csvFileName(area, model.yearRange),
@@ -46,15 +48,15 @@ function Exports({ model }: { model: CalendarModel }) {
           }
         >
           <Download size={16} strokeWidth={1.5} aria-hidden />
-          Descargar CSV
+          {t('Descargar CSV')}
         </Button>
         <Button disabled={busy} onClick={() => void savePng()}>
           <FileImage size={16} strokeWidth={1.5} aria-hidden />
-          {busy ? 'Creando imagen…' : 'Descargar PNG'}
+          {busy ? t('Creando imagen…') : t('Descargar PNG')}
         </Button>
         <Button variant="ghost" onClick={() => setMethodOpen(true)}>
           <Info size={16} strokeWidth={1.5} aria-hidden />
-          Cómo se armonizan los datos
+          {t('Cómo se armonizan los datos')}
         </Button>
       </div>
       {error && (
@@ -77,6 +79,7 @@ export default function CalendarPanel({ model }: { model: CalendarModel }) {
     [select],
   );
   const empty = model.total === 0;
+  const t = useT();
 
   return (
     <div className="grid gap-x-6 gap-y-5 p-4 xl:grid-cols-[15rem_minmax(0,1fr)_22rem]">
@@ -84,21 +87,24 @@ export default function CalendarPanel({ model }: { model: CalendarModel }) {
 
       {empty ? (
         <p className="m-0 self-center text-center text-base xl:col-span-2">
-          Sin detecciones en esta área entre {model.yearRange[0]} y {model.yearRange[1]}. Amplía el
-          radio o elige otra zona.
+          {t('Sin detecciones en esta área entre {a} y {b}. Amplía el radio o elige otra zona.', {
+            a: model.yearRange[0],
+            b: model.yearRange[1],
+          })}
         </p>
       ) : (
         <>
           <Heatmap model={model} onSelect={selectAndShow} />
           <div className="flex min-w-0 flex-col gap-4">
             <AnomalyCard model={model} onSelect={select} />
-            <ErrorBoundary what="el gráfico">
+            <ErrorBoundary what={t('el gráfico')}>
               <Suspense fallback={<div role="status" className="h-44 rounded-md bg-raised" />}>
                 <MonthChart model={model} />
               </Suspense>
               <p className="m-0 text-xs text-ink-muted">
-                Línea discontinua: mediana. Banda gris: lo habitual (percentiles 25 a 75). Barra
-                hueca: mes incompleto.
+                {t(
+                  'Línea discontinua: mediana. Banda gris: lo habitual (percentiles 25 a 75). Barra hueca: mes incompleto.',
+                )}
               </p>
             </ErrorBoundary>
             <Exports model={model} />

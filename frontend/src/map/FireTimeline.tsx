@@ -1,3 +1,4 @@
+import { locale, useT } from '../lib/i18n.ts';
 import { Pause, Play } from 'lucide-react';
 import { useEffect, useRef } from 'react';
 import { useUi } from '../store/ui.ts';
@@ -8,7 +9,8 @@ import { HORIZON_H } from './scenario.ts';
 const HOURS_PER_SECOND = HORIZON_H / 12;
 
 const hourLabel = (h: number) =>
-  `T+${h.toLocaleString('es-ES', { maximumFractionDigits: 1, minimumFractionDigits: 0 })} h`;
+  // T+ es igual en los dos idiomas; solo cambia el separador decimal
+  `T+${h.toLocaleString(locale(), { maximumFractionDigits: 1, minimumFractionDigits: 0 })} h`;
 
 const reducedMotion = () =>
   typeof window !== 'undefined' && window.matchMedia('(prefers-reduced-motion: reduce)').matches;
@@ -22,6 +24,7 @@ export function FireTimeline() {
   const playing = useUi((s) => s.playing);
   const setHour = useUi((s) => s.setFireHour);
   const setPlaying = useUi((s) => s.setPlaying);
+  const t = useT();
   // Hora con decimales completos mientras se reproduce; al store va redondeada a 0,1 h
   const exact = useRef(hour);
 
@@ -57,13 +60,13 @@ export function FireTimeline() {
 
   return (
     <section
-      aria-label="Línea de tiempo del incendio"
+      aria-label={t('Línea de tiempo del incendio')}
       className="flex w-88 max-w-full shrink-0 items-center gap-2 rounded-md border border-line-strong bg-surface px-3 py-2 shadow-panel"
     >
       <Button
         variant="ghost"
         size="icon"
-        aria-label={playing ? 'Pausar' : 'Reproducir'}
+        aria-label={playing ? t('Pausar') : t('Reproducir')}
         onClick={toggle}
       >
         {playing ? (
@@ -74,7 +77,7 @@ export function FireTimeline() {
       </Button>
       <label className="flex min-w-0 flex-1 flex-col gap-0.5 text-xs">
         <span className="flex items-baseline justify-between gap-2">
-          <span className="truncate text-ink-muted">Tiempo tras la ignición · simulado</span>
+          <span className="truncate text-ink-muted">{t('Tiempo tras la ignición · simulado')}</span>
           <output className="shrink-0 font-mono text-sm font-semibold whitespace-nowrap text-ink">
             {hourLabel(hour)}
           </output>

@@ -39,6 +39,7 @@ import { provider } from './providers.ts';
 import { DEFAULT_SCENARIO, loadEscapeRoutes, SCENARIOS, type Route } from './scenario.ts';
 import { UnitsPanel } from './UnitsPanel.tsx';
 import { initialView } from '../lib/hash.ts';
+import { useLang, useT } from '../lib/i18n.ts';
 import { useAreaDraw } from './useAreaDraw.ts';
 import { useShareHash } from './useShareHash.ts';
 import { MapToolbar } from './MapToolbar.tsx';
@@ -137,6 +138,8 @@ export default function MapView() {
       : undefined;
   }, [area]);
   const tool = useUi((s) => s.mapTool);
+  const t = useT();
+  const lang = useLang((s) => s.lang);
 
   // Estado vivo para los manejadores de MapLibre (se registran una sola vez)
   const live = useRef({
@@ -349,6 +352,21 @@ export default function MapView() {
     if (map && ready) installCalendarLayers(map, monthFc, areaFc, live.current.layers);
   }, [monthFc, areaFc, ready]);
 
+  // Controles de MapLibre (zoom, brújula, atribución) en el idioma de la interfaz
+  useEffect(() => {
+    const root = container.current;
+    if (!root || !ready) return;
+    const label = (selector: string, text: string) =>
+      root.querySelectorAll<HTMLElement>(selector).forEach((el) => {
+        el.title = text;
+        el.setAttribute('aria-label', text);
+      });
+    label('.maplibregl-ctrl-zoom-in', t('Acercar'));
+    label('.maplibregl-ctrl-zoom-out', t('Alejar'));
+    label('.maplibregl-ctrl-compass', t('Volver al norte y a vista cenital'));
+    label('.maplibregl-ctrl-attrib-button', t('Ver la atribución del mapa'));
+  }, [lang, ready, t]);
+
   useAreaDraw(mapRef, ready);
   useShareHash(mapRef, ready);
   const measure = useMeasure(mapRef, ready);
@@ -468,7 +486,7 @@ export default function MapView() {
     if (layers.evacuacion) {
       for (const route of routes) {
         add(
-          meetingElement(`Refugio ${route.refugio}`),
+          meetingElement(t('Refugio {r}', { r: route.refugio })),
           route.coords.at(-1) ?? route.coords[0],
           'bottom',
         );
@@ -482,7 +500,9 @@ export default function MapView() {
     return () => {
       map.off('moveend', declutter);
     };
-  }, [scenario, routes, layers.unidades, layers.evacuacion, layers.incendio]);
+    // `lang` vuelve a crear los marcadores con los textos en el idioma nuevo
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [scenario, routes, layers.unidades, layers.evacuacion, layers.incendio, lang]);
 
   return (
     <div className={cn('absolute inset-0', far && 'map-far', mid && 'map-mid', tool && 'map-tool')}>
@@ -490,7 +510,7 @@ export default function MapView() {
       <div ref={container} style={{ position: 'absolute', inset: 0 }} data-testid="mapa" />
       {!ready && (
         <p role="status" className="map-placeholder absolute inset-0 m-0 grid place-items-center">
-          <span className="rounded-sm bg-canvas px-3 py-1.5">Cargando el mapa…</span>
+          <span className="rounded-sm bg-canvas px-3 py-1.5">{t('Cargando el mapa…')}</span>
         </p>
       )}
       {wide && searchSlot && createPortal(<SearchBox className="w-full max-w-sm" />, searchSlot)}
@@ -553,47 +573,49 @@ export default function MapView() {
             {copied ? (
               <>
                 <Check size={16} strokeWidth={2} aria-hidden className="text-ok" />
-                Enlace copiado
+                {t('Enlace copiado')}
               </>
             ) : (
-              'No se ha podido copiar: copia la dirección de la barra del navegador.'
+              t('No se ha podido copiar: copia la dirección de la barra del navegador.')
             )}
           </p>
         )}
         {measure && (
           <section
-            aria-label="Regla"
+            aria-label={t('Regla')}
             className="flex flex-col gap-1.5 rounded-md border border-[#ffe066] bg-surface px-3 py-2 text-sm shadow-panel"
           >
             <p role="status" className="m-0 flex flex-wrap items-baseline gap-x-3 gap-y-0.5">
               <span>
-                <span className="text-ink-muted">Distancia </span>
+                <span className="text-ink-muted">{t('Distancia')} </span>
                 <strong className="font-mono">{formatLength(measure.km)}</strong>
               </span>
               {measure.closed && (
                 <span>
-                  <span className="text-ink-muted">Superficie </span>
+                  <span className="text-ink-muted">{t('Superficie')} </span>
                   <strong className="font-mono">{formatArea(measure.km2)}</strong>
                 </span>
               )}
             </p>
             <p className="m-0 text-xs text-ink-muted">
               {measure.closed
-                ? 'Área cerrada. Borra para medir otra.'
-                : 'Pulsa en el mapa para añadir puntos; pulsa el primero para cerrar el área. Esc para salir.'}
+                ? t('Área cerrada. Borra para medir otra.')
+                : t(
+                    'Pulsa en el mapa para añadir puntos; pulsa el primero para cerrar el área. Esc para salir.',
+                  )}
             </p>
             <div className="flex flex-wrap gap-2">
               {!measure.closed && measure.points >= 3 && (
-                <Button onClick={measure.close}>Cerrar área</Button>
+                <Button onClick={measure.close}>{t('Cerrar área')}</Button>
               )}
               {measure.points > 0 && (
                 <Button variant="ghost" onClick={measure.clear}>
-                  Borrar
+                  {t('Borrar')}
                 </Button>
               )}
               <Button variant="ghost" onClick={() => useUi.getState().setMapTool(null)}>
                 <X size={16} strokeWidth={1.5} aria-hidden />
-                Salir
+                {t('Salir')}
               </Button>
             </div>
           </section>
@@ -603,23 +625,23 @@ export default function MapView() {
             role="status"
             className="m-0 flex items-center gap-2 rounded-md border border-accent bg-surface py-1 pr-1 pl-3 text-sm shadow-panel"
           >
-            Pulsa dos esquinas del área en el mapa
+            {t('Pulsa dos esquinas del área en el mapa')}
             <Button size="md" onClick={() => useUi.getState().setMapTool(null)}>
               <X size={16} strokeWidth={1.5} aria-hidden />
-              Cancelar
+              {t('Cancelar')}
             </Button>
           </p>
         )}
         {layers.mes && manifest && (
           <p
             role="status"
-            aria-label="Capa del mes del calendario"
+            aria-label={t('Capa del mes del calendario')}
             className="m-0 rounded-sm border border-ok/60 bg-surface px-2 py-1 text-xs font-semibold tracking-wide text-ok uppercase shadow-panel"
           >
-            Real · FIRMS ·{' '}
+            {t('Real · FIRMS')} ·{' '}
             {formatMonth(manifest.tiempo.anioInicial + Math.floor(month / 12), month % 12)}
-            {!grid && ' · cargando…'}
-            {monthFc && monthFc.features.length === 0 && ' · sin detecciones'}
+            {!grid && ` · ${t('cargando…')}`}
+            {monthFc && monthFc.features.length === 0 && ` · ${t('sin detecciones')}`}
           </p>
         )}
         {tileError && (
@@ -627,8 +649,9 @@ export default function MapView() {
             role="status"
             className="m-0 rounded-md border border-warn bg-surface px-3 py-1.5 text-sm"
           >
-            Parte del mapa no se ha podido descargar. Comprueba la conexión; el resto sigue
-            funcionando.
+            {t(
+              'Parte del mapa no se ha podido descargar. Comprueba la conexión; el resto sigue funcionando.',
+            )}
           </p>
         )}
       </div>

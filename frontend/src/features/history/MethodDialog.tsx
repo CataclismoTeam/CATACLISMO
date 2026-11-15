@@ -1,49 +1,35 @@
-import type { Manifest } from '../../data/types.ts';
-import { formatCount, MONTHS_SHORT } from '../../lib/format.ts';
+import { t, useEnglish, useT } from '../../lib/i18n.ts';
+import MethodBodyEn from './MethodBodyEn.tsx';
+import { formatCount } from '../../lib/format.ts';
+import { decimal, sensorSpans } from './methodData.ts';
+import { FactorTable, P, Section } from './methodParts.tsx';
 import { useHistory } from '../../store/history.ts';
 import { useUi } from '../../store/ui.ts';
 import { SourceLink } from '../../ui/SourceLink.tsx';
 import { SOURCES } from '../../lib/sources.ts';
 import { ModalDialog as Dialog } from '../../ui/ModalDialog.tsx';
 import { HORIZON_H, NOW_H } from '../../map/scenario.ts';
-import { monthInfo } from './series.ts';
-
-const decimal = new Intl.NumberFormat('es-ES', {
-  minimumFractionDigits: 3,
-  maximumFractionDigits: 3,
-});
-
-/** Tramos consecutivos de la serie según el sensor que los alimenta. */
-function sensorSpans(manifest: Manifest): { from: string; to: string; sensors: string }[] {
-  const spans: { from: string; to: string; sensors: string }[] = [];
-  const label = (mi: number) =>
-    `${MONTHS_SHORT[mi % 12]} ${manifest.tiempo.anioInicial + Math.floor(mi / 12)}`;
-  for (let mi = 0; mi < manifest.tiempo.meses; mi++) {
-    const { sensors } = monthInfo(manifest, mi);
-    if (!sensors) continue;
-    const last = spans.at(-1);
-    if (last?.sensors === sensors) last.to = label(mi);
-    else spans.push({ from: label(mi), to: label(mi), sensors });
-  }
-  return spans;
-}
-
-function Section({ title, children }: { title: string; children: React.ReactNode }) {
-  return (
-    <section className="mb-5 last:mb-0">
-      <h3 className="m-0 mb-1.5 text-base font-semibold">{title}</h3>
-      <div className="flex flex-col gap-2 text-sm">{children}</div>
-    </section>
-  );
-}
-
-const P = ({ children }: { children: React.ReactNode }) => <p className="m-0">{children}</p>;
 
 export default function MethodDialog() {
   const open = useUi((s) => s.methodOpen);
   const setOpen = useUi((s) => s.setMethodOpen);
   const manifest = useHistory((s) => s.manifest);
+  useT();
+  const en = useEnglish();
   if (!manifest) return null;
+  if (en) {
+    return (
+      <Dialog
+        open={open}
+        onOpenChange={setOpen}
+        title={t('Datos y métodos')}
+        description="Where the data comes from, how the calendar and the map are computed, and their limits."
+        className="w-[min(94vw,48rem)]"
+      >
+        <MethodBodyEn manifest={manifest} />
+      </Dialog>
+    );
+  }
   const { metodo, tiempo, filtros, registros } = manifest;
   const diag = metodo.diagnostico;
 
@@ -111,61 +97,11 @@ export default function MethodDialog() {
           <li>Solo VIIRS: detecciones VIIRS × k.</li>
           <li>Ambos: media de MODIS y de VIIRS × k.</li>
         </ul>
-        <div className="overflow-x-auto">
-          <table className="w-full border-collapse text-right text-[0.8125rem] tabular-nums">
-            <caption className="mb-1 text-left text-ink-muted">
-              Factor k por mes del año e intervalo del 95 %
-            </caption>
-            <thead>
-              <tr className="text-ink-muted">
-                <th scope="row" className="text-left font-medium">
-                  Mes
-                </th>
-                {MONTHS_SHORT.map((m) => (
-                  <th key={m} scope="col" className="px-1 font-medium">
-                    {m}
-                  </th>
-                ))}
-              </tr>
-            </thead>
-            <tbody>
-              <tr>
-                <th scope="row" className="text-left font-medium">
-                  k
-                </th>
-                {metodo.factores.map((k, i) => (
-                  <td key={i} className="px-1">
-                    {decimal.format(k)}
-                  </td>
-                ))}
-              </tr>
-              <tr className="text-ink-muted">
-                <th scope="row" className="text-left font-medium">
-                  Mín.
-                </th>
-                {metodo.intervalo95.map(([lo], i) => (
-                  <td key={i} className="px-1">
-                    {decimal.format(lo)}
-                  </td>
-                ))}
-              </tr>
-              <tr className="text-ink-muted">
-                <th scope="row" className="text-left font-medium">
-                  Máx.
-                </th>
-                {metodo.intervalo95.map(([, hi], i) => (
-                  <td key={i} className="px-1">
-                    {decimal.format(hi)}
-                  </td>
-                ))}
-              </tr>
-            </tbody>
-          </table>
-        </div>
+        <FactorTable manifest={manifest} />
         {diag.correlacionMensual !== null && diag.errorRelativoMediano !== null && (
           <P>
             Comprobación: mes a mes, MODIS y VIIRS × k tienen una correlación de{' '}
-            {decimal.format(diag.correlacionMensual)} y difieren un{' '}
+            {decimal().format(diag.correlacionMensual)} y difieren un{' '}
             {Math.round(diag.errorRelativoMediano * 100)} % de mediana.
           </P>
         )}

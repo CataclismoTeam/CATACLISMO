@@ -1,3 +1,4 @@
+import { useT } from '../lib/i18n.ts';
 import { Layers, Link, Ruler, Search } from 'lucide-react';
 import { useUi } from '../store/ui.ts';
 import { Button } from '../ui/Button.tsx';
@@ -22,39 +23,40 @@ export function MapToolbar({
   const setMapTool = useUi((s) => s.setMapTool);
   const layersOpen = useUi((s) => s.layersOpen);
   const setLayersOpen = useUi((s) => s.setLayersOpen);
+  const t = useT();
 
   return (
     <div
       role="toolbar"
-      aria-label="Herramientas del mapa"
+      aria-label={t('Herramientas del mapa')}
       className="flex gap-2 max-md:absolute max-md:top-3 max-md:right-14"
     >
       {showSearch && (
         <Button aria-pressed={searchOpen} onClick={onSearch} className="px-2.5">
           <Search size={16} strokeWidth={1.5} aria-hidden />
-          <span className="max-md:sr-only">Buscar</span>
+          <span className="max-md:sr-only">{t('Buscar')}</span>
         </Button>
       )}
       <Button
         aria-pressed={measuring}
-        title="Medir distancias y superficies"
+        title={t('Medir distancias y superficies')}
         onClick={() => setMapTool(measuring ? null : 'medir')}
         className="px-2.5"
       >
         <Ruler size={16} strokeWidth={1.5} aria-hidden />
-        <span className="max-md:sr-only">Medir</span>
+        <span className="max-md:sr-only">{t('Medir')}</span>
       </Button>
       <Button
-        title="Copiar un enlace a esta vista"
+        title={t('Copiar un enlace a esta vista')}
         onClick={() => void copyLink().then(onCopied)}
         className="px-2.5"
       >
         <Link size={16} strokeWidth={1.5} aria-hidden />
-        <span className="max-md:sr-only">Copiar enlace</span>
+        <span className="max-md:sr-only">{t('Copiar enlace')}</span>
       </Button>
       <Button aria-pressed={layersOpen} onClick={() => setLayersOpen(!layersOpen)}>
         <Layers size={16} strokeWidth={1.5} aria-hidden />
-        Capas
+        {t('Capas')}
       </Button>
     </div>
   );

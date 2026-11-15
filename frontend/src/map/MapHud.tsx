@@ -1,3 +1,4 @@
+import { locale, useT } from '../lib/i18n.ts';
 import { Crosshair, X } from 'lucide-react';
 import type { Map as MapLibre } from 'maplibre-gl';
 import { useEffect, useState, type RefObject } from 'react';
@@ -72,44 +73,45 @@ export function CoordinatesBar({
 
 /** Ficha de la unidad seleccionada. */
 export function UnitCard({ unit, onClose }: { unit: Unit; onClose: () => void }) {
+  const t = useT();
   const status = STATUS[unit.status];
   return (
     <section
-      aria-label={`Ficha de ${unit.name}`}
+      aria-label={t('Ficha de {x}', { x: t(unit.name) })}
       className={`${panel} min-h-0 w-88 max-w-full overflow-y-auto p-4`}
     >
       <header className="mb-2 flex items-start justify-between gap-2">
         <div className="min-w-0">
           <p className="m-0 text-xs font-semibold tracking-wide text-ink-muted uppercase">
-            {KIND[unit.kind].label} · {unit.id}
+            {t(KIND[unit.kind].label)} · {unit.id}
           </p>
-          <h3 className="m-0 text-base font-semibold">{unit.name}</h3>
+          <h3 className="m-0 text-base font-semibold">{t(unit.name)}</h3>
         </div>
-        <Button variant="ghost" size="icon" aria-label="Cerrar ficha" onClick={onClose}>
+        <Button variant="ghost" size="icon" aria-label={t('Cerrar ficha')} onClick={onClose}>
           <X size={20} strokeWidth={1.5} aria-hidden />
         </Button>
       </header>
       <dl className="m-0 grid grid-cols-[auto_1fr] gap-x-4 gap-y-1 text-sm">
-        <dt className="text-ink-muted">Estado</dt>
+        <dt className="text-ink-muted">{t('Estado')}</dt>
         <dd className="m-0 font-semibold" style={{ color: status.color }}>
-          {status.label}
+          {t(status.label)}
         </dd>
-        <dt className="text-ink-muted">Medio</dt>
+        <dt className="text-ink-muted">{t('Medio')}</dt>
         <dd className="m-0">
-          {DOMAIN_LABEL[unit.domain]}
-          {unit.group ? ` · ${unit.group}` : ''}
+          {t(DOMAIN_LABEL[unit.domain])}
+          {unit.group ? ` · ${t(unit.group)}` : ''}
         </dd>
-        <dt className="text-ink-muted">Dotación</dt>
-        <dd className="m-0">{unit.crew} personas</dd>
-        <dt className="text-ink-muted">Posición</dt>
+        <dt className="text-ink-muted">{t('Dotación')}</dt>
+        <dd className="m-0">{t('{n} personas', { n: unit.crew })}</dd>
+        <dt className="text-ink-muted">{t('Posición')}</dt>
         <dd className="m-0 font-mono">
           {lat(unit.lat)} {lon(unit.lon)}
         </dd>
-        <dt className="text-ink-muted">Hora de simulación</dt>
+        <dt className="text-ink-muted">{t('Hora de simulación')}</dt>
         <dd className="m-0 font-mono">{unit.updated.slice(11, 16)} UTC</dd>
       </dl>
       <Tag tone="simulado" className="mt-3">
-        Unidad simulada
+        {t('Unidad simulada')}
       </Tag>
     </section>
   );
@@ -130,38 +132,44 @@ export function FireCard({
   observation: FireObservation;
   onClose: () => void;
 }) {
+  const t = useT();
   return (
     <section
-      aria-label="Detalle del fuego"
+      aria-label={t('Detalle del fuego')}
       className={`${panel} min-h-0 w-88 max-w-full overflow-y-auto p-4`}
     >
       <header className="mb-2 flex items-start justify-between gap-2">
         <div>
           <p className="m-0 text-xs font-semibold tracking-wide text-fire uppercase">
-            Foco térmico · simulado
+            {t('Foco térmico · simulado')}
           </p>
-          <h3 className="m-0 text-base font-semibold">Detalle de intensidad</h3>
+          <h3 className="m-0 text-base font-semibold">{t('Detalle de intensidad')}</h3>
         </div>
-        <Button variant="ghost" size="icon" aria-label="Cerrar detalle del fuego" onClick={onClose}>
+        <Button
+          variant="ghost"
+          size="icon"
+          aria-label={t('Cerrar detalle del fuego')}
+          onClick={onClose}
+        >
           <X size={20} strokeWidth={1.5} aria-hidden />
         </Button>
       </header>
       <dl className="m-0 grid grid-cols-[auto_1fr] gap-x-4 gap-y-1 text-sm">
-        <dt className="text-ink-muted">Intensidad</dt>
+        <dt className="text-ink-muted">{t('Intensidad')}</dt>
         <dd className="m-0 font-semibold text-fire">
-          {Math.round(observation.intensity).toLocaleString('es-ES')} MW
+          {Math.round(observation.intensity).toLocaleString(locale())} MW
         </dd>
-        <dt className="text-ink-muted">Altura de llama</dt>
+        <dt className="text-ink-muted">{t('Altura de llama')}</dt>
         <dd className="m-0">{observation.flameHeight} m</dd>
-        <dt className="text-ink-muted">Llegada estimada</dt>
+        <dt className="text-ink-muted">{t('Llegada estimada')}</dt>
         <dd className="m-0">{observation.arrivalHours.toFixed(1)} h</dd>
-        <dt className="text-ink-muted">Coordenadas</dt>
+        <dt className="text-ink-muted">{t('Coordenadas')}</dt>
         <dd className="m-0 font-mono">
           {observation.lat.toFixed(5)} / {observation.lon.toFixed(5)}
         </dd>
       </dl>
       <Tag tone="simulado" className="mt-3">
-        Modelo de demostración
+        {t('Modelo de demostración')}
       </Tag>
     </section>
   );
@@ -178,6 +186,7 @@ export function IncidentCard({
   dataEnd?: string;
   onClose: () => void;
 }) {
+  const t = useT();
   const [lon0, lat0, lon1, lat1] = incident.bbox;
   // Visor de FIRMS centrado en el incendio y con sus fechas
   const firmsMap = `https://firms.modaps.eosdis.nasa.gov/map/#d:${incident.desde}..${incident.hasta};@${((lon0 + lon1) / 2).toFixed(3)},${((lat0 + lat1) / 2).toFixed(3)},11.0z`;
@@ -185,10 +194,10 @@ export function IncidentCard({
   const area =
     incident.areaKm2 < 1
       ? `${Math.round(incident.areaKm2 * 100)} ha`
-      : `${incident.areaKm2.toLocaleString('es-ES', { maximumFractionDigits: 1 })} km²`;
+      : `${incident.areaKm2.toLocaleString(locale(), { maximumFractionDigits: 1 })} km²`;
   return (
     <section
-      aria-label={`Incendio ${incident.id}`}
+      aria-label={`${t('Incendio')} ${incident.id}`}
       className={cn(
         panel,
         'overflow-y-auto p-4 max-md:absolute max-md:inset-x-3 max-md:top-14 max-md:max-h-[calc(100%-4.25rem)] md:min-h-0 md:w-88',
@@ -204,48 +213,48 @@ export function IncidentCard({
         <Button
           variant="ghost"
           size="icon"
-          aria-label="Cerrar ficha del incendio"
+          aria-label={t('Cerrar ficha del incendio')}
           onClick={onClose}
         >
           <X size={20} strokeWidth={1.5} aria-hidden />
         </Button>
       </header>
       <dl className="m-0 grid grid-cols-[auto_1fr] gap-x-4 gap-y-1 text-sm">
-        <dt className="text-ink-muted">Estado</dt>
+        <dt className="text-ink-muted">{t('Estado')}</dt>
         <dd className="m-0 font-semibold">
           {incident.activo
-            ? `Activo al cierre del dato${dataEnd ? ` (${shortDate(dataEnd)})` : ''}`
-            : 'Sin detecciones al cierre del dato'}
+            ? `${t('Activo al cierre del dato')}${dataEnd ? ` (${shortDate(dataEnd)})` : ''}`
+            : t('Sin detecciones al cierre del dato')}
         </dd>
-        <dt className="text-ink-muted">Última detección</dt>
+        <dt className="text-ink-muted">{t('Última detección')}</dt>
         <dd className="m-0">
           <span className="font-mono">{incident.hasta}</span>{' '}
           <span data-dinamico className="text-ink-muted">
             ({ago(incident.hasta)})
           </span>
         </dd>
-        <dt className="text-ink-muted">Detectado</dt>
+        <dt className="text-ink-muted">{t('Detectado')}</dt>
         <dd className="m-0 font-mono">
           {incident.desde === incident.hasta
             ? incident.desde
             : `${incident.desde} → ${incident.hasta}`}
         </dd>
-        <dt className="text-ink-muted">Detecciones</dt>
+        <dt className="text-ink-muted">{t('Detecciones')}</dt>
         <dd className="m-0">
-          {incident.detecciones.toLocaleString('es-ES')} ({incident.sensores.join(' y ')})
+          {incident.detecciones.toLocaleString(locale())} ({incident.sensores.join(` ${t('y')} `)})
         </dd>
-        <dt className="text-ink-muted">Área afectada</dt>
+        <dt className="text-ink-muted">{t('Área afectada')}</dt>
         <dd className="m-0">≈ {area}</dd>
-        <dt className="text-ink-muted">Potencia máx.</dt>
-        <dd className="m-0">{incident.frpMax.toLocaleString('es-ES')} MW</dd>
+        <dt className="text-ink-muted">{t('Potencia máx.')}</dt>
+        <dd className="m-0">{incident.frpMax.toLocaleString(locale())} MW</dd>
       </dl>
       <p className="m-0 mt-2 text-xs text-ink-muted">
-        Área estimada con la huella de los píxeles del satélite; no es un perímetro oficial.
+        {t('Área estimada con la huella de los píxeles del satélite; no es un perímetro oficial.')}
       </p>
       <div className="mt-3 flex flex-wrap items-center gap-x-3 gap-y-1">
-        <Tag tone="real">Real · NASA FIRMS</Tag>
+        <Tag tone="real">{t('Real · NASA FIRMS')}</Tag>
         <SourceLink
-          source={{ ...SOURCES.firms, name: 'Ver en el visor de FIRMS', url: firmsMap }}
+          source={{ ...SOURCES.firms, name: t('Ver en el visor de FIRMS'), url: firmsMap }}
           className="text-sm"
         />
       </div>

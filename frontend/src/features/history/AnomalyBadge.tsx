@@ -1,3 +1,4 @@
+import { useT } from '../../lib/i18n.ts';
 import {
   ChevronDown,
   ChevronsUp,
@@ -20,6 +21,7 @@ const STYLE: Record<AnomalyLevel, { icon: LucideIcon; className: string }> = {
 
 export function AnomalyBadge({ level, large }: { level: AnomalyLevel; large?: boolean }) {
   const { icon: Icon, className } = STYLE[level];
+  const t = useT();
   return (
     <span
       className={cn(
@@ -29,7 +31,7 @@ export function AnomalyBadge({ level, large }: { level: AnomalyLevel; large?: bo
       )}
     >
       <Icon size={large ? 20 : 16} strokeWidth={2} aria-hidden />
-      {ANOMALY_LABEL[level]}
+      {t(ANOMALY_LABEL[level])}
     </span>
   );
 }

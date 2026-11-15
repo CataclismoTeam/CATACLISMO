@@ -1,6 +1,7 @@
+import { t as tr, useT } from '../../lib/i18n.ts';
 import { memo } from 'react';
 import { cn } from '../../lib/cn.ts';
-import { formatCount, formatMonth, MONTHS_SHORT } from '../../lib/format.ts';
+import { formatCount, formatMonth, monthsShort } from '../../lib/format.ts';
 import { UNIT, type CalendarModel } from './model.ts';
 import { rampColor, rampGradient, scale } from './ramp.ts';
 import type { MonthInfo } from './series.ts';
@@ -12,9 +13,9 @@ const MARK_PARTIAL = '≥';
 function describe(info: MonthInfo): string {
   const notes: string[] = [];
   if (info.state === 'parcial') {
-    notes.push(`mes incompleto, ${info.daysCovered} de ${info.daysInMonth} días`);
+    notes.push(tr('mes incompleto, {a} de {b} días', { a: info.daysCovered, b: info.daysInMonth }));
   }
-  if (info.provisional) notes.push('dato provisional');
+  if (info.provisional) notes.push(tr('dato provisional'));
   return notes.length ? `, ${notes.join(', ')}` : '';
 }
 
@@ -28,28 +29,30 @@ interface Props {
 /** Calendario mes × año. Es una tabla real: se recorre con teclado y lector de pantalla. */
 export const Heatmap = memo(function Heatmap({ model, onSelect }: Props) {
   const { values, infos, years, max, series } = model;
-  const ticks = [0, 0.25, 0.5, 0.75, 1].map((t) => formatCount(Math.round(t * t * max)));
+  const t = useT();
+  const ticks = [0, 0.25, 0.5, 0.75, 1].map((f) => formatCount(Math.round(f * f * max)));
 
   return (
     <div className="flex min-w-0 flex-col gap-2">
       <div className="overflow-x-auto">
         <table className="w-full border-separate border-spacing-0.5">
           <caption className="sr-only">
-            Número de {UNIT[model.metric]} por mes y año. Pulsa un mes para compararlo con su
-            mediana.
+            {t('Número de {u} por mes y año. Pulsa un mes para compararlo con su mediana.', {
+              u: t(UNIT[model.metric]),
+            })}
           </caption>
           <thead>
             <tr className="text-xs text-ink-muted">
               <th scope="col" className="w-12 text-left font-medium">
-                Año
+                {t('Año')}
               </th>
-              {MONTHS_SHORT.map((m) => (
+              {monthsShort().map((m) => (
                 <th key={m} scope="col" className="font-medium">
                   {m}
                 </th>
               ))}
               <th scope="col" className="pl-2 text-right font-medium">
-                Total
+                {t('Total')}
               </th>
             </tr>
           </thead>
@@ -59,14 +62,14 @@ export const Heatmap = memo(function Heatmap({ model, onSelect }: Props) {
                 <th scope="row" className="text-left font-mono text-[0.8125rem] font-medium">
                   {year}
                 </th>
-                {MONTHS_SHORT.map((_, month) => {
+                {monthsShort().map((_, month) => {
                   const mi = (year - series.startYear) * 12 + month;
                   const info = infos[mi];
                   if (info.state === 'sin datos') {
                     return (
                       <td key={month} className={cn(cellBase, 'text-center text-ink-muted')}>
                         <span aria-hidden>–</span>
-                        <span className="sr-only">sin datos</span>
+                        <span className="sr-only">{t('sin datos')}</span>
                       </td>
                     );
                   }
@@ -103,7 +106,7 @@ export const Heatmap = memo(function Heatmap({ model, onSelect }: Props) {
           <tfoot>
             <tr className="text-ink-muted">
               <th scope="row" className="text-left text-xs font-medium">
-                Mediana
+                {t('Mediana')}
               </th>
               {model.monthMedians.map((median, month) => (
                 <td key={month} className={cellBase}>
@@ -120,7 +123,7 @@ export const Heatmap = memo(function Heatmap({ model, onSelect }: Props) {
 
       <div className="flex flex-wrap items-center gap-x-5 gap-y-2 text-xs text-ink-muted">
         <div className="flex items-center gap-2">
-          <span>Menos</span>
+          <span>{t('Menos')}</span>
           <div className="w-48">
             <div
               className="h-3 rounded-sm border border-line-strong"
@@ -132,11 +135,12 @@ export const Heatmap = memo(function Heatmap({ model, onSelect }: Props) {
               ))}
             </div>
           </div>
-          <span>Más</span>
+          <span>{t('Más')}</span>
         </div>
-        <span>Unidad: {UNIT[model.metric]} al mes</span>
+        <span>{t('Unidad: {u} al mes', { u: t(UNIT[model.metric]) })}</span>
         <span>
-          {MARK_PROVISIONAL} provisional (casi tiempo real) · {MARK_PARTIAL} mes incompleto
+          {MARK_PROVISIONAL} {t('provisional (casi tiempo real)')} · {MARK_PARTIAL}{' '}
+          {t('mes incompleto')}
         </span>
       </div>
     </div>

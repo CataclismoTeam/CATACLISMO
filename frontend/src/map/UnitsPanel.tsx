@@ -1,3 +1,4 @@
+import { useT } from '../lib/i18n.ts';
 import { Radio, X } from 'lucide-react';
 import { useState } from 'react';
 import { cn } from '../lib/cn.ts';
@@ -11,6 +12,7 @@ function UnitRow({ unit }: { unit: Unit }) {
   const selected = useUi((s) => s.selectedUnit === unit.id);
   const focusUnit = useUi((s) => s.focusUnit);
   const status = STATUS[unit.status];
+  const t = useT();
   return (
     <li>
       <button
@@ -25,10 +27,10 @@ function UnitRow({ unit }: { unit: Unit }) {
         <span className="flex min-w-0 flex-1 flex-col">
           <span className="flex items-baseline gap-2">
             <strong className="font-mono">{unit.id}</strong>
-            <span className="truncate text-ink-muted">{KIND[unit.kind].label}</span>
+            <span className="truncate text-ink-muted">{t(KIND[unit.kind].label)}</span>
           </span>
           <span className="text-xs" style={{ color: status.color }}>
-            {status.label}
+            {t(status.label)}
           </span>
         </span>
       </button>
@@ -43,6 +45,7 @@ export function UnitsPanel() {
   const setRadioOpen = useUi((s) => s.setRadioOpen);
   const scenario = SCENARIOS[useUi((s) => s.scenario)];
   const [domain, setDomain] = useState<Domain>('tierra');
+  const t = useT();
   if (!open || !scenario) return null;
 
   const of = (d: Domain) => scenario.units.filter((u) => u.domain === d);
@@ -51,20 +54,20 @@ export function UnitsPanel() {
 
   return (
     <aside
-      aria-label="Unidades"
+      aria-label={t('Unidades')}
       className="absolute inset-x-0 bottom-0 z-(--z-panel) flex max-h-[70%] flex-col rounded-t-lg border border-line-strong bg-surface shadow-panel md:inset-x-auto md:top-3 md:bottom-3 md:left-3 md:max-h-none md:w-80 md:rounded-lg"
     >
       <header className="flex items-center justify-between border-b border-line px-4 py-2">
         <div>
-          <h2 className="m-0 text-base font-semibold">Unidades</h2>
+          <h2 className="m-0 text-base font-semibold">{t('Unidades')}</h2>
           <p className="m-0 text-xs text-ink-muted">{scenario.name}</p>
         </div>
         <div className="flex items-center gap-2">
-          <Tag tone="simulado">Simulado</Tag>
+          <Tag tone="simulado">{t('Simulado')}</Tag>
           <Button
             variant="ghost"
             size="icon"
-            aria-label="Cerrar unidades"
+            aria-label={t('Cerrar unidades')}
             onClick={() => setLeftPanel(null)}
           >
             <X size={20} strokeWidth={1.5} aria-hidden />
@@ -74,7 +77,7 @@ export function UnitsPanel() {
 
       <div
         role="tablist"
-        aria-label="Dominio"
+        aria-label={t('Dominio')}
         className="grid grid-flow-col gap-1 border-b border-line p-2"
       >
         {domains.map((d) => (
@@ -91,14 +94,14 @@ export function UnitsPanel() {
                 : 'text-ink-muted hover:bg-hover hover:text-ink',
             )}
           >
-            {DOMAIN_LABEL[d]} ({of(d).length})
+            {t(DOMAIN_LABEL[d])} ({of(d).length})
           </button>
         ))}
       </div>
 
       <div
         role="tabpanel"
-        aria-label={DOMAIN_LABEL[current]}
+        aria-label={t(DOMAIN_LABEL[current])}
         className="min-h-0 flex-1 overflow-y-auto px-3 py-2"
       >
         {current === 'tierra' ? (
@@ -110,9 +113,9 @@ export function UnitsPanel() {
             >
               <Radio size={16} strokeWidth={1.5} aria-hidden />
               <span className="flex-1">
-                <strong>Canal General Tierra</strong>
+                <strong>{t('Canal General Tierra')}</strong>
                 <span className="block text-xs text-ink-muted">
-                  Hablan todos los medios de tierra ({of('tierra').length})
+                  {t('Hablan todos los medios de tierra ({n})', { n: of('tierra').length })}
                 </span>
               </span>
             </button>
@@ -121,10 +124,10 @@ export function UnitsPanel() {
               return (
                 <section key={g} className="mb-2">
                   <h3 className="m-0 flex items-center justify-between px-1 py-1 text-xs font-semibold tracking-wide text-ink-muted uppercase">
-                    {g}
+                    {t(g)}
                     <span className="flex items-center gap-1 font-normal normal-case">
                       <Radio size={12} strokeWidth={1.5} aria-hidden />
-                      canal propio
+                      {t('canal propio')}
                     </span>
                   </h3>
                   <ul className="m-0 flex list-none flex-col gap-0.5 p-0">

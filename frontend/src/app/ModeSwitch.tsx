@@ -1,3 +1,4 @@
+import { useT } from '../lib/i18n.ts';
 import { Box, Square } from 'lucide-react';
 import { useEffect } from 'react';
 import { cn } from '../lib/cn.ts';
@@ -12,6 +13,7 @@ const MODES: [MapMode, string, typeof Square, string][] = [
 export function ModeSwitch() {
   const mode = useUi((s) => s.mapMode);
   const setMode = useUi((s) => s.setMapMode);
+  const t = useT();
 
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
@@ -28,7 +30,7 @@ export function ModeSwitch() {
   return (
     <div
       role="radiogroup"
-      aria-label="Modo del mapa"
+      aria-label={t('Modo del mapa')}
       className="flex rounded-md border border-line-strong bg-canvas p-0.5"
     >
       {MODES.map(([id, label, Icon, hint], i) => (
@@ -37,7 +39,7 @@ export function ModeSwitch() {
           type="button"
           role="radio"
           aria-checked={mode === id}
-          title={`${hint} (tecla ${i + 1})`}
+          title={t('{hint} (tecla {n})', { hint: t(hint), n: i + 1 })}
           onClick={() => setMode(id)}
           className={cn(
             'flex h-8 cursor-pointer items-center gap-1.5 rounded-sm px-3 text-sm font-semibold pointer-coarse:h-10',

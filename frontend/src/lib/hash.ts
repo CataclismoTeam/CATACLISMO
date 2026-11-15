@@ -1,4 +1,4 @@
-// Estado compartible en el hash de la URL: #sim=bermeja&inc=INC-001&z=11.5&c=-5.2,36.49&m=3d
+// Estado compartible en el hash de la URL: #sim=bermeja&inc=INC-001&z=11.5&c=-5.2,36.49&m=3d&l=en
 // Se lee una vez al cargar (store y cámara inicial) y el mapa lo reescribe al cambiar.
 export interface SharedView {
   sim?: string;
@@ -6,6 +6,8 @@ export interface SharedView {
   zoom?: number;
   center?: [lon: number, lat: number];
   mode?: '2d' | '3d';
+  /** Idioma; solo se escribe el inglés (el español es el de siempre) */
+  lang?: 'es' | 'en';
 }
 
 export function parseHash(hash: string): SharedView {
@@ -23,6 +25,8 @@ export function parseHash(hash: string): SharedView {
   }
   const mode = params.get('m');
   if (mode === '2d' || mode === '3d') view.mode = mode;
+  const lang = params.get('l');
+  if (lang === 'es' || lang === 'en') view.lang = lang;
   return view;
 }
 
@@ -33,6 +37,7 @@ export function formatHash(view: SharedView): string {
   if (view.zoom !== undefined) parts.push(`z=${Math.round(view.zoom * 100) / 100}`);
   if (view.center) parts.push(`c=${view.center[0].toFixed(5)},${view.center[1].toFixed(5)}`);
   if (view.mode) parts.push(`m=${view.mode}`);
+  if (view.lang === 'en') parts.push('l=en');
   return parts.length ? `#${parts.join('&')}` : '';
 }
 

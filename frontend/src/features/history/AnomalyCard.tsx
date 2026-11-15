@@ -1,10 +1,11 @@
+import { useEnglish, useT } from '../../lib/i18n.ts';
 import { TriangleAlert } from 'lucide-react';
 import {
   formatCount,
   formatMonth,
   formatPercent,
   formatSigned,
-  MONTHS_LONG,
+  monthLong,
 } from '../../lib/format.ts';
 import { Button } from '../../ui/Button.tsx';
 import { AnomalyBadge } from './AnomalyBadge.tsx';
@@ -30,7 +31,9 @@ export function AnomalyCard({
   onSelect: (mi: number) => void;
 }) {
   const { reference: ref, anomaly, info, value, selectedYear, selectedMonth } = model;
-  const monthName = MONTHS_LONG[selectedMonth];
+  const t = useT();
+  const en = useEnglish();
+  const monthName = monthLong(selectedMonth);
   const complete = lastCompleteMonth(model.manifest);
   const completeYear = model.series.startYear + Math.floor(complete / 12);
   const enough = ref.values.length >= MIN_REFERENCE_YEARS;
@@ -44,12 +47,24 @@ export function AnomalyCard({
       <div className="flex flex-wrap items-end gap-x-4 gap-y-2" aria-live="polite">
         <p className="m-0 leading-none">
           <span className="text-3xl font-semibold tabular-nums">{formatCount(value)}</span>
-          <span className="ml-2 text-sm text-ink-muted">{UNIT[model.metric]}</span>
+          <span className="ml-2 text-sm text-ink-muted">{t(UNIT[model.metric])}</span>
         </p>
         <AnomalyBadge level={anomaly.level} large />
       </div>
 
-      {enough ? (
+      {enough && en ? (
+        <p className="m-0 text-sm">
+          <strong className="tabular-nums">{formatPercent(anomaly.ratio)}</strong> versus the median
+          ({formatSigned(anomaly.difference)} detections). {monthName} median:{' '}
+          <strong className="tabular-nums">{formatCount(ref.median)}</strong>; the usual range is{' '}
+          {formatCount(ref.p25)} to {formatCount(ref.p75)}.
+        </p>
+      ) : !enough && en ? (
+        <p className="m-0 text-sm">
+          There are only {ref.values.length} complete years of {monthName} to compare and{' '}
+          {MIN_REFERENCE_YEARS} are needed. Widen the year range.
+        </p>
+      ) : enough ? (
         <p className="m-0 text-sm">
           <strong className="tabular-nums">{formatPercent(anomaly.ratio)}</strong> respecto a la
           mediana ({formatSigned(anomaly.difference)} detecciones). Mediana de {monthName}:{' '}
@@ -62,7 +77,13 @@ export function AnomalyCard({
           {MIN_REFERENCE_YEARS}. Amplía el rango de años.
         </p>
       )}
-      {enough && (
+      {enough && en && (
+        <p className="m-0 text-xs text-ink-muted">
+          Reference: {monthName} in {ref.years.length} complete years between {model.yearRange[0]}{' '}
+          and {model.yearRange[1]}, excluding {selectedYear}.
+        </p>
+      )}
+      {enough && !en && (
         <p className="m-0 text-xs text-ink-muted">
           Referencia: {monthName} de {ref.years.length} años completos entre {model.yearRange[0]} y{' '}
           {model.yearRange[1]}, sin contar {selectedYear}.
@@ -71,19 +92,24 @@ export function AnomalyCard({
 
       {info.state === 'parcial' && (
         <Notice>
-          Mes incompleto: hay datos de {info.daysCovered} de {info.daysInMonth} días. Se compara con
-          meses enteros, así que todavía sale más bajo de lo que será.
+          {t(
+            'Mes incompleto: hay datos de {a} de {b} días. Se compara con meses enteros, así que todavía sale más bajo de lo que será.',
+            { a: info.daysCovered, b: info.daysInMonth },
+          )}
           {complete !== model.selected && (
             <Button className="mt-2 flex" onClick={() => onSelect(complete)}>
-              Ver {formatMonth(completeYear, complete % 12)}, último mes completo
+              {t('Ver {mes}, último mes completo', {
+                mes: formatMonth(completeYear, complete % 12),
+              })}
             </Button>
           )}
         </Notice>
       )}
       {info.provisional && (
         <Notice>
-          Dato provisional: incluye detecciones en casi tiempo real que pueden cambiar cuando NASA
-          publique el procesado definitivo.
+          {t(
+            'Dato provisional: incluye detecciones en casi tiempo real que pueden cambiar cuando NASA publique el procesado definitivo.',
+          )}
         </Notice>
       )}
     </section>

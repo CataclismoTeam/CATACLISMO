@@ -1,3 +1,4 @@
+import { useT } from '../lib/i18n.ts';
 import { lazy, Suspense } from 'react';
 import { useUi } from '../store/ui.ts';
 import { ErrorBoundary } from './ErrorBoundary.tsx';
@@ -17,13 +18,14 @@ function Placeholder({ text }: { text: string }) {
 
 export function MapStage() {
   const briefingOpen = useUi((s) => s.briefingOpen);
+  const t = useT();
   return (
-    <section aria-label="Mapa" className="relative min-h-48 flex-1">
+    <section aria-label={t('Mapa')} className="relative min-h-48 flex-1">
       {briefingOpen ? (
-        <Placeholder text="El mapa se carga al empezar" />
+        <Placeholder text={t('El mapa se carga al empezar')} />
       ) : (
-        <ErrorBoundary what="el mapa">
-          <Suspense fallback={<Placeholder text="Cargando el mapa…" />}>
+        <ErrorBoundary what={t('el mapa')}>
+          <Suspense fallback={<Placeholder text={t('Cargando el mapa…')} />}>
             <MapView />
           </Suspense>
         </ErrorBoundary>

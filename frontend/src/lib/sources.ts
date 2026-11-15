@@ -1,5 +1,6 @@
 // Fuentes de los datos y de la cartografía, con enlace. Se citan en el briefing, en la ficha del
 // incendio, en el panel de procedencia y en la metodología.
+import { locale, t } from './i18n.ts';
 export interface Source {
   name: string;
   url: string;
@@ -44,12 +45,12 @@ export function daysSince(iso: string, now = Date.now()): number {
 /** «hoy», «ayer» o «hace N días». */
 export function ago(iso: string, now = Date.now()): string {
   const d = daysSince(iso, now);
-  return d === 0 ? 'hoy' : d === 1 ? 'ayer' : `hace ${d} días`;
+  return d === 0 ? t('hoy') : d === 1 ? t('ayer') : t('hace {d} días', { d });
 }
 
 /** «2 nov» a partir de AAAA-MM-DD. */
 export const shortDate = (iso: string) =>
-  new Date(`${iso}T00:00:00Z`).toLocaleDateString('es-ES', {
+  new Date(`${iso}T00:00:00Z`).toLocaleDateString(locale(), {
     day: 'numeric',
     month: 'short',
     timeZone: 'UTC',

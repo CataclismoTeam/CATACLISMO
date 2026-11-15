@@ -1,3 +1,5 @@
+import { useLang, useT } from '../../lib/i18n.ts';
+import { useUi } from '../../store/ui.ts';
 import { BarChart } from 'echarts/charts';
 import {
   GridComponent,
@@ -8,7 +10,7 @@ import {
 import * as echarts from 'echarts/core';
 import { CanvasRenderer } from 'echarts/renderers';
 import { useEffect, useRef } from 'react';
-import { formatCount, MONTHS_LONG } from '../../lib/format.ts';
+import { formatCount, monthLong } from '../../lib/format.ts';
 import { registerChart } from './chartHandle.ts';
 import type { CalendarModel } from './model.ts';
 
@@ -26,6 +28,11 @@ const token = (name: string) =>
 
 /** Serie del mes seleccionado en todos los años, con la mediana y la banda P25–P75. */
 export default function MonthChart({ model }: { model: CalendarModel }) {
+  const t = useT();
+  const lang = useLang((s) => s.lang);
+  // Los colores salen de los tokens CSS: hay que repintar al cambiar de tema o de daltonismo
+  const theme = useUi((s) => s.theme);
+  const cvd = useUi((s) => s.cvd);
   const el = useRef<HTMLDivElement>(null);
   const chart = useRef<echarts.ECharts>(null);
 
@@ -51,6 +58,14 @@ export default function MonthChart({ model }: { model: CalendarModel }) {
   }, []);
 
   useEffect(() => {
+    // Un fotograma después: el shell aplica el tema al documento en su propio efecto, que corre
+    // después de este
+    const frame = requestAnimationFrame(() => paint());
+    return () => cancelAnimationFrame(frame);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [model, lang, theme, cvd]);
+
+  function paint() {
     const ink = token('--color-ink');
     const muted = token('--color-ink-muted');
     const line = token('--color-line');
@@ -113,7 +128,7 @@ export default function MonthChart({ model }: { model: CalendarModel }) {
         series: [
           {
             type: 'bar',
-            name: MONTHS_LONG[selectedMonth],
+            name: monthLong(selectedMonth),
             data,
             barMaxWidth: 22,
             markLine: hasRef
@@ -121,7 +136,7 @@ export default function MonthChart({ model }: { model: CalendarModel }) {
                   silent: true,
                   symbol: 'none',
                   lineStyle: { color: ink, type: 'dashed', width: 1.5 },
-                  label: { color: ink, formatter: 'Mediana', position: 'end' },
+                  label: { color: ink, formatter: t('Mediana'), position: 'end' },
                   data: [{ yAxis: Number(ref.median.toFixed(2)) }],
                 }
               : undefined,
@@ -137,13 +152,16 @@ export default function MonthChart({ model }: { model: CalendarModel }) {
       },
       true,
     );
-  }, [model]);
+  }
 
   return (
     <div
       ref={el}
       role="img"
-      aria-label={`Detecciones de ${MONTHS_LONG[model.selectedMonth]} en cada año, con la mediana y la banda entre los percentiles 25 y 75`}
+      aria-label={t(
+        'Detecciones de {mes} en cada año, con la mediana y la banda entre los percentiles 25 y 75',
+        { mes: monthLong(model.selectedMonth) },
+      )}
       className="h-44 w-full"
     />
   );

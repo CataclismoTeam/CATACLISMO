@@ -1,5 +1,6 @@
 // Símbolos operativos: cada unidad es una placa con icono de su tipo, su indicativo y su estado
 // (color + icono + texto), no un punto genérico.
+import { t } from '../lib/i18n.ts';
 import {
   Ambulance,
   CircleCheck,
@@ -63,7 +64,7 @@ export function unitElement(unit: Unit, onSelect: (unit: Unit) => void): HTMLEle
   button.style.setProperty('--status', status.color);
   button.setAttribute(
     'aria-label',
-    `${KIND[unit.kind].label} ${unit.id}: ${status.label}. Simulado`,
+    `${t(KIND[unit.kind].label)} ${unit.id}: ${t(status.label)}. ${t('Simulado')}`,
   );
   const badge = document.createElement('span');
   badge.className = 'unit-marker__icon';
@@ -74,7 +75,7 @@ export function unitElement(unit: Unit, onSelect: (unit: Unit) => void): HTMLEle
   id.textContent = unit.id;
   const st = document.createElement('span');
   st.className = 'unit-marker__status';
-  st.append(icon(status.icon, 13, status.color), document.createTextNode(status.label));
+  st.append(icon(status.icon, 13, status.color), document.createTextNode(t(status.label)));
   text.append(id, st);
   button.append(badge, text);
   button.addEventListener('click', (e) => {
@@ -94,7 +95,7 @@ export function meetingElement(name: string): HTMLElement {
 export function ignitionElement(): HTMLElement {
   const el = document.createElement('div');
   el.className = 'ignition-marker';
-  el.append(icon(Flame, 16), document.createTextNode('Origen · SIMULADO'));
+  el.append(icon(Flame, 16), document.createTextNode(t('Origen · SIMULADO')));
   return el;
 }
 

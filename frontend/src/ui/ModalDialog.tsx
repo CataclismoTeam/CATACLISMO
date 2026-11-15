@@ -1,3 +1,4 @@
+import { t } from '../lib/i18n.ts';
 import { X } from 'lucide-react';
 import { useEffect, useId, useRef, type ReactNode } from 'react';
 import { cn } from '../lib/cn.ts';
@@ -58,7 +59,12 @@ export function ModalDialog({
             {description}
           </p>
         </div>
-        <Button variant="ghost" size="icon" aria-label="Cerrar" onClick={() => onOpenChange(false)}>
+        <Button
+          variant="ghost"
+          size="icon"
+          aria-label={t('Cerrar')}
+          onClick={() => onOpenChange(false)}
+        >
           <X size={20} strokeWidth={1.5} aria-hidden />
         </Button>
       </header>
