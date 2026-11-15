@@ -1,5 +1,6 @@
 packages:
   - frontend
+  - packages/*
 # pnpm 12 falla en CI (ERR_PNPM_IGNORED_BUILDS) si un script de instalación no está aprobado
 # ni denegado. lefthook se instala con "prepare": "lefthook install".
 allowBuilds:

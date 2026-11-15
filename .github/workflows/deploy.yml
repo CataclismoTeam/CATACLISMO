@@ -64,13 +64,13 @@ jobs:
         with:
           node-version: 26
       - name: Ficheros versionados, estructura y endurecimiento
-        run: node tools/guard.mjs
+        run: node tools/dev-utils/guard.mjs
       - name: Commits del PR en formato Conventional Commits
         if: github.event_name == 'pull_request'
         env:
           BASE_SHA: ${{ github.event.pull_request.base.sha }}
           HEAD_SHA: ${{ github.event.pull_request.head.sha }}
-        run: node tools/commit-msg.mjs --range "$BASE_SHA..$HEAD_SHA"
+        run: node tools/dev-utils/commit-msg.mjs --range "$BASE_SHA..$HEAD_SHA"
 
   # ─── 1. Calidad ───────────────────────────────────────────────────────────
   calidad:
@@ -374,8 +374,8 @@ jobs:
       - name: Preparar sitio de mantenimiento
         run: |
           mkdir -p site
-          cp ops/maintenance.html site/index.html
-          cp ops/maintenance.html site/404.html
+          cp ops/deployment/maintenance.html site/index.html
+          cp ops/deployment/maintenance.html site/404.html
       - uses: actions/upload-pages-artifact@fc324d3547104276b827a68afc52ff2a11cc49c9 # v5.0.0
         with:
           path: site

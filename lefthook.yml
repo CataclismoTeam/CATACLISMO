@@ -4,12 +4,12 @@ pre-commit:
   parallel: true
   jobs:
     - name: guardián
-      run: node tools/guard.mjs
+      run: node tools/dev-utils/guard.mjs
 
     - name: formato
       glob: '*.{ts,tsx,mjs,js,json,yml,yaml,md,css,html}'
       exclude: 'backend/**'
-      run: pnpm exec prettier --check --ignore-path .gitignore --ignore-path config/prettierignore {staged_files}
+      run: pnpm exec prettier --check --ignore-path .gitignore --ignore-path config/application/prettierignore {staged_files}
 
     - name: backend
       glob: 'backend/**/*.py'
@@ -23,4 +23,4 @@ pre-commit:
 commit-msg:
   jobs:
     - name: conventional-commits
-      run: node tools/commit-msg.mjs {1}
+      run: node tools/dev-utils/commit-msg.mjs {1}

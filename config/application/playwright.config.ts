@@ -7,10 +7,10 @@ const PORT = 4322;
 const executablePath = process.env.CHROME_PATH || undefined;
 
 export default defineConfig({
-  testDir: '../tests',
+  testDir: '../../tests',
   // Referencias de la regresión visual, sin sufijo de sistema: solo se generan en el CI
-  snapshotPathTemplate: '../tests/visual/__screenshots__/{arg}-{projectName}{ext}',
-  outputDir: '../test-results',
+  snapshotPathTemplate: '../../tests/visual/__screenshots__/{arg}-{projectName}{ext}',
+  outputDir: '../../test-results',
   fullyParallel: true,
   forbidOnly: !!process.env.CI,
   // Si falta una referencia visual, el test falla y escribe la captura en tests/visual/__screenshots__
@@ -31,8 +31,8 @@ export default defineConfig({
     { name: 'movil', use: { ...devices['Pixel 7'] } },
   ],
   webServer: {
-    command: `node tools/serve.mjs ${PORT}`,
-    cwd: '..',
+    command: `node tools/dev-utils/serve.mjs ${PORT}`,
+    cwd: '../..',
     url: `http://127.0.0.1:${PORT}/CATACLISMO/`,
     reuseExistingServer: !process.env.CI,
   },

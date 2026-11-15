@@ -49,12 +49,15 @@ const allowedRoot = new Set([
   '.github',
   'backend',
   'config',
+  'data',
   'docs',
   'frontend',
   'ops',
+  'packages',
   'scripts',
   'tests',
   'tools',
+  '.dockerignore',
   '.env.example',
   '.gitignore',
   'CHANGELOG.md',
@@ -68,7 +71,7 @@ const allowedRoot = new Set([
 for (const root of new Set(tracked.map((f) => f.split('/')[0]))) {
   if (!allowedRoot.has(root)) {
     fail(
-      `${root}: no está previsto en la raíz. Muévelo a su carpeta o añádelo a allowedRoot en tools/guard.mjs si es intencionado.`,
+      `${root}: no está previsto en la raíz. Muévelo a su carpeta o añádelo a allowedRoot en tools/dev-utils/guard.mjs si es intencionado.`,
     );
   }
 }
@@ -76,6 +79,7 @@ for (const root of new Set(tracked.map((f) => f.split('/')[0]))) {
 // ── 4. Ficheros críticos que no pueden desaparecer ────────────────────────────
 const required = [
   '.gitignore',
+  '.dockerignore',
   'package.json',
   'pnpm-lock.yaml',
   'pnpm-workspace.yaml',
@@ -90,15 +94,15 @@ const required = [
   '.github/workflows/scorecard.yml',
   '.github/workflows/links.yml',
   '.github/workflows/monitor.yml',
-  '.github/pull_request_template.md',
+  '.github/PULL_REQUEST_TEMPLATE/pull_request_template.md',
   '.github/dependabot.yml',
   '.github/SECURITY.md',
-  'ops/maintenance.html',
-  'tools/guard.mjs',
-  'tools/commit-msg.mjs',
-  'tools/check-links.mjs',
-  'tools/check-size.mjs',
-  'tools/serve.mjs',
+  'ops/deployment/maintenance.html',
+  'tools/dev-utils/guard.mjs',
+  'tools/dev-utils/commit-msg.mjs',
+  'tools/dev-utils/check-links.mjs',
+  'tools/dev-utils/check-size.mjs',
+  'tools/dev-utils/serve.mjs',
   'tests/e2e/portada.spec.ts',
   'tests/visual/portada.spec.ts',
 ];

@@ -1,7 +1,7 @@
 {
   "ci": {
     "collect": {
-      "startServerCommand": "node tools/serve.mjs 4500",
+      "startServerCommand": "node tools/dev-utils/serve.mjs 4500",
       "startServerReadyPattern": "Sirviendo",
       "url": ["http://127.0.0.1:4500/CATACLISMO/"],
       "numberOfRuns": 3
