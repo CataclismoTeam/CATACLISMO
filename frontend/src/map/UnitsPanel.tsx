@@ -80,13 +80,25 @@ export function UnitsPanel() {
         aria-label={t('Dominio')}
         className="grid grid-flow-col gap-1 border-b border-line p-2"
       >
-        {domains.map((d) => (
+        {domains.map((d, i) => (
           <button
             key={d}
+            id={`pestana-${d}`}
             type="button"
             role="tab"
             aria-selected={current === d}
+            aria-controls="panel-unidades"
+            // Pestañas con tabulador itinerante: Tab entra en la activa y las flechas cambian
+            tabIndex={current === d ? 0 : -1}
             onClick={() => setDomain(d)}
+            onKeyDown={(e) => {
+              if (e.key !== 'ArrowRight' && e.key !== 'ArrowLeft') return;
+              e.preventDefault();
+              const next =
+                domains[(i + (e.key === 'ArrowRight' ? 1 : -1) + domains.length) % domains.length];
+              setDomain(next);
+              document.getElementById(`pestana-${next}`)?.focus();
+            }}
             className={cn(
               'h-9 cursor-pointer rounded-md text-sm font-semibold pointer-coarse:h-11',
               current === d
@@ -100,8 +112,10 @@ export function UnitsPanel() {
       </div>
 
       <div
+        id="panel-unidades"
         role="tabpanel"
-        aria-label={t(DOMAIN_LABEL[current])}
+        aria-labelledby={`pestana-${current}`}
+        tabIndex={0}
         className="min-h-0 flex-1 overflow-y-auto px-3 py-2"
       >
         {current === 'tierra' ? (

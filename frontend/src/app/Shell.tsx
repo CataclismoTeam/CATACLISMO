@@ -1,3 +1,4 @@
+import { useT } from '../lib/i18n.ts';
 import { lazy, Suspense, useEffect } from 'react';
 import { CalendarDock } from '../features/history/CalendarDock.tsx';
 import { useHistory } from '../store/history.ts';
@@ -15,6 +16,7 @@ export function Shell() {
   const projection = useUi((s) => s.projection);
   const briefingOpen = useUi((s) => s.briefingOpen);
   const methodOpen = useUi((s) => s.methodOpen);
+  const t = useT();
 
   useEffect(() => {
     void load();
@@ -49,6 +51,13 @@ export function Shell() {
 
   return (
     <div className="flex h-dvh flex-col overflow-hidden">
+      {/* Primer elemento con Tab: salta la barra y el rail directamente al mapa */}
+      <a
+        href="#mapa-principal"
+        className="sr-only z-(--z-dialog) rounded-md bg-accent px-3 py-2 font-semibold text-on-accent focus:not-sr-only focus:absolute focus:top-2 focus:left-2"
+      >
+        {t('Saltar al mapa')}
+      </a>
       <TopBar />
       <div className="flex min-h-0 flex-1 flex-col lg:flex-row">
         <NavRail />

@@ -20,7 +20,12 @@ export function MapStage() {
   const briefingOpen = useUi((s) => s.briefingOpen);
   const t = useT();
   return (
-    <section aria-label={t('Mapa')} className="relative min-h-48 flex-1">
+    <section
+      id="mapa-principal"
+      tabIndex={-1}
+      aria-label={t('Mapa')}
+      className="relative min-h-48 flex-1 outline-none"
+    >
       {briefingOpen ? (
         <Placeholder text={t('El mapa se carga al empezar')} />
       ) : (

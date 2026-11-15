@@ -36,6 +36,7 @@ export function RadioButton() {
       variant={open ? 'secondary' : 'ghost'}
       aria-pressed={open}
       aria-label="Radio"
+      data-abre="radio"
       title={t('Radio: canales del operativo')}
       onClick={() => {
         useUi.getState().setSettingsOpen(false);
@@ -60,6 +61,7 @@ export function SettingsButton() {
       size="icon"
       aria-pressed={open}
       aria-label={t('Ajustes')}
+      data-abre="ajustes"
       title={t('Ajustes: tema, accesibilidad y pantalla')}
       onClick={() => {
         setRadioOpen(false);

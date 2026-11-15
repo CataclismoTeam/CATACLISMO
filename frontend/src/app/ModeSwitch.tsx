@@ -20,6 +20,8 @@ export function ModeSwitch() {
       const target = e.target as HTMLElement;
       if (e.ctrlKey || e.metaKey || e.altKey || /INPUT|SELECT|TEXTAREA/.test(target.tagName))
         return;
+      // Con un diálogo abierto (briefing, metodología) el mapa no está a la vista: sin atajos
+      if (document.querySelector('dialog[open]') || target.isContentEditable) return;
       if (e.key === '1') setMode('2d');
       if (e.key === '2') setMode('3d');
     };

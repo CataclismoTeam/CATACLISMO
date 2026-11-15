@@ -8,7 +8,8 @@ export function usePopover(
   open: boolean,
   close: () => void,
   panel: RefObject<HTMLElement | null>,
-  trigger?: RefObject<HTMLElement | null>,
+  /** Botón que lo abre: una ref o, si vive en otro componente, un selector CSS */
+  trigger?: RefObject<HTMLElement | null> | string,
 ) {
   const closeRef = useRef(close);
   useEffect(() => {
@@ -17,7 +18,11 @@ export function usePopover(
 
   useEffect(() => {
     if (!open) return;
-    const returnTo = (trigger?.current ?? document.activeElement) as HTMLElement | null;
+    const triggerEl =
+      typeof trigger === 'string'
+        ? document.querySelector<HTMLElement>(trigger)
+        : (trigger?.current ?? null);
+    const returnTo = (triggerEl ?? document.activeElement) as HTMLElement | null;
     const el = panel.current;
     el?.focus({ preventScroll: true });
 

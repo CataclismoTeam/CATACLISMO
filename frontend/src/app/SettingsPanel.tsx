@@ -1,3 +1,5 @@
+import { usePopover } from '../lib/usePopover.ts';
+import { useRef } from 'react';
 import { useLang, useT } from '../lib/i18n.ts';
 import { Monitor, Moon, Sun, X, type LucideIcon } from 'lucide-react';
 import { cn } from '../lib/cn.ts';
@@ -55,12 +57,16 @@ export function SettingsPanel() {
   const t = useT();
   const lang = useLang((s) => s.lang);
   const setLang = useLang((s) => s.setLang);
+  const panel = useRef<HTMLElement>(null);
+  usePopover(open, () => setOpen(false), panel, '[data-abre="ajustes"]');
   if (!open) return null;
 
   return (
     <aside
+      ref={panel}
+      tabIndex={-1}
       aria-label={t('Ajustes')}
-      className="absolute top-14 right-2 z-(--z-overlay) w-[min(24rem,calc(100vw-1rem))] rounded-lg border border-line-strong bg-surface shadow-panel"
+      className="absolute top-14 right-2 z-(--z-overlay) w-[min(24rem,calc(100vw-1rem))] rounded-lg border border-line-strong bg-surface shadow-panel outline-none"
     >
       <header className="flex items-center justify-between border-b border-line px-4 py-2">
         <h2 className="m-0 text-base font-semibold">{t('Ajustes')}</h2>

@@ -6,7 +6,14 @@ import { useUi, type Basemap, type LayerId } from '../store/ui.ts';
 import { Button } from '../ui/Button.tsx';
 import type { Detections } from './detections.ts';
 import type { Remote } from './useRemote.ts';
-import { ACTIVE_COLOR, AREA_COLOR, HALO_COLOR, MONTH_RAMP, PREDICTION_BANDS } from './overlays.ts';
+import {
+  ACTIVE_COLOR,
+  AREA_COLOR,
+  HALO_COLOR,
+  MONTH_RAMP,
+  PREDICTION_BANDS,
+  type Pattern,
+} from './overlays.ts';
 import { provider } from './providers.ts';
 
 const BASEMAPS: [Basemap, string][] = [
@@ -71,7 +78,16 @@ function Toggle({
   );
 }
 
-function Swatch({ fill, hatch, children }: { fill: string; hatch?: boolean; children: ReactNode }) {
+const stripes = (fill: string, deg: number) =>
+  `repeating-linear-gradient(${deg}deg, ${fill} 0 2px, transparent 2px 6px)`;
+/** La misma trama que en el mapa: «/», «\\» o cruzada */
+const PATTERN_CSS: Record<Pattern, (fill: string) => string> = {
+  '/': (fill) => stripes(fill, 135),
+  '\\': (fill) => stripes(fill, 45),
+  x: (fill) => `${stripes(fill, 135)}, ${stripes(fill, 45)}`,
+};
+
+function Swatch({ fill, hatch, children }: { fill: string; hatch?: Pattern; children: ReactNode }) {
   const t = useT();
   return (
     <span className="flex items-center gap-2 text-xs">
@@ -79,9 +95,7 @@ function Swatch({ fill, hatch, children }: { fill: string; hatch?: boolean; chil
         aria-hidden
         className="size-3.5 shrink-0 rounded-[2px] border border-line-strong"
         style={{
-          background: hatch
-            ? `repeating-linear-gradient(135deg, ${fill} 0 3px, transparent 3px 6px)`
-            : fill,
+          background: hatch ? PATTERN_CSS[hatch](fill) : fill,
         }}
       />
       {typeof children === 'string' ? t(children) : children}
@@ -118,6 +132,14 @@ export function LayersPanel({ detections: load }: { detections: Remote<Detection
   return (
     <aside
       aria-label={t('Capas del mapa')}
+      // Esc cierra el panel y devuelve el foco a su botón (no se cierra al pulsar el mapa:
+      // se usa a la vez que el mapa)
+      onKeyDown={(e) => {
+        if (e.key !== 'Escape') return;
+        e.stopPropagation();
+        setOpen(false);
+        document.querySelector<HTMLElement>('[data-abre="capas"]')?.focus();
+      }}
       className="overflow-y-auto border border-line-strong bg-surface shadow-panel max-md:absolute max-md:inset-x-0 max-md:bottom-0 max-md:z-(--z-panel) max-md:max-h-[70%] max-md:rounded-t-lg md:min-h-0 md:w-80 md:rounded-lg"
     >
       <header className="sticky top-0 flex items-center justify-between bg-surface px-4 py-2">
@@ -247,8 +269,8 @@ export function LayersPanel({ detections: load }: { detections: Remote<Detection
                 {t('Modelo de demostración: dónde llegaría el fuego, no dónde está.')}
               </span>
               <div className="flex flex-wrap gap-x-3 gap-y-1">
-                {PREDICTION_BANDS.map(([h, c, label]) => (
-                  <Swatch key={h} fill={c} hatch>
+                {PREDICTION_BANDS.map(([h, c, label, pattern]) => (
+                  <Swatch key={h} fill={c} hatch={pattern}>
                     {label}
                   </Swatch>
                 ))}

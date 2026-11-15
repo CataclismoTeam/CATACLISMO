@@ -1,6 +1,7 @@
+import { usePopover } from '../lib/usePopover.ts';
 import { useT } from '../lib/i18n.ts';
 import { Mic, Radio, X } from 'lucide-react';
-import { useState } from 'react';
+import { useRef, useState } from 'react';
 import { cn } from '../lib/cn.ts';
 import { useUi } from '../store/ui.ts';
 import { Button } from '../ui/Button.tsx';
@@ -18,11 +19,15 @@ export function RadioPanel() {
   const [picked, setChannel] = useState('tierra-general');
   const t = useT();
   const channel = channels.some((c) => c.id === picked) ? picked : channels[0]?.id;
+  const panel = useRef<HTMLElement>(null);
+  usePopover(open, () => setOpen(false), panel, '[data-abre="radio"]');
   if (!open) return null;
   return (
     <aside
+      ref={panel}
+      tabIndex={-1}
       aria-label={t('Radio')}
-      className="absolute top-14 right-2 z-(--z-overlay) w-[min(24rem,calc(100vw-1rem))] rounded-lg border border-line-strong bg-surface shadow-panel"
+      className="absolute top-14 right-2 z-(--z-overlay) w-[min(24rem,calc(100vw-1rem))] rounded-lg border border-line-strong bg-surface shadow-panel outline-none"
     >
       <header className="flex items-center justify-between gap-2 border-b border-line px-4 py-2">
         <h2 className="m-0 flex items-center gap-2 text-base font-semibold">

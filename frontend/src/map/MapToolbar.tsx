@@ -54,7 +54,11 @@ export function MapToolbar({
         <Link size={16} strokeWidth={1.5} aria-hidden />
         <span className="max-md:sr-only">{t('Copiar enlace')}</span>
       </Button>
-      <Button aria-pressed={layersOpen} onClick={() => setLayersOpen(!layersOpen)}>
+      <Button
+        aria-pressed={layersOpen}
+        data-abre="capas"
+        onClick={() => setLayersOpen(!layersOpen)}
+      >
         <Layers size={16} strokeWidth={1.5} aria-hidden />
         {t('Capas')}
       </Button>

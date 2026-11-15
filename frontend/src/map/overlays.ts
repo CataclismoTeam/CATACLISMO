@@ -10,10 +10,12 @@ import { provider } from './providers.ts';
 import { NOW_H, routesGeoJson, spread, spreadFrom, type Route, type Scenario } from './scenario.ts';
 
 // Predicción en tramas; el fuego (real o simulado) en celdas rojas sólidas.
-export const PREDICTION_BANDS: [hours: number, color: string, label: string][] = [
-  [2, '#b5541e', '1–2 h'],
-  [4, '#c98a2b', '2–4 h'],
-  [6, '#c9b46b', '4–6 h'],
+/** Trama de cada franja: también cambia la forma, no solo el color (daltonismo, escala de grises). */
+export type Pattern = '/' | '\\' | 'x';
+export const PREDICTION_BANDS: [hours: number, color: string, label: string, pattern: Pattern][] = [
+  [2, '#b5541e', '1–2 h', '/'],
+  [4, '#c98a2b', '2–4 h', '\\'],
+  [6, '#c9b46b', '4–6 h', 'x'],
 ];
 export const ACTIVE_COLOR = '#c2331f';
 export const ROUTE_COLOR = '#2f9e62';
@@ -39,8 +41,11 @@ export const LAYER_IDS: Record<LayerId, string[]> = {
   sombreado: ['sombreado'],
 };
 
-/** Trama diagonal para la predicción: se distingue del fuego real también en gris. */
-function hatch(color: string): { width: number; height: number; data: Uint8ClampedArray } {
+/** Trama para la predicción: se distingue del fuego real también en gris. */
+function hatch(
+  color: string,
+  pattern: Pattern,
+): { width: number; height: number; data: Uint8ClampedArray } {
   const size = 24;
   const canvas = document.createElement('canvas');
   canvas.width = canvas.height = size;
@@ -50,8 +55,14 @@ function hatch(color: string): { width: number; height: number; data: Uint8Clamp
   ctx.lineWidth = 2;
   ctx.beginPath();
   for (const o of [-size, 0, size]) {
-    ctx.moveTo(o, size);
-    ctx.lineTo(o + size, 0);
+    if (pattern !== '\\') {
+      ctx.moveTo(o, size);
+      ctx.lineTo(o + size, 0);
+    }
+    if (pattern !== '/') {
+      ctx.moveTo(o, 0);
+      ctx.lineTo(o + size, size);
+    }
   }
   ctx.stroke();
   return { width: size, height: size, data: ctx.getImageData(0, 0, size, size).data };
@@ -202,9 +213,9 @@ export function installOverlays(
     }
   }
 
-  for (const [hours, color] of PREDICTION_BANDS) {
+  for (const [hours, color, , pattern] of PREDICTION_BANDS) {
     const id = `trama-${hours}`;
-    if (!map.hasImage(id)) map.addImage(id, hatch(color));
+    if (!map.hasImage(id)) map.addImage(id, hatch(color, pattern));
   }
 
   // Predicción (MODELO): celdas de 250 m con trama y borde discontinuo

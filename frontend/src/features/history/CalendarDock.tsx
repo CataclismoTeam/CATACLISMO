@@ -83,11 +83,11 @@ export function CalendarDock() {
           {t('Real · MODIS + VIIRS')}
         </Tag>
         {model && manifest && (
-          <div className="hidden items-center gap-1 xl:flex" aria-label={t('Línea de tiempo')}>
+          <div className="hidden items-center gap-1 xl:flex" aria-label={t('Recorrer los meses')}>
             <Button
               variant="ghost"
               size="icon"
-              aria-label={playing ? t('Pausar línea de tiempo') : t('Reproducir línea de tiempo')}
+              aria-label={playing ? t('Pausar el recorrido por meses') : t('Recorrer los meses')}
               aria-pressed={playing}
               onClick={() => setPlaying(!playing)}
             >
@@ -101,7 +101,7 @@ export function CalendarDock() {
               max={manifest.tiempo.meses - 1}
               value={selected}
               onChange={(event) => select(Number(event.target.value))}
-              aria-label={t('Mes de la línea de tiempo')}
+              aria-label={t('Mes del calendario')}
             />
             <select
               name="velocidad"
