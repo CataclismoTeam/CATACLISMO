@@ -7,7 +7,7 @@ import type { Detections } from './detections.ts';
 import { fireCells } from './detections.ts';
 import { incidentPoints, outlines, type IncidentsFile } from './incidents.ts';
 import { provider } from './providers.ts';
-import { routesGeoJson, spread, spreadFrom, type Route, type Scenario } from './scenario.ts';
+import { NOW_H, routesGeoJson, spread, spreadFrom, type Route, type Scenario } from './scenario.ts';
 
 // Predicción en tramas; el fuego (real o simulado) en celdas rojas sólidas.
 export const PREDICTION_BANDS: [hours: number, color: string, label: string][] = [
@@ -248,7 +248,7 @@ export function installOverlays(
         id: 'pred-tint',
         type: 'fill',
         source: 'incendio',
-        filter: ['==', ['get', 'fase'], 'prediccion'],
+        filter: predictionFilter(NOW_H),
         paint: {
           'fill-color': [
             'step',
@@ -270,7 +270,7 @@ export function installOverlays(
         id: 'pred-fill',
         type: 'fill',
         source: 'incendio',
-        filter: ['==', ['get', 'fase'], 'prediccion'],
+        filter: predictionFilter(NOW_H),
         paint: {
           'fill-opacity': 0.85,
           'fill-pattern': ['step', ['get', 'horas'], 'trama-2', 2, 'trama-4', 4, 'trama-6'],
@@ -283,7 +283,7 @@ export function installOverlays(
         id: 'pred-line',
         type: 'line',
         source: 'incendio',
-        filter: ['==', ['get', 'fase'], 'prediccion'],
+        filter: predictionFilter(NOW_H),
         paint: {
           'line-color': '#e0b070',
           'line-width': 0.4,
@@ -298,7 +298,7 @@ export function installOverlays(
         id: 'inc-fill',
         type: 'fill',
         source: 'incendio',
-        filter: ['==', ['get', 'fase'], 'activo'],
+        filter: burntFilter(NOW_H),
         paint: { 'fill-color': ACTIVE_COLOR, 'fill-opacity': 0.85 },
       },
       beforeLabels,
@@ -308,7 +308,7 @@ export function installOverlays(
         id: 'inc-line',
         type: 'line',
         source: 'incendio',
-        filter: ['==', ['get', 'fase'], 'activo'],
+        filter: burntFilter(NOW_H),
         paint: { 'line-color': '#2a0d08', 'line-width': 0.5, 'line-opacity': 0.6 },
       },
       beforeLabels,
@@ -420,6 +420,20 @@ export function installOverlays(
 
   for (const id of NEAR_ONLY) if (map.getLayer(id)) map.setLayerZoomRange(id, FAR_ZOOM, 24);
   applyVisibility(map, visible);
+}
+
+// Línea de tiempo: lo que llega antes de la hora elegida ya ha ardido (rojo sólido); lo posterior
+// es la predicción. El dato ('horas' de cada celda) no cambia: solo los filtros.
+const burntFilter = (h: number): FilterSpecification => ['<=', ['get', 'horas'], h];
+const predictionFilter = (h: number): FilterSpecification => ['>', ['get', 'horas'], h];
+
+/** Muestra el incendio simulado a la hora `h` desde la ignición (0–6 h). */
+export function applyFireHour(map: MapLibre, h: number) {
+  for (const id of ['inc-fill', 'inc-line'])
+    if (map.getLayer(id)) map.setFilter(id, burntFilter(h));
+  for (const id of ['pred-tint', 'pred-fill', 'pred-line']) {
+    if (map.getLayer(id)) map.setFilter(id, predictionFilter(h));
+  }
 }
 
 export function applyVisibility(map: MapLibre, visible: Record<LayerId, boolean>) {

@@ -1,6 +1,6 @@
 import { create } from 'zustand';
 import { readStored, writeStored } from '../lib/storage.ts';
-import { DEFAULT_SCENARIO } from '../map/scenario.ts';
+import { DEFAULT_SCENARIO, NOW_H } from '../map/scenario.ts';
 
 export type MapMode = '2d' | '3d';
 export type Basemap = 'satelite' | 'topografico';
@@ -59,6 +59,10 @@ interface UiState {
   basemap: Basemap;
   scenario: ScenarioId;
   layers: Record<LayerId, boolean>;
+  /** Línea de tiempo de la simulación: horas desde la ignición (0–6). Lo anterior ya ha ardido */
+  fireHour: number;
+  /** La línea de tiempo se está reproduciendo */
+  playing: boolean;
   closeBriefing: () => void;
   openBriefing: () => void;
   setCalendarOpen: (open: boolean) => void;
@@ -77,6 +81,8 @@ interface UiState {
   setBasemap: (basemap: Basemap) => void;
   setScenario: (scenario: ScenarioId) => void;
   toggleLayer: (id: LayerId) => void;
+  setFireHour: (hour: number) => void;
+  setPlaying: (playing: boolean) => void;
 }
 
 const BRIEFING_KEY = 'cataclismo.briefing-visto';
@@ -106,6 +112,8 @@ export const useUi = create<UiState>((set, get) => ({
   basemap: storedMap.basemap === 'topografico' ? 'topografico' : 'satelite',
   scenario: DEFAULT_SCENARIO,
   layers: DEFAULT_LAYERS,
+  fireHour: NOW_H,
+  playing: false,
   closeBriefing: () => {
     writeStored(BRIEFING_KEY, true);
     set({ briefingOpen: false });
@@ -161,6 +169,10 @@ export const useUi = create<UiState>((set, get) => ({
       layers: { ...get().layers, curvas: basemap === 'topografico' || get().layers.curvas },
     });
   },
-  setScenario: (scenario) => set({ scenario, selectedUnit: undefined }),
+  // Cada simulación empieza en «ahora», sin reproducir
+  setScenario: (scenario) =>
+    set({ scenario, selectedUnit: undefined, fireHour: NOW_H, playing: false }),
   toggleLayer: (id) => set({ layers: { ...get().layers, [id]: !get().layers[id] } }),
+  setFireHour: (fireHour) => set({ fireHour }),
+  setPlaying: (playing) => set({ playing }),
 }));

@@ -16,7 +16,15 @@ import { LayersPanel } from './LayersPanel.tsx';
 import { declutterUnits, ignitionElement, meetingElement, unitElement } from './markers.ts';
 import { IncidentsPanel } from './IncidentsPanel.tsx';
 import { loadIncidents } from './incidents.ts';
-import { applyVisibility, FAR_ZOOM, installOverlays, ROUTE_COLOR, tokenColor } from './overlays.ts';
+import { FireTimeline } from './FireTimeline.tsx';
+import {
+  applyFireHour,
+  applyVisibility,
+  FAR_ZOOM,
+  installOverlays,
+  ROUTE_COLOR,
+  tokenColor,
+} from './overlays.ts';
 import { provider } from './providers.ts';
 import { DEFAULT_SCENARIO, loadEscapeRoutes, SCENARIOS, type Route } from './scenario.ts';
 import { UnitsPanel } from './UnitsPanel.tsx';
@@ -51,6 +59,9 @@ export default function MapView() {
   const incidents = readyData(incidentsLoad);
   const [far, setFar] = useState(false);
   const [mid, setMid] = useState(false);
+  /** El punto de ignición de la simulación activa está en pantalla */
+  const [simInView, setSimInView] = useState(true);
+  const fireHour = useUi((s) => s.fireHour);
   const selectedIncidentId = useUi((s) => s.selectedIncident);
   const focusIncident = useUi((s) => s.focusIncident);
   const flyTarget = useUi((s) => s.flyTarget);
@@ -123,6 +134,7 @@ export default function MapView() {
         s.incidents,
         s.layers,
       );
+      applyFireHour(map, useUi.getState().fireHour);
       map.setTerrain(s.mode === '3d' ? { source: 'dem', exaggeration: s.exaggeration } : null);
       setReady(true);
     });
@@ -166,6 +178,8 @@ export default function MapView() {
     };
     map.on('zoom', onZoom);
     onZoom();
+    const onMoveEnd = () => setSimInView(map.getBounds().contains(live.current.scenario.ignition));
+    map.on('moveend', onMoveEnd);
     map.on('click', 'real-fill', (e) => {
       const id = e.features?.[0]?.properties?.id;
       if (typeof id === 'string') useUi.getState().focusIncident(id);
@@ -235,7 +249,18 @@ export default function MapView() {
     const map = mapRef.current;
     if (!map || !ready) return;
     installOverlays(map, scenario, routes, SIMULATIONS, detections, incidents, live.current.layers);
+    applyFireHour(map, useUi.getState().fireHour);
   }, [scenario, routes, detections, incidents, ready]);
+
+  useEffect(() => {
+    if (mapRef.current && ready) applyFireHour(mapRef.current, fireHour);
+  }, [fireHour, ready]);
+
+  // Fuera de cuadro o de lejos no hay nada que animar: se pausa
+  const showTimeline = ready && !far && simInView && (layers.incendio || layers.prediccion);
+  useEffect(() => {
+    if (!showTimeline) useUi.getState().setPlaying(false);
+  }, [showTimeline]);
 
   useEffect(() => {
     const map = mapRef.current;
@@ -355,7 +380,7 @@ export default function MapView() {
       {/* Esquina inferior izquierda: fichas y coordenadas, a la derecha del panel lateral */}
       <div
         className={cn(
-          'pointer-events-none absolute top-3 bottom-3 left-3 flex max-w-[calc(100%-1.5rem)] flex-col items-start justify-end gap-2 *:pointer-events-auto',
+          'pointer-events-none absolute top-3 bottom-3 left-3 flex max-md:bottom-12 max-w-[calc(100%-1.5rem)] flex-col items-start justify-end gap-2 *:pointer-events-auto',
           leftOpen && 'max-md:hidden md:left-[21.5rem] md:max-w-[calc(100%-22.25rem)]',
         )}
       >
@@ -365,6 +390,7 @@ export default function MapView() {
         {selectedFire && (
           <FireCard observation={selectedFire} onClose={() => setSelectedFire(undefined)} />
         )}
+        {showTimeline && <FireTimeline />}
         <CoordinatesBar map={mapRef} ready={ready} />
       </div>
       {tileError && (
