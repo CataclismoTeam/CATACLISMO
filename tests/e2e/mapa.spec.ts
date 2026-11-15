@@ -94,20 +94,21 @@ test('los avisos se ordenan por la llegada del fuego y encuadran su ruta', async
   if ((await incidents.getAttribute('aria-pressed')) !== 'true') await incidents.click();
   await page
     .getByRole('complementary', { name: 'Incendios' })
-    .getByRole('button', { name: /Interfaz urbano-forestal de Estepona/ })
+    .getByRole('button', { name: /^Collserola/ })
     .click();
 
-  // Estepona: un núcleo con margen de 29 min (crítico); el rail lo cuenta
+  // Collserola: Sarrià (margen 15 min) y les Corts (19 min) son críticos; Horta (56 min), alto.
+  // Orden por llegada del fuego: 66, 71 y 73 min. El rail cuenta los críticos.
   const alertsButton = rail.getByRole('button', { name: /Avisos/ });
-  await expect(alertsButton).toContainText('1');
+  await expect(alertsButton).toContainText('2');
   await alertsButton.click();
   const panel = page.getByRole('complementary', { name: 'Avisos' });
   const items = panel.getByRole('list', { name: 'Núcleos en riesgo' }).getByRole('button');
   await expect(items).toHaveCount(3);
-  await expect(items.nth(0)).toContainText('Valle Romano');
+  await expect(items.nth(0)).toContainText('Sarrià');
   await expect(items.nth(0)).toContainText('Crítico');
   await expect(items.nth(1)).toContainText('Alto');
-  await expect(items.nth(2)).toContainText('Vigilancia');
+  await expect(items.nth(2)).toContainText('Crítico');
 
   await items.nth(0).click();
   await expect(items.nth(0)).toHaveAttribute('aria-pressed', 'true');
