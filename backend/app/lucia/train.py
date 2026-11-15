@@ -27,6 +27,15 @@ os.environ.setdefault("KERAS_BACKEND", "tensorflow")
 
 import keras
 import numpy as np
+import tensorflow as tf
+
+# ===========================================================================
+# Configuración de Épocas Virtuales, Checkpoints y Smoke Test (DRY_RUN)
+# ===========================================================================
+DRY_RUN: bool = False
+STEPS_PER_EPOCH: int = 500
+VALIDATION_STEPS: int = 100
+CHECKPOINTS_DIR: str = "checkpoints"
 
 from . import config
 from .model import (
@@ -299,15 +308,77 @@ def run_lucia_training_pipeline(
         num_channels=num_channels,
     )
     os.makedirs(os.path.dirname(os.path.abspath(save_model_path)), exist_ok=True)
+    os.makedirs(CHECKPOINTS_DIR, exist_ok=True)
 
-    history = model.fit(
-        x_train,
-        y_train,
-        validation_data=(x_val, y_val),
-        epochs=epochs,
-        batch_size=batch_size,
-        verbose=1,
+    train_ds = (
+        tf.data.Dataset.from_tensor_slices((x_train, y_train))
+        .shuffle(len(x_train), seed=config.SEED, reshuffle_each_iteration=True)
+        .batch(batch_size)
+        .repeat()
+        .prefetch(tf.data.AUTOTUNE)
     )
+    val_ds = (
+        tf.data.Dataset.from_tensor_slices((x_val, y_val))
+        .batch(batch_size)
+        .repeat()
+        .prefetch(tf.data.AUTOTUNE)
+    )
+
+    steps_per_epoch = STEPS_PER_EPOCH
+    validation_steps = VALIDATION_STEPS if val_ds is not None else None
+    if DRY_RUN:
+        epochs = 2
+        steps_per_epoch = 5
+        validation_steps = 2 if val_ds is not None else None
+
+    monitor_metric = "val_loss" if val_ds is not None else "loss"
+    callbacks = [
+        tf.keras.callbacks.ModelCheckpoint(
+            filepath=os.path.join(CHECKPOINTS_DIR, "best_model.keras"),
+            monitor=monitor_metric,
+            save_best_only=True,
+            save_weights_only=False,
+            verbose=1,
+        ),
+        tf.keras.callbacks.ModelCheckpoint(
+            filepath=os.path.join(CHECKPOINTS_DIR, "latest_backup.keras"),
+            save_freq=500,
+            save_best_only=False,
+        ),
+        tf.keras.callbacks.EarlyStopping(
+            monitor=monitor_metric,
+            patience=5,
+            restore_best_weights=True,
+            verbose=1,
+        ),
+        tf.keras.callbacks.CSVLogger(
+            filename="training_log.csv",
+            append=True,
+        ),
+    ]
+
+    try:
+        history = model.fit(
+            train_ds,
+            validation_data=val_ds,
+            epochs=epochs,
+            steps_per_epoch=steps_per_epoch,
+            validation_steps=validation_steps,
+            callbacks=callbacks,
+            verbose=1,
+        )
+    except KeyboardInterrupt:
+        interrupted_path = os.path.join(CHECKPOINTS_DIR, "interrupted_model.keras")
+        print(f"\n[LUCIA] Entrenamiento interrumpido manualmente (Ctrl+C). Guardando estado en '{interrupted_path}'...")
+        model.save(interrupted_path)
+        print(f"[LUCIA] Modelo guardado limpiamente en '{interrupted_path}'. Saliendo sin errores.")
+        return {
+            "model_path": interrupted_path,
+            "geojson_path": None,
+            "final_metrics": {},
+            "interrupted": True,
+        }
+
     model.save(save_model_path)
     final_metrics = {k: float(v[-1]) for k, v in history.history.items()}
     save_lucia_metadata(

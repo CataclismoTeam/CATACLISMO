@@ -40,6 +40,14 @@ import keras
 import numpy as np
 import tensorflow as tf
 
+# ===========================================================================
+# Configuración de Épocas Virtuales, Checkpoints y Smoke Test (DRY_RUN)
+# ===========================================================================
+DRY_RUN: bool = False
+STEPS_PER_EPOCH: int = 500
+VALIDATION_STEPS: int = 100
+CHECKPOINTS_DIR: str = "checkpoints"
+
 try:
     from . import config
     from .config import ModelConfig
@@ -1199,32 +1207,84 @@ def get_data(args, num_channels: int, grid: int, time_steps: int, seed_offset: i
 # ===========================================================================
 # 5. Bucle de entrenamiento común
 # ===========================================================================
-def build_callbacks(out_path: str, tag: str, patience: int):
+def build_callbacks(
+    out_path: str,
+    tag: str,
+    patience: int,
+    has_validation: bool = True,
+):
+    os.makedirs(CHECKPOINTS_DIR, exist_ok=True)
     os.makedirs(config.LOG_DIR, exist_ok=True)
     os.makedirs(os.path.dirname(os.path.abspath(out_path)), exist_ok=True)
+
+    monitor_metric = "val_loss" if has_validation else "loss"
     return [
-        keras.callbacks.ModelCheckpoint(out_path, monitor="val_loss", save_best_only=True),
+        keras.callbacks.ModelCheckpoint(
+            filepath=os.path.join(CHECKPOINTS_DIR, "best_model.keras"),
+            monitor=monitor_metric,
+            save_best_only=True,
+            save_weights_only=False,
+            verbose=1,
+        ),
+        keras.callbacks.ModelCheckpoint(
+            filepath=os.path.join(CHECKPOINTS_DIR, "latest_backup.keras"),
+            save_freq=500,
+            save_best_only=False,
+        ),
         keras.callbacks.EarlyStopping(
-            monitor="val_loss", patience=patience, restore_best_weights=True
+            monitor=monitor_metric,
+            patience=5,
+            restore_best_weights=True,
+            verbose=1,
         ),
-        keras.callbacks.ReduceLROnPlateau(
-            monitor="val_loss", factor=0.5, patience=config.REDUCE_LR_PATIENCE, min_lr=1e-6
+        keras.callbacks.CSVLogger(
+            filename="training_log.csv",
+            append=True,
         ),
-        keras.callbacks.CSVLogger(os.path.join(config.LOG_DIR, f"{tag}.csv"), append=True),
-        keras.callbacks.TerminateOnNaN(),
     ]
 
 
 def fit(model, train_ds, val_ds, epochs: int, out_path: str, tag: str, patience: int) -> dict:
     if epochs <= 0:
         return {}
-    history = model.fit(
-        train_ds,
-        validation_data=val_ds,
-        epochs=epochs,
-        callbacks=build_callbacks(out_path, tag, patience),
-        verbose=2,
+
+    steps_per_epoch = STEPS_PER_EPOCH
+    validation_steps = VALIDATION_STEPS if val_ds is not None else None
+    if DRY_RUN:
+        epochs = 2
+        steps_per_epoch = 5
+        validation_steps = 2 if val_ds is not None else None
+
+    if hasattr(train_ds, "repeat"):
+        train_ds = train_ds.repeat()
+    if val_ds is not None and hasattr(val_ds, "repeat"):
+        val_ds = val_ds.repeat()
+
+    callbacks = build_callbacks(
+        out_path,
+        tag,
+        patience,
+        has_validation=(val_ds is not None),
     )
+
+    try:
+        history = model.fit(
+            train_ds,
+            validation_data=val_ds,
+            epochs=epochs,
+            steps_per_epoch=steps_per_epoch,
+            validation_steps=validation_steps,
+            callbacks=callbacks,
+            verbose=2,
+        )
+    except KeyboardInterrupt:
+        os.makedirs(CHECKPOINTS_DIR, exist_ok=True)
+        interrupted_path = os.path.join(CHECKPOINTS_DIR, "interrupted_model.keras")
+        print(f"\n[CATA] Entrenamiento interrumpido manualmente (Ctrl+C). Guardando estado en '{interrupted_path}'...")
+        model.save(interrupted_path)
+        print(f"[CATA] Modelo guardado limpiamente en '{interrupted_path}'. Saliendo sin errores.")
+        return {}
+
     model.save(out_path)
     return {k: [float(v) for v in vals] for k, vals in history.history.items()}
 
