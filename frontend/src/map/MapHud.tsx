@@ -104,7 +104,7 @@ export function UnitCard({ unit, onClose }: { unit: Unit; onClose: () => void })
         <dd className="m-0 font-mono">
           {lat(unit.lat)} {lon(unit.lon)}
         </dd>
-        <dt className="text-ink-muted">Actualizado</dt>
+        <dt className="text-ink-muted">Hora de simulación</dt>
         <dd className="m-0 font-mono">{unit.updated.slice(11, 16)} UTC</dd>
       </dl>
       <Tag tone="simulado" className="mt-3">

@@ -4,9 +4,11 @@ import { cn } from '../lib/cn.ts';
 import { formatCount } from '../lib/format.ts';
 import { useUi } from '../store/ui.ts';
 import { Button } from '../ui/Button.tsx';
+import { LoadError } from '../ui/LoadError.tsx';
 import { Tag } from '../ui/Tag.tsx';
 import { byRegion, type Incident, type IncidentsFile } from './incidents.ts';
 import { SCENARIO_LIST, type Route } from './scenario.ts';
+import type { Remote } from './useRemote.ts';
 
 const COMPASS = ['N', 'NE', 'E', 'SE', 'S', 'SO', 'O', 'NO'];
 const ALL = 'todas';
@@ -72,12 +74,16 @@ function IncidentRow({ incident }: { incident: Incident }) {
 
 /** Panel izquierdo: simulaciones y todos los incendios detectados, por comunidad autónoma. */
 export function IncidentsPanel({
-  incidents,
+  incidents: load,
   routes,
+  routesRetry,
 }: {
-  incidents?: IncidentsFile;
+  incidents: Remote<IncidentsFile>;
   routes: Route[];
+  /** Presente si las vías de escape no se pudieron descargar */
+  routesRetry?: () => void;
 }) {
+  const incidents = load.status === 'listo' ? load.data : undefined;
   const open = useUi((s) => s.leftPanel === 'incendios');
   const setLeftPanel = useUi((s) => s.setLeftPanel);
   const setOpen = (next: boolean) => setLeftPanel(next ? 'incendios' : null);
@@ -160,7 +166,7 @@ export function IncidentsPanel({
                           />
                           Viento del {COMPASS[Math.round(s.windFrom / 45) % 8]}, {s.windKmh} km/h
                         </span>
-                        {routes.length === 0 && (
+                        {!routesRetry && routes.length === 0 && (
                           <span className="mt-1 border-t border-line pt-1.5 text-xs text-ink-muted">
                             Sin vías de escape calculadas: el algoritmo no encontró núcleos de
                             población amenazados en el área analizada.
@@ -184,6 +190,12 @@ export function IncidentsPanel({
                       </>
                     )}
                   </button>
+                  {/* Fuera del botón: el aviso lleva su propio botón de reintentar */}
+                  {active && routesRetry && (
+                    <div className="px-2.5 py-2">
+                      <LoadError what="las vías de escape" onRetry={routesRetry} />
+                    </div>
+                  )}
                 </li>
               );
             })}
@@ -197,7 +209,9 @@ export function IncidentsPanel({
             </h3>
             <Tag tone="real">Real · FIRMS</Tag>
           </div>
-          {!incidents ? (
+          {load.status === 'error' ? (
+            <LoadError what="los incendios detectados" onRetry={load.retry} />
+          ) : !incidents ? (
             <p role="status" className="m-0 text-sm text-ink-muted">
               Cargando incendios…
             </p>

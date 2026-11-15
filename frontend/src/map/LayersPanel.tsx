@@ -4,6 +4,7 @@ import { cn } from '../lib/cn.ts';
 import { useUi, type Basemap, type LayerId } from '../store/ui.ts';
 import { Button } from '../ui/Button.tsx';
 import type { Detections } from './detections.ts';
+import type { Remote } from './useRemote.ts';
 import { ACTIVE_COLOR, PREDICTION_BANDS } from './overlays.ts';
 import { provider } from './providers.ts';
 
@@ -96,7 +97,8 @@ function Group({ title, children }: { title: string; children: ReactNode }) {
 }
 
 /** Panel de capas: mapa base, relieve y capas agrupadas con su origen y su leyenda. */
-export function LayersPanel({ detections }: { detections?: Detections }) {
+export function LayersPanel({ detections: load }: { detections: Remote<Detections> }) {
+  const detections = load.status === 'listo' ? load.data : undefined;
   const open = useUi((s) => s.layersOpen);
   const setOpen = useUi((s) => s.setLayersOpen);
   const basemap = useUi((s) => s.basemap);
@@ -179,8 +181,13 @@ export function LayersPanel({ detections }: { detections?: Detections }) {
           legend={
             <div className="flex flex-col gap-1">
               <span className="text-xs text-ink-muted">
-                NASA FIRMS, {detections ? `${detections.from} a ${detections.to}` : 'cargando…'}.
-                Celdas de 250 m con fuego detectado y, alrededor, la propagación prevista.
+                NASA FIRMS,{' '}
+                {detections
+                  ? `${detections.from} a ${detections.to}`
+                  : load.status === 'error'
+                    ? 'no se han podido descargar'
+                    : 'cargando…'}
+                . Celdas de 250 m con fuego detectado y, alrededor, la propagación prevista.
               </span>
               <div className="flex flex-wrap gap-x-3 gap-y-1 text-xs">
                 <span className="flex items-center gap-1.5">

@@ -11,21 +11,16 @@ import workerUrl from 'maplibre-gl/dist/maplibre-gl-worker.mjs?url';
 import { useEffect, useRef, useState } from 'react';
 import { cn } from '../lib/cn.ts';
 import { useUi } from '../store/ui.ts';
-import { loadDetections, type Detections } from './detections.ts';
+import { loadDetections } from './detections.ts';
 import { LayersPanel } from './LayersPanel.tsx';
 import { declutterUnits, ignitionElement, meetingElement, unitElement } from './markers.ts';
 import { IncidentsPanel } from './IncidentsPanel.tsx';
-import { loadIncidents, type IncidentsFile } from './incidents.ts';
+import { loadIncidents } from './incidents.ts';
 import { applyVisibility, FAR_ZOOM, installOverlays, ROUTE_COLOR, tokenColor } from './overlays.ts';
 import { provider } from './providers.ts';
-import {
-  DEFAULT_SCENARIO,
-  loadEscapeRoutes,
-  SCENARIOS,
-  type EscapeRoutes,
-  type Route,
-} from './scenario.ts';
+import { DEFAULT_SCENARIO, loadEscapeRoutes, SCENARIOS, type Route } from './scenario.ts';
 import { UnitsPanel } from './UnitsPanel.tsx';
+import { ready as readyData, useRemote } from './useRemote.ts';
 import {
   CoordinatesBar,
   FireCard,
@@ -48,10 +43,12 @@ export default function MapView() {
   const mapRef = useRef<MapLibre | null>(null);
   const markers = useRef<Marker[]>([]);
   const [ready, setReady] = useState(false);
-  const [detections, setDetections] = useState<Detections>();
+  const detectionsLoad = useRemote(loadDetections);
+  const detections = readyData(detectionsLoad);
   const [selectedFire, setSelectedFire] = useState<FireObservation>();
   const [tileError, setTileError] = useState(false);
-  const [incidents, setIncidents] = useState<IncidentsFile>();
+  const incidentsLoad = useRemote(loadIncidents);
+  const incidents = readyData(incidentsLoad);
   const [far, setFar] = useState(false);
   const [mid, setMid] = useState(false);
   const selectedIncidentId = useUi((s) => s.selectedIncident);
@@ -67,7 +64,8 @@ export default function MapView() {
   const scenario = SCENARIOS[scenarioId] ?? SCENARIOS[DEFAULT_SCENARIO];
   const selectedUnitId = useUi((s) => s.selectedUnit);
   const selected = scenario.units.find((u) => u.id === selectedUnitId);
-  const [escape, setEscape] = useState<EscapeRoutes>();
+  const escapeLoad = useRemote(loadEscapeRoutes);
+  const escape = readyData(escapeLoad);
   const routes = escape?.escenarios[scenario.id]?.rutas ?? NO_ROUTES;
 
   // Estado vivo para los manejadores de MapLibre (se registran una sola vez)
@@ -123,22 +121,23 @@ export default function MapView() {
         s.layers,
       );
       map.setTerrain(s.mode === '3d' ? { source: 'dem', exaggeration: s.exaggeration } : null);
-      map.on('click', 'inc-fill', (event) => {
-        const feature = event.features?.[0];
-        const properties = feature?.properties as
-          { intensidad?: number; altura?: number; horas?: number } | undefined;
-        if (!feature || !properties) return;
-        const point = event.lngLat;
-        setSelectedFire({
-          lon: point.lng,
-          lat: point.lat,
-          intensity: Number(properties.intensidad ?? 0),
-          flameHeight: Number(properties.altura ?? 0),
-          arrivalHours: Number(properties.horas ?? 0),
-        });
-        useUi.getState().focusUnit(undefined);
-      });
       setReady(true);
+    });
+    // Los manejadores por capa sobreviven a setStyle: se registran una vez, fuera de 'style.load'
+    map.on('click', 'inc-fill', (event) => {
+      const feature = event.features?.[0];
+      const properties = feature?.properties as
+        { intensidad?: number; altura?: number; horas?: number } | undefined;
+      if (!feature || !properties) return;
+      const point = event.lngLat;
+      setSelectedFire({
+        lon: point.lng,
+        lat: point.lat,
+        intensity: Number(properties.intensidad ?? 0),
+        flameHeight: Number(properties.altura ?? 0),
+        arrivalHours: Number(properties.horas ?? 0),
+      });
+      useUi.getState().focusUnit(undefined);
     });
     map.on('error', (e) => {
       // Una tesela que falla no rompe el mapa: se avisa y se sigue
@@ -154,16 +153,6 @@ export default function MapView() {
         setSelectedFire(undefined);
       }
     });
-
-    loadDetections()
-      .then(setDetections)
-      .catch(() => setDetections(undefined));
-    loadIncidents()
-      .then(setIncidents)
-      .catch(() => setIncidents(undefined));
-    loadEscapeRoutes()
-      .then(setEscape)
-      .catch(() => setEscape(undefined));
 
     // Vista lejana: fuera rótulos y marcadores, solo un icono por incendio
     const onZoom = () => {
@@ -342,9 +331,13 @@ export default function MapView() {
           <span className="rounded-sm bg-canvas px-3 py-1.5">Cargando el mapa…</span>
         </p>
       )}
-      <IncidentsPanel incidents={incidents} routes={routes} />
+      <IncidentsPanel
+        incidents={incidentsLoad}
+        routes={routes}
+        routesRetry={escapeLoad.status === 'error' ? escapeLoad.retry : undefined}
+      />
       <UnitsPanel />
-      <LayersPanel detections={detections} />
+      <LayersPanel detections={detectionsLoad} />
       {selectedIncident && (
         <IncidentCard incident={selectedIncident} onClose={() => focusIncident(undefined)} />
       )}
