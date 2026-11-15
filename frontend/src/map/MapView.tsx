@@ -21,7 +21,8 @@ import { loadDetections } from './detections.ts';
 import { LayersPanel } from './LayersPanel.tsx';
 import { declutterUnits, ignitionElement, meetingElement, unitElement } from './markers.ts';
 import { IncidentsPanel } from './IncidentsPanel.tsx';
-import { loadIncidents } from './incidents.ts';
+import { haversineKm } from '../features/history/area.ts';
+import { incidentAt, loadIncidents } from './incidents.ts';
 import { alertsFor } from './alerts.ts';
 import { AlertsPanel } from './AlertsPanel.tsx';
 import { FireTimeline } from './FireTimeline.tsx';
@@ -68,6 +69,10 @@ const MAX_PITCH = 70;
 const BEARING_SNAP = 15;
 /** A partir de este zoom las placas de las unidades muestran indicativo y estado */
 const LABEL_ZOOM = 13;
+/** Al ampliar el usuario hasta este zoom sobre un incendio, se abre su ficha sola */
+const AUTO_FOCUS_ZOOM = 11;
+/** Distancia máxima (km) del centro del mapa a un incendio para darlo por «el que se mira» */
+const AUTO_FOCUS_KM = 3;
 const SIMULATIONS = Object.values(SCENARIOS);
 const NO_ROUTES: Route[] = [];
 
@@ -143,6 +148,8 @@ export default function MapView() {
   const lang = useLang((s) => s.lang);
 
   // Estado vivo para los manejadores de MapLibre (se registran una sola vez)
+  /** El cambio de simulación viene de ampliar sobre ella: la cámara ya está, no se vuela */
+  const noScenarioFly = useRef(false);
   const live = useRef({
     scenario,
     routes,
@@ -256,7 +263,29 @@ export default function MapView() {
     };
     map.on('zoom', onZoom);
     onZoom();
-    const onMoveEnd = () => setSimInView(map.getBounds().contains(live.current.scenario.ignition));
+    const onMoveEnd = (e: { originalEvent?: unknown }) => {
+      setSimInView(map.getBounds().contains(live.current.scenario.ignition));
+      // Solo movimientos del usuario (rueda, pellizco, arrastre, botones de zoom): un vuelo
+      // pedido por la app no cambia la selección
+      if (!e.originalEvent || busy() || map.getZoom() < AUTO_FOCUS_ZOOM) return;
+      const { lng, lat } = map.getCenter();
+      const ui = useUi.getState();
+      const real = live.current.incidents
+        ? incidentAt(live.current.incidents.incendios, [lng, lat], AUTO_FOCUS_KM)
+        : undefined;
+      const sim = live.current.simulations
+        .map((s) => ({ s, km: haversineKm(lat, lng, s.ignition[1], s.ignition[0]) }))
+        .filter(({ km }) => km <= AUTO_FOCUS_KM)
+        .sort((a, b) => a.km - b.km)[0];
+      const realKm = real ? haversineKm(lat, lng, real.lat, real.lon) : Infinity;
+      if (real && (!sim || realKm <= sim.km)) {
+        if (ui.selectedIncident !== real.id) ui.focusIncident(real.id);
+      } else if (sim && ui.scenario !== sim.s.id) {
+        noScenarioFly.current = true;
+        ui.focusIncident(undefined);
+        ui.setScenario(sim.s.id);
+      }
+    };
     map.on('moveend', onMoveEnd);
     map.on('click', 'real-fill', (e) => {
       if (busy()) return;
@@ -396,8 +425,9 @@ export default function MapView() {
   useEffect(() => {
     const map = mapRef.current;
     if (!map) return;
-    if (keepSharedCamera.current) {
+    if (keepSharedCamera.current || noScenarioFly.current) {
       keepSharedCamera.current = false;
+      noScenarioFly.current = false;
       return;
     }
     const { camera } = scenario;

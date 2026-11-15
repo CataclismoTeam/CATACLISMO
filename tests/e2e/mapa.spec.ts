@@ -175,3 +175,14 @@ test('copiar enlace avisa de que se ha copiado', async ({ page, context, browser
   const copied = await page.evaluate(() => navigator.clipboard.readText());
   expect(copied).toContain('#sim=');
 });
+
+test('al ampliar sobre un incendio real se abre su ficha', async ({ page }) => {
+  // Encuadre compartido justo al lado del incendio INC-073, todavía de lejos
+  await page.goto('./#z=10.2&c=-3.9611,38.6389&m=2d');
+  await page.getByRole('button', { name: 'Empezar' }).click();
+  const card = page.getByRole('region', { name: 'Incendio INC-073' });
+  await expect(page.getByTestId('mapa')).toBeVisible();
+  await expect(card).toHaveCount(0);
+  await page.getByRole('button', { name: 'Acercar' }).click();
+  await expect(card).toBeVisible();
+});

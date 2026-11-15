@@ -1,6 +1,7 @@
 // Incendios detectados (REALES) por toda España: los genera tools/build-hotspots agrupando
 // las detecciones FIRMS de los últimos 90 días y asignando comunidad autónoma y provincia.
 import type { FeatureCollection, MultiPolygon, Point, Polygon } from 'geojson';
+import { haversineKm } from '../features/history/area.ts';
 
 export interface Incident {
   id: string;
@@ -82,4 +83,27 @@ export function byRegion(file: IncidentsFile): [string, Incident[]][] {
       list.sort((a, b) => Number(b.activo) - Number(a.activo) || b.frpTotal - a.frpTotal),
     ])
     .sort((a, b) => a[0].localeCompare(b[0], 'es'));
+}
+
+/**
+ * Incendio que hay en un punto del mapa (el centro al ampliar): el que lo contiene en su
+ * encuadre o, si no, el más cercano a menos de `maxKm`. Entre varios, gana el más cercano.
+ */
+export function incidentAt(
+  incidents: Incident[],
+  [lon, lat]: [number, number],
+  maxKm = 3,
+): Incident | undefined {
+  let best: Incident | undefined;
+  let bestKm = Infinity;
+  for (const i of incidents) {
+    const [w, s, e, n] = i.bbox;
+    const inside = lon >= w && lon <= e && lat >= s && lat <= n;
+    const km = haversineKm(lat, lon, i.lat, i.lon);
+    if ((inside || km <= maxKm) && km < bestKm) {
+      best = i;
+      bestKm = km;
+    }
+  }
+  return best;
 }
