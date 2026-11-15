@@ -341,7 +341,9 @@ DATABASE_URL=postgresql+asyncpg://cataclismo:cataclismo@localhost:5432/cataclism
 ```
 
 > [!IMPORTANT]
-> En entornos de CI/CD (GitHub Actions), `FIRMS_MAP_KEY` se inyecta de forma segura a través de los secretos del repositorio (`${{ secrets.FIRMS_MAP_KEY }}`). Nunca commitees claves reales en texto plano.
+> La clave **`FIRMS_MAP_KEY`** necesaria para la API NRT de NASA FIRMS reside en **GitHub Secrets** (para inyectarse como `${{ secrets.FIRMS_MAP_KEY }}` en workflows/despliegues que ejecuten ingesta en vivo) y en `backend/.env` en desarrollo local (`cp ../.env.example .env`). Sin ella, NASA FIRMS responde `Invalid MAP_KEY` y `POST /api/live/refresh` devuelve HTTP 400. Nunca commitees claves reales en texto plano.
+>
+> **Contrato hacia el Frontend:** `GET /api/cata/predictions` expone íntegro `app/cata/artifacts/predictions/cata_predictions.json` (incluyendo las matrices 2D y `valen_features_norm`). En cambio, `GET /api/lucia/routes` (`lucia_routes.geojson`) devuelve una proyección GeoJSON en WGS84 con las rutas, Puntos de Encuentro y polígonos `fire_cell` de riesgo (`cata_quadrant_state` y `fire_probability_t1`), omitiendo las matrices 2D completas y `valen_features_norm`; el build estático actual de `frontend/` lee datos offline de `frontend/public/data/` hasta conectarse a estos endpoints.
 
 ### Paso 3: Levantar el Servidor Completo
 ```bash
