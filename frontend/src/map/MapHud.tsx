@@ -2,7 +2,6 @@ import { Crosshair, X } from 'lucide-react';
 import type { Map as MapLibre } from 'maplibre-gl';
 import { useEffect, useState, type RefObject } from 'react';
 import { cn } from '../lib/cn.ts';
-import { useUi } from '../store/ui.ts';
 import { Button } from '../ui/Button.tsx';
 import { Tag } from '../ui/Tag.tsx';
 import { KIND, STATUS } from './markers.ts';
@@ -51,7 +50,7 @@ export function CoordinatesBar({
   return (
     <p
       aria-live="off"
-      className={`${panel} absolute bottom-10 left-3 m-0 flex items-center gap-3 px-3 py-1.5 font-mono text-sm`}
+      className={`${panel} m-0 flex max-w-full shrink-0 items-center gap-3 px-3 py-1.5 font-mono text-sm`}
     >
       <Crosshair size={16} strokeWidth={1.5} aria-hidden className="text-ink-muted" />
       <span>
@@ -75,7 +74,7 @@ export function UnitCard({ unit, onClose }: { unit: Unit; onClose: () => void })
   return (
     <section
       aria-label={`Ficha de ${unit.name}`}
-      className={`${panel} absolute bottom-24 left-3 w-[min(22rem,calc(100%-1.5rem))] p-4`}
+      className={`${panel} min-h-0 w-88 max-w-full overflow-y-auto p-4`}
     >
       <header className="mb-2 flex items-start justify-between gap-2">
         <div className="min-w-0">
@@ -132,7 +131,7 @@ export function FireCard({
   return (
     <section
       aria-label="Detalle del fuego"
-      className={`${panel} absolute bottom-24 left-3 w-[min(22rem,calc(100%-1.5rem))] p-4`}
+      className={`${panel} min-h-0 w-88 max-w-full overflow-y-auto p-4`}
     >
       <header className="mb-2 flex items-start justify-between gap-2">
         <div>
@@ -168,8 +167,7 @@ export function FireCard({
 
 /** Ficha de un incendio detectado por satélite (REAL). */
 export function IncidentCard({ incident, onClose }: { incident: Incident; onClose: () => void }) {
-  // Ficha en el lateral, como el resto de fichas; nunca en medio del mapa
-  const layersOpen = useUi((s) => s.layersOpen);
+  // Ficha en el lateral, bajo el panel de capas (ver la pila de esquina en MapView)
   const area =
     incident.areaKm2 < 1
       ? `${Math.round(incident.areaKm2 * 100)} ha`
@@ -179,8 +177,7 @@ export function IncidentCard({ incident, onClose }: { incident: Incident; onClos
       aria-label={`Incendio ${incident.id}`}
       className={cn(
         panel,
-        'absolute top-3 right-14 w-[min(22rem,calc(100%-4.5rem))] p-4',
-        layersOpen && 'md:right-[24.5rem]',
+        'overflow-y-auto p-4 max-md:absolute max-md:inset-x-3 max-md:top-14 max-md:max-h-[calc(100%-4.25rem)] md:min-h-0 md:w-88',
       )}
     >
       <header className="mb-2 flex items-start justify-between gap-2">

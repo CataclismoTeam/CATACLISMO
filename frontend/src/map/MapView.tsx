@@ -54,6 +54,7 @@ export default function MapView() {
   const selectedIncidentId = useUi((s) => s.selectedIncident);
   const focusIncident = useUi((s) => s.focusIncident);
   const flyTarget = useUi((s) => s.flyTarget);
+  const leftOpen = useUi((s) => s.leftPanel !== null);
   const selectedIncident = incidents?.incendios.find((i) => i.id === selectedIncidentId);
 
   const mode = useUi((s) => s.mapMode);
@@ -107,7 +108,8 @@ export default function MapView() {
     });
     mapRef.current = map;
     map.addControl(new NavigationControl({ visualizePitch: true }), 'top-right');
-    map.addControl(new ScaleControl({ unit: 'metric' }), 'bottom-left');
+    // Abajo a la derecha: la esquina izquierda es para las fichas y las coordenadas
+    map.addControl(new ScaleControl({ unit: 'metric' }), 'bottom-right');
 
     map.on('style.load', () => {
       const s = live.current;
@@ -337,17 +339,29 @@ export default function MapView() {
         routesRetry={escapeLoad.status === 'error' ? escapeLoad.retry : undefined}
       />
       <UnitsPanel />
-      <LayersPanel detections={detectionsLoad} />
-      {selectedIncident && (
-        <IncidentCard incident={selectedIncident} onClose={() => focusIncident(undefined)} />
-      )}
-      {selected && (
-        <UnitCard unit={selected} onClose={() => useUi.getState().focusUnit(undefined)} />
-      )}
-      {selectedFire && (
-        <FireCard observation={selectedFire} onClose={() => setSelectedFire(undefined)} />
-      )}
-      <CoordinatesBar map={mapRef} ready={ready} />
+      {/* Esquina superior derecha: capas y ficha del incendio se apilan, nunca se pisan.
+          En móvil cada una va a su sitio (capas como hoja inferior). */}
+      <div className="contents md:pointer-events-none md:absolute md:top-3 md:right-14 md:bottom-3 md:z-(--z-panel) md:flex md:flex-col md:items-end md:gap-2 md:*:pointer-events-auto">
+        <LayersPanel detections={detectionsLoad} />
+        {selectedIncident && (
+          <IncidentCard incident={selectedIncident} onClose={() => focusIncident(undefined)} />
+        )}
+      </div>
+      {/* Esquina inferior izquierda: fichas y coordenadas, a la derecha del panel lateral */}
+      <div
+        className={cn(
+          'pointer-events-none absolute top-3 bottom-3 left-3 flex max-w-[calc(100%-1.5rem)] flex-col items-start justify-end gap-2 *:pointer-events-auto',
+          leftOpen && 'max-md:hidden md:left-[21.5rem] md:max-w-[calc(100%-22.25rem)]',
+        )}
+      >
+        {selected && (
+          <UnitCard unit={selected} onClose={() => useUi.getState().focusUnit(undefined)} />
+        )}
+        {selectedFire && (
+          <FireCard observation={selectedFire} onClose={() => setSelectedFire(undefined)} />
+        )}
+        <CoordinatesBar map={mapRef} ready={ready} />
+      </div>
       {tileError && (
         <p
           role="status"

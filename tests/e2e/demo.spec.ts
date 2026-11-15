@@ -45,3 +45,35 @@ test('si fallan los datos se dice y se puede reintentar', async ({ page }) => {
     .click();
   await expect(panel.getByLabel('Comunidad autónoma')).toBeVisible();
 });
+
+type Box = { x: number; y: number; width: number; height: number };
+const overlap = (a: Box, b: Box) =>
+  a.x < b.x + b.width && b.x < a.x + a.width && a.y < b.y + b.height && b.y < a.y + a.height;
+
+test('las fichas no tapan los paneles ni el botón de capas', async ({ page }, info) => {
+  test.skip(info.project.name === 'movil', 'en móvil las fichas cierran el panel lateral');
+  await start(page);
+  const panel = await openIncidents(page);
+  await panel.getByLabel('Comunidad autónoma').selectOption({ index: 1 });
+  await panel.locator('li button').filter({ hasText: 'detecciones' }).first().click();
+  const card = page.getByRole('region', { name: /^Incendio / });
+  await expect(card).toBeVisible();
+  const layersButton = page.getByRole('button', { name: 'Capas', exact: true });
+  expect(overlap((await card.boundingBox())!, (await layersButton.boundingBox())!)).toBe(false);
+
+  await layersButton.click();
+  const layers = page.getByRole('complementary', { name: 'Capas del mapa' });
+  expect(overlap((await card.boundingBox())!, (await layers.boundingBox())!)).toBe(false);
+
+  // Ficha de unidad con el panel de unidades abierto: va a su derecha
+  await page
+    .getByRole('navigation', { name: 'Módulos' })
+    .getByRole('button', { name: 'Unidades' })
+    .click();
+  const units = page.getByRole('complementary', { name: 'Unidades' });
+  await units.getByRole('button', { name: /AB-11/ }).click();
+  const unitCard = page.getByRole('region', { name: /Ficha de/ });
+  await expect(unitCard).toBeVisible();
+  expect(overlap((await unitCard.boundingBox())!, (await units.boundingBox())!)).toBe(false);
+  await page.screenshot({ path: 'test-results/solapes.png' });
+});

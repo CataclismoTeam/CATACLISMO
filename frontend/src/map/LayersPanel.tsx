@@ -109,7 +109,10 @@ export function LayersPanel({ detections: load }: { detections: Remote<Detection
 
   if (!open) {
     return (
-      <Button className="absolute top-3 right-14" onClick={() => setOpen(true)}>
+      <Button
+        className="max-md:absolute max-md:top-3 max-md:right-14"
+        onClick={() => setOpen(true)}
+      >
         <Layers size={16} strokeWidth={1.5} aria-hidden />
         Capas
       </Button>
@@ -119,7 +122,7 @@ export function LayersPanel({ detections: load }: { detections: Remote<Detection
   return (
     <aside
       aria-label="Capas del mapa"
-      className="absolute inset-x-0 bottom-0 z-(--z-panel) max-h-[70%] overflow-y-auto rounded-t-lg border border-line-strong bg-surface shadow-panel md:inset-x-auto md:top-3 md:right-14 md:bottom-auto md:max-h-[calc(100%-1.5rem)] md:w-80 md:rounded-lg"
+      className="overflow-y-auto border border-line-strong bg-surface shadow-panel max-md:absolute max-md:inset-x-0 max-md:bottom-0 max-md:z-(--z-panel) max-md:max-h-[70%] max-md:rounded-t-lg md:min-h-0 md:w-80 md:rounded-lg"
     >
       <header className="sticky top-0 flex items-center justify-between bg-surface px-4 py-2">
         <h2 className="m-0 text-base font-semibold">Capas</h2>
